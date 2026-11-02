@@ -180,6 +180,11 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                                           || CASE WHEN COALESCE(payload->>'outcome', 'done') <> 'done' THEN ' (' || (payload->>'outcome') || ')' ELSE '' END)
                   WHEN 'contract_activity' THEN COALESCE(NULLIF(payload->>'title', ''), 'Contract activity') -- BF_SERVER_v864_ACTIVE_CONTRACTS
                   WHEN 'call_script' THEN COALESCE(NULLIF(payload->>'title', ''), 'Call script') -- BF_SERVER_v871_CALL_SCRIPTS
+                  WHEN 'payment_link_sent' THEN COALESCE(NULLIF(payload->>'title', ''), 'Payment link') -- BF_SERVER_v872_PAYMENTS
+                  WHEN 'payment_link_cancelled' THEN COALESCE(NULLIF(payload->>'title', ''), 'Payment link cancelled')
+                  WHEN 'payment_received' THEN COALESCE(NULLIF(payload->>'title', ''), 'Payment received')
+                  WHEN 'payment_processing' THEN COALESCE(NULLIF(payload->>'title', ''), 'Bank debit authorized')
+                  WHEN 'payment_failed' THEN COALESCE(NULLIF(payload->>'title', ''), 'Payment failed')
                   ELSE event_type END) AS title,
                (CASE WHEN event_type = 'attribution' THEN
                   NULLIF(concat_ws(' | ',
@@ -200,13 +205,13 @@ export async function loadCrmTimeline(isContact: boolean, id: string, silo: stri
                        NULLIF(COALESCE(payload->>'detail',''), '')
                      WHEN event_type = 'contract_activity' THEN
                        NULLIF(COALESCE(payload->>'detail',''), '')
-                     WHEN event_type = 'call_script' THEN
+                     WHEN event_type IN ('call_script','payment_link_sent','payment_link_cancelled','payment_received','payment_processing','payment_failed') THEN -- BF_SERVER_v872_PAYMENTS
                        NULLIF(COALESCE(payload->>'detail',''), '')
                 ELSE NULLIF(payload->>'url','') END) AS body,
                (CASE WHEN event_type = 'contract_activity' THEN payload->>'contract_id' ELSE NULL END) AS extra -- BF_SERVER_v864_ACTIVE_CONTRACTS
           FROM crm_timeline_events
          WHERE contact_id = $1
-           AND event_type IN ('call_script','contract_activity','sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')
+           AND event_type IN ('call_script','payment_link_sent','payment_link_cancelled','payment_received','payment_processing','payment_failed','contract_activity','sequence_step_sent','email_open','email_click','email_bounce','email_dropped','email_spamreport','email_unsubscribe','email_group_unsubscribe','sms_link_clicked','attribution','email_marketing_sent','client_notice_sent','sms_marketing_sent','email_cascade_sent','email_notice_sent','automation')
         UNION ALL
         -- BF_SERVER_TEAMS_TRANSCRIPT_POLLER_v1 - Teams meetings with their
         -- recording link + transcript. Reuses kind 'recording', which the portal

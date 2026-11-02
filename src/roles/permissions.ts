@@ -212,6 +212,15 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/call-scripts\/runs(\/|$)/, "calls"], // BF_SERVER_v871_CALL_SCRIPTS - filling in a script is part of the call
   [/^\/call-queues\/callbacks(\/|$)/, "calls"], // BF_SERVER_v871_CALL_QUEUES
   [/^\/(call-scripts|call-queues)(\/|$)/, "settings"], // BF_SERVER_v871_CALLING_TOOLS - Admin set-up
+  // BF_SERVER_v872_DEAL_TOOLS - quotes, ID checks, a file's forecast and fee payment links are application work; the
+  // forecast and fee payments reports are reports; the ID-check and Stripe set-up are settings.
+  [/^\/kyc\/settings(\/|$)/, "settings"],
+  [/^\/payments\/settings(\/|$)/, "settings"],
+  [/^\/payments\/report(\/|$)/, "reports"],
+  [/^\/forecast\/applications(\/|$)/, "applications"],
+  [/^\/forecast\/stages(\/|$)/, "settings"],
+  [/^\/forecast(\/|$)/, "reports"],
+  [/^\/(quotes|kyc|payments)(\/|$)/, "applications"],
   [/^\/(marketing|automations)(\/|$)/, "marketing"], // automations (workflows) are a Marketing-role tool
   [/^\/(reporting|reports)(\/|$)/, "reports"],
   // A client's fee invoice on a file is application work; the QuickBooks connection itself is billing.

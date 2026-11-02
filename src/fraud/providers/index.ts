@@ -37,7 +37,7 @@ export function providerStatus(p: FraudProviders): ProviderStatus[] {
     { key: "domainAge", label: "Website and email domain age", provider: p.domainAge.name, configured: p.domainAge.configured(), setting: "on by default (FRAUD_RDAP=off turns it off)", used_by: ["fraud_6", "fraud_7"] },
     { key: "lineType", label: "Phone line type", provider: p.lineType.name, configured: p.lineType.configured(), setting: "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN", used_by: ["fraud_6", "fraud_7"] },
     { key: "ipIntel", label: "IP address location and VPN", provider: p.ipIntel.name, configured: p.ipIntel.configured(), setting: "IPINFO_TOKEN", used_by: ["fraud_9"] },
-    { key: "idv", label: "ID verification vendor", provider: p.idv.name, configured: p.idv.configured(), setting: "not available yet (vendor to be chosen)", used_by: ["fraud_8"] },
+    { key: "idv", label: "ID verification vendor", provider: p.idv.name, configured: p.idv.configured(), setting: "ONFIDO_API_TOKEN, ONFIDO_WORKFLOW_ID, ONFIDO_WEBHOOK_TOKEN, ONFIDO_REGION (Settings > ID verification)", used_by: ["fraud_8"] }, // BF_SERVER_v872_KYC
     { key: "voice", label: "Voice / deepfake analysis vendor", provider: p.voice.name, configured: p.voice.configured(), setting: "not available yet (vendor to be chosen)", used_by: ["fraud_15"] },
     { key: "address", label: "Address verification vendor", provider: p.address.name, configured: p.address.configured(), setting: "not available yet (built-in mail-drop list is used)", used_by: ["fraud_6"] },
   ];

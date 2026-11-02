@@ -248,6 +248,12 @@ export async function start(): Promise<void> {
     try { const w = startCallQueueWorker(pool); workerStops.push(w.stop); console.log("[startup] call-queue worker started"); }
     catch (err) { console.error("[startup] call-queue worker failed to start:", err); }
 
+    // BF_SERVER_v872_PAYMENTS - payment links: QuickBooks retries and expiry.
+    const { startPaymentLinksWorker } = await import("./workers/paymentLinksWorker.js");
+    await workerStagger();
+    try { const w = startPaymentLinksWorker(pool); workerStops.push(w.stop); console.log("[startup] payment-links worker started"); }
+    catch (err) { console.error("[startup] payment-links worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
     await workerStagger();

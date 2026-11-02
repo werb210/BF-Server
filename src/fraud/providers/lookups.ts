@@ -103,12 +103,15 @@ export type IdvResult = { ok: true; verdict: "pass" | "fail" | "review"; reasons
 
 export interface IdvProvider { readonly name: string; configured(): boolean; verify(input: { documentId: string; image: Buffer; name: string | null; dob: string | null }): Promise<IdvResult> }
 
-/** No vendor is wired in yet. Set FRAUD_IDV_PROVIDER once one is added; until then the check says "not set up". */
+/** BF_SERVER_v872_KYC - the vendor flow lives in src/kyc (Entrust IDV / Onfido). Check 8 reads its stored results, so
+ *  "configured" here means the vendor is set up (ONFIDO_API_TOKEN, ONFIDO_WORKFLOW_ID, ONFIDO_WEBHOOK_TOKEN). verify()
+ *  is not used: the applicant completes the vendor's hosted flow in the client app. */
 export function idvProvider(env: NodeJS.ProcessEnv = process.env): IdvProvider {
   const chosen = String(env.FRAUD_IDV_PROVIDER ?? "").trim();
+  const onfido = Boolean(String(env.ONFIDO_API_TOKEN ?? "").trim() && String(env.ONFIDO_WORKFLOW_ID ?? "").trim() && String(env.ONFIDO_WEBHOOK_TOKEN ?? "").trim());
   return {
-    name: chosen || "none",
-    configured: () => false,
+    name: onfido ? "onfido" : chosen || "none",
+    configured: () => onfido && env.NODE_ENV !== "test",
     async verify() { return { ok: false, error: chosen ? `unknown_idv_provider_${chosen}` : "not_configured" }; },
   };
 }

@@ -145,6 +145,13 @@ import rolesRoutes from "./roles.js";
 import callScriptsRoutes from "./callScripts.js";
 import callQueuesRoutes from "./callQueues.js";
 import callQueueWebhooksRoutes from "./callQueueWebhooks.js";
+// BF_SERVER_v872_DEAL_TOOLS - quotes, forecast, ID verification and payment links.
+import quotesRoutes from "./quotes.js";
+import clientQuotesRoutes from "./clientQuotes.js";
+import forecastRoutes from "./forecast.js";
+import kycRoutes from "./kyc.js";
+import clientKycRoutes from "./clientKyc.js";
+import paymentsRoutes from "./payments.js";
 import { scopedAssistantRequest } from "../visibility/scopedDb.js";
 import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
@@ -415,6 +422,13 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_SERVER_v871_CALLING_TOOLS
   { path: "/call-scripts", router: callScriptsRoutes }, // Settings > Call scripts (Admin builds), runs on contacts, applications and calls (staff)
   { path: "/call-queues", router: callQueuesRoutes }, // Settings > Call queues: set-up and live panel (Admin), my availability (staff)
+  // BF_SERVER_v872_DEAL_TOOLS
+  { path: "/quotes", router: quotesRoutes }, // staff: quotes from the lender offers on a file (Quotes tab)
+  { path: "/client/quotes", router: clientQuotesRoutes }, // the client's own sent quotes (OTP phone)
+  { path: "/forecast", router: forecastRoutes }, // weighted commission forecast; a file's expected close date and category
+  { path: "/kyc", router: kycRoutes }, // staff ID verification, Admin settings, public signed vendor webhook
+  { path: "/client/kyc", router: clientKycRoutes }, // the applicant's own verifications (OTP phone)
+  { path: "/payments", router: paymentsRoutes }, // payment links for broker fees; public /pay and the signed Stripe webhook
 ];
 
 // BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
@@ -431,6 +445,9 @@ export const RECORD_GUARDED_MOUNTS: Record<string, GuardRule[]> = {
   "/banking": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
   "/fraud": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
   "/retention": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
+  "/quotes": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_QUOTES
+  "/kyc": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_KYC
+  "/forecast": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_FORECAST
   "/lender-referrals": [{ pattern: /^\/by-application\/([^/]+)(?:\/|$)/, kind: "application" }],
 };
 
@@ -504,6 +521,20 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/webhooks/twilio/queue/connecting", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/queue/agent-done", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/queue/agent-status", roles: [] },
+  // BF_SERVER_v872_DEAL_TOOLS - public: the client's payment link, Stripe's and the ID vendor's signed webhooks, and the
+  // client app's own quotes and ID checks (OTP phone, ownership checked in the route).
+  { method: "GET", path: "/api/payments/pay/:token", roles: [] },
+  { method: "GET", path: "/api/payments/pay/:token/done", roles: [] },
+  { method: "POST", path: "/api/payments/stripe/webhook", roles: [] },
+  { method: "POST", path: "/api/kyc/webhooks/:provider", roles: [] },
+  { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
+  { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
+  { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },
+  { method: "POST", path: "/api/client/quotes/:qid/accept", roles: [] },
+  { method: "POST", path: "/api/client/quotes/:qid/decline", roles: [] },
+  { method: "GET", path: "/api/client/kyc/applications/:id", roles: [] },
+  { method: "POST", path: "/api/client/kyc/verifications/:vid/start", roles: [] },
+  { method: "POST", path: "/api/client/kyc/verifications/:vid/upload", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/join", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/conference/status", roles: [] },
   { method: "POST", path: "/api/webhooks/twilio/call/status", roles: [] },
