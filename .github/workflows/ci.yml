@@ -112,6 +112,15 @@ jobs:
       # The service container starts empty. src/startup/runMigrations.ts is what
       # builds the schema on boot; run it here so the suite meets a real
       # database rather than an empty one.
+      # BF_SERVER_v882_AZURE_MIGRATION_CHECK - every migration also runs as a non-superuser with only Azure's
+      # allow-listed extensions, so a migration that would stop the server starting on Azure fails here instead.
+      - name: Migrations under Azure Postgres rules
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/azure-migration-check.sh
+
       - name: Apply migrations to the test database
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/bf_test
