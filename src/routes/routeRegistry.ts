@@ -144,6 +144,8 @@ import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
+import brokerToolsRoutes from "./brokerTools.js"; // BF_SERVER_v865_BROKER_TOOLS
+import clientBrokerRoutes from "./clientBroker.js"; // BF_SERVER_v865_BROKER_TOOLS
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
 
 export type ApiRoute = {
@@ -287,6 +289,9 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // BF_SERVER_BLOCK_53_v1
   { path: "/client/voice", router: clientVoiceRoutes },
   { path: "/client/documents-needed", router: clientDocumentsNeededRoutes },
+  // BF_SERVER_v865_BROKER_TOOLS - deal tools for staff, and the client app's side of them.
+  { path: "/broker-tools", router: brokerToolsRoutes },
+  { path: "/client-broker", router: clientBrokerRoutes },
   { path: "/reporting", router: reportingRoutes },
   { path: "/reports", router: reportsRoutes },
   { path: "/settings", router: settingsRoutes },
