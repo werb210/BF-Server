@@ -112,6 +112,11 @@ describe("the permission matrix", () => {
     // BF_SERVER_v873_LENDER_API - Submit by API on a file is application work; the connection set-up is a lender setting.
     expect(r("POST", "/lender-connections/applications/a1/lenders/l1/submit")).toEqual({ area: "applications", action: "create" });
     expect(r("PUT", "/lender-connections/lenders/l1")).toEqual({ area: "lenders", action: "edit" });
+    // BF_SERVER_v875_INTEGRATIONS - webhooks, API keys and Microsoft sign-in are Admin settings.
+    expect(r("POST", "/webhook-endpoints")).toEqual({ area: "settings", action: "edit" });
+    expect(r("GET", "/api-keys")).toEqual({ area: "settings", action: "view" });
+    expect(r("DELETE", "/api-keys/k1")).toEqual({ area: "settings", action: "delete" });
+    expect(r("PUT", "/sso-settings")).toEqual({ area: "settings", action: "edit" });
     expect(r("GET", "/portal/documents/1")).toEqual({ area: "documents", action: "view" });
     expect(r("GET", "/portal/lender-products")).toEqual({ area: "lenders", action: "view" });
     expect(r("POST", "/quickbooks/applications/a1/retry")).toEqual({ area: "applications", action: "create" });

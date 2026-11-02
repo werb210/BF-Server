@@ -230,6 +230,8 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/lead-scores\/settings(\/|$)/, "marketing"],
   [/^\/lead-scores(\/|$)/, "contacts"],
   [/^\/website-kit(\/|$)/, "marketing"],
+  // BF_SERVER_v875_INTEGRATIONS - webhooks, API keys and Microsoft sign-in are Admin settings.
+  [/^\/(webhook-endpoints|api-keys|sso-settings)(\/|$)/, "settings"],
   [/^\/(marketing|automations)(\/|$)/, "marketing"], // automations (workflows) are a Marketing-role tool
   [/^\/(reporting|reports)(\/|$)/, "reports"],
   // A client's fee invoice on a file is application work; the QuickBooks connection itself is billing.

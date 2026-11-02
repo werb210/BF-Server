@@ -22,6 +22,7 @@ import { pool } from "../db.js";
 import { notifyAllStaff } from "../services/notifications/notifyAllStaff.js";
 import { isReviewPhone, reviewCodeMatches } from "../services/reviewLogin.js"; // BF_SERVER_REVIEW_LOGIN_v710
 import microsoftRoutes from "./authMicrosoft.js";
+import ssoRoutes from "./authSso.js"; // BF_SERVER_v875_SSO
 
 import { checkTextable, NOT_TEXTABLE_MESSAGES } from "../lib/phoneLineType.js"; // BF_SERVER_PHONE_LINE_TYPE_v771
 import { checkOtpSend, OTP_GUARD_MESSAGES, OTP_GUARD_STATUS } from "../lib/otpGuard.js"; // BF_SERVER_OTP_ABUSE_GUARD_v772
@@ -818,6 +819,9 @@ router.post("/url-ticket", requireStaffAuth, async (req: any, res: any) => {
 });
 
 router.get("/me", requireAuthAllowClient, authMeHandler); // BF_SERVER_v784_STAFF_ONLY_AUTH - client app reads its own identity
+// BF_SERVER_v875_SSO - "Sign in with Microsoft". Before microsoftRoutes: that router puts requireAuth in front of
+// everything it sees.
+router.use("/sso", ssoRoutes);
 router.use(microsoftRoutes);
 
 export default router;

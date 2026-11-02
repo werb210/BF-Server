@@ -266,6 +266,12 @@ export async function start(): Promise<void> {
     try { const w = startLenderSyncWorker(pool); workerStops.push(w.stop); console.log("[startup] lender-sync worker started"); }
     catch (err) { console.error("[startup] lender-sync worker failed to start:", err); }
 
+    // BF_SERVER_v875_WEBHOOKS - outgoing webhooks: due deliveries every 10 seconds (batched per endpoint), log kept 30 days.
+    const { startOutboundWebhookWorker } = await import("./workers/outboundWebhookWorker.js");
+    await workerStagger();
+    try { const w = startOutboundWebhookWorker(pool); workerStops.push(w.stop); console.log("[startup] outbound-webhook worker started"); }
+    catch (err) { console.error("[startup] outbound-webhook worker failed to start:", err); }
+
     // BF_SERVER_BLOCK_v146_LENDER_PACKAGE_WORKER_v1
     const { startLenderPackageWorker } = await import("./workers/lenderPackageWorker.js");
     await workerStagger();

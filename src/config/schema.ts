@@ -133,6 +133,7 @@ export const EnvSchema = z
     ABANDONED_EXCLUDE_PHONES: z.string().optional(), // phone number(s), E.164; read in routes/marketing.ts
     ACCOUNTANT_INVITE_SEND_AS: z.string().optional(), // email address(es); read in services/accountantInvite.ts
     AGENT_SERVICE_JWT_SECRET: z.string().optional(), // Secret used to sign/verify these JWTs
+    API_KEY_PEPPER: z.string().optional(), // credential (secret), at least 10 characters; hashes public API keys (JWT_SECRET when unset); read in apiKeys/keys.ts // BF_SERVER_v875_API_KEYS
     AUTOMATION_QUIET_TZ: z.string().optional(), // IANA time zone; read in modules/automation/automationEngine.ts
     AZURE_DOC_INTEL_ENDPOINT: z.string().optional(), // setting; read in modules/ocr/azureDocIntelProvider.ts
     AZURE_DOC_INTEL_KEY: z.string().optional(), // credential (secret); read in modules/ocr/azureDocIntelProvider.ts
@@ -285,6 +286,10 @@ export const EnvSchema = z
     SIGNNOW_STUB_MODE: z.string().optional(), // setting; read in services/submission/orchestrator.ts
     SIGNNOW_WEBHOOK_SECRET: z.string().optional(), // credential (secret); read in routes/signnow.ts
     SIGNNOW_WEBHOOK_URL: z.string().optional(), // URL; read in signnow/ensureWebhookSubscription.ts
+    SSO_MICROSOFT_REDIRECT_URI: z.string().optional(), // URL; Microsoft sign-in callback (default PUBLIC_BASE_URL/api/auth/sso/microsoft/callback); read in sso/oidc.ts // BF_SERVER_v875_SSO
+    SSO_MICROSOFT_TENANT: z.string().optional(), // identifier (Entra tenant GUID; default MSAL_TENANT_ID, else Boreal's tenant); read in sso/oidc.ts // BF_SERVER_v875_SSO
+    SSO_RATE_LIMIT: z.string().optional(), // number, sign-in attempts per address per 15 minutes (default 60); read in routes/authSso.ts // BF_SERVER_v875_SSO
+    SSO_RETURN_URL: z.string().optional(), // URL; the portal sign-in page after Microsoft sign-in (default PORTAL_URL/login); read in sso/oidc.ts // BF_SERVER_v875_SSO
     TWILIO_DEFAULT_OUTBOUND_CALLER_ID: z.string().optional(), // identifier; read in telephony/routes/telephonyRoutes.ts
     TWILIO_LOOKUP_LINE_TYPE: z.string().optional(), // setting; read in lib/phoneLineType.ts
     TWILIO_MAIN_LINE_NUMBER: z.string().optional(), // phone number(s), E.164; read in voice/directLines.ts

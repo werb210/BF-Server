@@ -158,6 +158,11 @@ import lenderWebhooksRoutes from "./lenderWebhooks.js";
 // BF_SERVER_v874_MARKETING_TOOLS - lead scoring and the website kit (staff settings; the public kit on other websites).
 import leadScoreRoutes from "./leadScores.js";
 import { websiteKitAdminRoutes, websiteKitPublicRoutes } from "./websiteKit.js";
+// BF_SERVER_v875_INTEGRATIONS - outgoing webhooks, API keys and the public REST API, Microsoft sign-in settings.
+import webhookEndpointsRoutes from "./webhookEndpoints.js";
+import apiKeysRoutes from "./apiKeys.js";
+import ssoSettingsRoutes from "./ssoSettings.js";
+import publicApiRoutes from "../publicApi/router.js";
 import { scopedAssistantRequest } from "../visibility/scopedDb.js";
 import { recordGuard, type GuardRule } from "../visibility/recordGuard.js";
 import mayaStaffInsightsRouter from "./mayaStaffInsights.js"; // BF_SERVER_MAYA_INSIGHTS_v655
@@ -442,6 +447,12 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/lead-scores", router: leadScoreRoutes }, // staff: scores (record visibility applies); Admin/Marketing: rules
   { path: "/website-kit", router: websiteKitAdminRoutes }, // Admin/Marketing: the silo's kit settings and forms
   { path: "/kit", router: websiteKitPublicRoutes }, // public: answers only the website addresses listed for the key's silo
+  // BF_SERVER_v875_INTEGRATIONS - Admin set-up per silo (webhooks, API keys) and Boreal-wide (Microsoft sign-in); the
+  // public REST API answers only to an API key (its own JSON errors, the key's silo and permissions).
+  { path: "/webhook-endpoints", router: webhookEndpointsRoutes },
+  { path: "/api-keys", router: apiKeysRoutes },
+  { path: "/sso-settings", router: ssoSettingsRoutes },
+  { path: "/open/v1", router: publicApiRoutes },
 ];
 
 // BF_SERVER_v870_CRM_DATA_MODEL - staff mounts whose routes address one application by id (router-relative patterns).
@@ -548,6 +559,13 @@ export const ROUTES: ApiRoute[] = [
   { method: "POST", path: "/api/kit/:key/chat", roles: [] },
   { method: "POST", path: "/api/kit/:key/track", roles: [] },
   { method: "POST", path: "/api/kit/:key/consent", roles: [] },
+  // BF_SERVER_v875_INTEGRATIONS - Microsoft sign-in (state cookie + PKCE, one-time hand-off code) and the public REST
+  // API (API key in the Authorization header; the OpenAPI document is open).
+  { method: "GET", path: "/api/auth/sso/config", roles: [] },
+  { method: "GET", path: "/api/auth/sso/:provider/start", roles: [] },
+  { method: "GET", path: "/api/auth/sso/:provider/callback", roles: [] },
+  { method: "POST", path: "/api/auth/sso/exchange", roles: [] },
+  { method: "GET", path: "/api/open/v1/openapi.json", roles: [] },
   { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
   { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },
