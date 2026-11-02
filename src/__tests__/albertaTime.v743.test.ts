@@ -33,7 +33,7 @@ describe("Alberta time is UTC-6 all year", () => {
     // place that names it, and it computes it as ALBERTA_TZ (checked below).
     // BF_SERVER_v821_DIALER - voice/callHours.ts is a staff member's own do-not-disturb hours in a time zone they
     // choose (default America/Edmonton, DST via Intl on purpose). It is not business hours and never uses ALBERTA_TZ.
-    const allowed = [join("modules", "automation", "graph.ts"), join("voice", "callHours.ts")];
+    const allowed = [join("modules", "automation", "graph.ts"), join("voice", "callHours.ts"), join("lib", "permanentTime.ts")]; // v866: permanentTime.ts is the one map from the old zone names to the all-year zones
     const hits = walk("src").filter((p) => readFileSync(p, "utf8").includes("America/Edmonton") && !allowed.some((a) => p.endsWith(a)));
     expect(hits).toEqual([]);
     expect(effectiveTz("America/Edmonton")).toBe(ALBERTA_TZ);
