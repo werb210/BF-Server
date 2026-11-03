@@ -93,7 +93,6 @@ import naicsRoutes from "./naics.js"; // BF_SERVER_NAICS_v83 (public)
 import privacyRoutes from "./privacy.js"; // BF_SERVER_v868_QUEBEC_CONSENT (public)
 // BF_SERVER_v869_SETTINGS_PACK - Settings pack ported from KS-server #38 (each router checks its own roles).
 import phoneMenuRoutes from "./phoneMenu.js";
-import bookingSettingsRoutes from "./bookingSettings.js";
 import securityRoutes from "./security.js";
 import neverLogRoutes from "./neverLog.js";
 import leadRotationRoutes from "./leadRotation.js";
@@ -408,7 +407,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/privacy", router: privacyRoutes }, // BF_SERVER_v868_QUEBEC_CONSENT - GET /api/privacy/region (public)
   // BF_SERVER_v869_SETTINGS_PACK
   { path: "/phone-menu", router: phoneMenuRoutes }, // Admin: Settings > Phone menu (the 866 menu)
-  { path: "/booking-settings", router: bookingSettingsRoutes }, // Admin: Settings > Booking pages; staff: own link
+  // BF_SERVER_v885_BOOKING_ORIGINAL - /booking-settings (Settings > Booking pages, My booking link) retired.
   { path: "/security", router: securityRoutes }, // staff: own sessions; Admin: anyone's, and the strong sign-in switch
   { path: "/never-log", router: neverLogRoutes }, // Admin: addresses and domains never logged to the CRM
   { path: "/lead-rotation", router: leadRotationRoutes }, // Admin: round-robin owners for new leads (per silo); staff: away

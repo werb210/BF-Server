@@ -16,6 +16,12 @@ export const TEAM_SLUG = "team";
 /** The link name for a staff member's own page: their first name (else the start of their email), lower case. */
 export const slugOf = (firstName: string | null, email: string) => String(firstName || email.split(/[.@]/)[0] || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// BF_SERVER_v885_BOOKING_ORIGINAL - the one booking page is the website's /book-<name> (e.g. www.boreal.financial/book-todd).
+export function websiteBookingUrl(staffFirstName: string | null): string {
+  const site = (process.env.BF_WEBSITE_URL ?? process.env.WEBSITE_URL ?? "https://www.boreal.financial").replace(/\/+$/, "");
+  const slug = String(staffFirstName ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return slug ? `${site}/book-${slug}` : `${site}/contact`;
+}
 export function staffPageUrl(slug: string): string {
   return `${clientUrl().replace(/\/+$/, "")}/book/${encodeURIComponent(slug)}`;
 }
@@ -57,8 +63,11 @@ export function normalizeBookingSettings(raw: unknown): BookingSettings {
   };
 }
 
-export async function bookingSettings(db: Q): Promise<BookingSettings> {
-  return readSetting(db, "booking", normalizeBookingSettings);
+// BF_SERVER_v885_BOOKING_ORIGINAL - the Booking pages settings are retired (they duplicated Todd's website booking page):
+// bookings run on the original hours and the original 30-minute call, whatever an old saved setting says. The client's
+// own cancel / reschedule link and the reminders stay.
+export async function bookingSettings(_db: Q): Promise<BookingSettings> {
+  return { ...DEFAULT_BOOKING_SETTINGS, team_page: false };
 }
 export async function saveBookingSettings(db: Q, raw: unknown, actor: string | null): Promise<BookingSettings> {
   const value = normalizeBookingSettings(raw);
@@ -76,9 +85,8 @@ export async function listMeetingTypes(db: Q, opts: { activeOnly?: boolean } = {
 }
 
 /** The meeting types a page offers: the Admin's active ones, or the original 30-minute phone call when none exist. */
-export async function offeredTypes(db: Q): Promise<MeetingType[]> {
-  const types = await listMeetingTypes(db, { activeOnly: true });
-  return types.length ? types : [DEFAULT_MEETING_TYPE];
+export async function offeredTypes(_db: Q): Promise<MeetingType[]> {
+  return [DEFAULT_MEETING_TYPE]; // BF_SERVER_v885_BOOKING_ORIGINAL - meeting types retired with Booking pages
 }
 
 export async function findOfferedType(db: Q, idOrSlug: unknown): Promise<MeetingType | null> {
@@ -196,7 +204,7 @@ export function reminderSms(b: BookingMessageInput, which: "24h" | "1h"): string
 }
 
 export function cancelledEmail(b: BookingMessageInput): { subject: string; text: string; html: string } {
-  const text = [`Hi ${b.clientName},`, "", `Your ${b.meetingName.toLowerCase()} on ${whenText(b.startsAt)} is cancelled.`, `You can book a new time at ${staffPageUrl(TEAM_SLUG)}.`, "", brandName()].join("\n");
+  const text = [`Hi ${b.clientName},`, "", `Your ${b.meetingName.toLowerCase()} on ${whenText(b.startsAt)} is cancelled.`, `You can book a new time at ${websiteBookingUrl(b.staffFirstName)}.`, "", brandName()].join("\n");
   return { subject: `Cancelled: ${b.meetingName} on ${whenText(b.startsAt)}`, text, html: `<div style="font-family:Arial,sans-serif;font-size:15px;color:#111827">${text.split("\n").map((l) => (l ? `<p style="margin:0 0 8px">${esc(l)}</p>` : "")).join("")}</div>` };
 }
 
