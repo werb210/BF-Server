@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import crmRoutes from "../routes/crm.js";
 import { normalizeTag } from "../modules/crmUnify/tags.js";
 
@@ -62,8 +63,8 @@ describe("v856 one CRM (real Postgres)", () => {
     await pool.query(`INSERT INTO application_form_responses (application_id, doc_type, data) VALUES ($1, 'professional_advisors', $2::jsonb)`,
       [appId, JSON.stringify({ advisors: { cpa: { firm: "Numbers LLP", contact: "Ann Count", email: `ann-${tag}@numbers.ca`, phone: "403-555-0100" } } })]);
     // The migration twice: the company repair and the tag clean-up run on the data above, and it is safe to repeat.
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
   });
 
   afterAll(async () => {
@@ -282,7 +283,7 @@ describe("v856 people, roles, drafts and merges (real Postgres)", () => {
     for (let i = 0; i < 2; i++) {
       await pool.query(`INSERT INTO tasks (silo, title, type, priority, assignee_user_id, contact_id, source, created_at) VALUES ('BF', 'Call: started an application, did not finish', 'CALL', 'HIGH', $1, $2, 'WORKFLOW', now() - ($3 || ' minutes')::interval)`, [ADMIN, loner, String(10 - i)]);
     }
-    await pool.query(readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
     const { syncApplicationPeople } = await import("../modules/crmUnify/peopleSync.js");
     await syncApplicationPeople(pool, appSub);
     await syncApplicationPeople(pool, appSub); // a second run adds nothing

@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import fraudRoutes from "../routes/fraud.js";
 import type { Q } from "../fraud/types.js";
 import { runFraudChecks } from "../fraud/engine.js";
@@ -52,8 +53,8 @@ function app() {
 
 describe("BF v846 fraud suite (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     savedSettings = (await pool.query(`SELECT key, value FROM settings WHERE key = ANY($1::text[])`, [Object.values(SETTING_KEYS)])).rows;
     await pool.query(`INSERT INTO users (id, email, active, role, first_name, last_name) VALUES ($1, $2, true, 'Admin', 'Pat', 'Admin'), ($3, $4, true, 'Admin', 'Second', 'Admin')`, [ADMIN, `a-${tag}@example.com`, ADMIN2, `b-${tag}@example.com`]);
     for (const [id, name, phone, email] of [[contactA, "Jane Doe", "5875550100", `jane-${tag}@acme.example`], [contactB, "Sam Roe", "4035550199", `sam-${tag}@other.example`], [contactF, "Jay Fraud", "5875550100", `jay-${tag}@fraud.example`]]) {

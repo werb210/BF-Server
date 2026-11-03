@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { runFeeInvoiceTick, syncFeeInvoice, getInvoiceRow } from "../services/quickbooks/feeInvoices.js";
 import { exchangeCodeAndConnect, accessToken, getConnection } from "../services/quickbooks/qboClient.js";
 import { decryptToken } from "../services/quickbooks/qboCrypto.js";
@@ -17,8 +18,8 @@ const db = { query: (sql: string, params?: unknown[]) => pool.query(sql, params 
 
 describe("v852 QuickBooks fee invoices (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     await pool.query(`DELETE FROM qbo_connections`);
     vi.spyOn(console, "info").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});

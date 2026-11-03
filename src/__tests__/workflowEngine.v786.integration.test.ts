@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { dispatchEvent, runEnrollment, type EngineDeps } from "../modules/automation/automationEngine.js";
 import { convertV1Rules, runDailyTriggers } from "../modules/automation/graphEngine.js";
 
@@ -33,7 +34,7 @@ const enrollmentsOf = async (ruleId: string) => (await pool.query(`SELECT * FROM
 
 describe("v786 workflow engine (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync("migrations/2026_10_11_workflow_graph.sql", "utf8"));
+    await rerunMigration(pool, readFileSync("migrations/2026_10_11_workflow_graph.sql", "utf8"));
     await pool.query(`INSERT INTO users (id, email, role, active) VALUES ($1, $2, 'Staff', true)`, [userId, `${tag}@boreal.financial`]);
     await pool.query(`INSERT INTO contacts (id, name, first_name, phone, silo, tags, owner_id, lead_status) VALUES ($1, $2, 'Pat', '+17805550000', 'BF', ARRAY[$3], $4, 'Hot')`, [contactId, "Pat " + tag, tag, userId]);
   });

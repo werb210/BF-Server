@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createApp } from "../app.js";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { deps } from "../system/deps.js";
 import { extractCardRefs, mentionsMaya, postTeamAlert, runDueReminders } from "../services/team/teamPhaseC.js";
 
@@ -21,7 +22,7 @@ describe("v671 team phase C", () => {
     deps.db.ready = true;
     (deps.db as any).client = pool;
     for (const f of ["2026_09_28_v643_team_prefs.sql", "2026_09_28_v658_team_phase_b.sql", "2026_09_28_v671_team_phase_c.sql"]) {
-      await pool.query(readFileSync("migrations/" + f, "utf8"));
+      await rerunMigration(pool, readFileSync("migrations/" + f, "utf8"));
     }
   });
   beforeEach(() => { deps.db.ready = true; (deps.db as any).client = pool; });

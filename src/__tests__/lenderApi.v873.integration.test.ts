@@ -10,6 +10,7 @@ import jwt from "jsonwebtoken";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { clearVisibilityCache } from "../visibility/scope.js";
 import { markReady } from "../startupState.js";
 import { deps } from "../system/deps.js";
@@ -47,8 +48,8 @@ describe("v873 lender API connections (real Postgres)", () => {
     deps.db.client = pool;
     deps.db.ready = true;
     setStaffUserLoader(dbStaffUserLoader, { cache: false });
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     process.env.LENDER_CREDENTIALS_ENCRYPTION_KEY = "c".repeat(64);
     for (const [id, role] of [[ADMIN, "Admin"], [STAFF, "Staff"]]) {
       await pool.query(`INSERT INTO users (id, email, active, role, first_name, last_name) VALUES ($1, $2, true, $3, 'L', 'Api')`, [id, `${role.toLowerCase()}-${tag}@example.com`, role]);

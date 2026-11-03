@@ -15,6 +15,7 @@ vi.mock("../services/notifications/notifyAllStaff.js", () => ({ notifyAllStaff }
 vi.mock("../modules/automation/automationEngine.js", async (orig) => ({ ...(await orig<any>()), emitAutomationEvent }));
 
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { markReady } from "../startupState.js";
 import { deps } from "../system/deps.js";
 import { clearVisibilityCache } from "../visibility/scope.js";
@@ -54,8 +55,8 @@ describe("v874 marketing tools (real Postgres)", () => {
     deps.db.client = pool;
     deps.db.ready = true;
     setStaffUserLoader(dbStaffUserLoader, { cache: false });
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     savedKit = (await pool.query(`SELECT value FROM boreal_settings WHERE key = $1`, [KIT_KEY])).rows[0]?.value;
     await pool.query(`INSERT INTO users (id, email, active, role, first_name, last_name) VALUES ($1, $2, true, 'Admin', 'M', 'Tools')`, [ADMIN, `admin-${tag}@example.com`]);
     await pool.query(
