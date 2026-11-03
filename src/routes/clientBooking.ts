@@ -10,8 +10,8 @@ import { pool } from "../db.js";
 import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 import { brandName, supportPhone } from "../settingsPack/boreal.js";
 import {
-  TEAM_SLUG, bookingByToken, bookingSettings, cancelledEmail, confirmationEmail, findOfferedType, logBookingTimeline, markCancelled,
-  offeredTypes, removeCalendarEvent, slugOf, staffForSlug, type BookingMessageInput,
+  bookingByToken, bookingSettings, cancelledEmail, confirmationEmail, findOfferedType, logBookingTimeline, markCancelled,
+  removeCalendarEvent, slugOf, staffForSlug, type BookingMessageInput,
 } from "../booking/bookingPages.js";
 import type { Q } from "../settingsPack/common.js";
 
@@ -38,21 +38,7 @@ router.get("/staff/:slug", safeHandler(async (req: any, res: any) => {
   res.json({ staff: { id: s.id, firstName: s.first_name || "your advisor", slug: slugOf(s.first_name, s.email) } });
 }));
 
-// BF_SERVER_v869_SETTINGS_PACK_BOOKING - everything a booking page shows: whose page, the meeting types and the time zone.
-router.get("/page/:slug", safeHandler(async (req: any, res: any) => {
-  const slug = String(req.params.slug ?? "").toLowerCase();
-  const settings = await bookingSettings(db());
-  let staff: { id: string; firstName: string; slug: string } | null = null;
-  if (slug === TEAM_SLUG) {
-    if (!settings.team_page) { res.status(404).json({ error: "not_found" }); return; }
-  } else {
-    const s = await staffForSlug(slug);
-    if (!s) { res.status(404).json({ error: "not_found" }); return; }
-    staff = { id: s.id, firstName: s.first_name || "your advisor", slug: slugOf(s.first_name, s.email) };
-  }
-  res.setHeader("Cache-Control", "no-store");
-  res.json({ ok: true, company: brandName(), team: slug === TEAM_SLUG, staff, meetingTypes: (await offeredTypes(db())).map(publicType), timeZone: brokerageTimeZone(), zoneLabel: zoneLabel() });
-}));
+// BF_SERVER_v885_BOOKING_ORIGINAL - GET /page/:slug (the client-app booking page) is retired; the website page uses /staff/:slug.
 
 router.get("/slots", safeHandler(async (req: any, res: any) => {
   const staffId = typeof req.query?.staff === "string" && req.query.staff !== "any" ? req.query.staff : null;

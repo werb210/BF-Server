@@ -178,7 +178,6 @@ const ALWAYS_ALLOWED: ReadonlyArray<{ methods?: RegExp; path: RegExp }> = [
   { methods: /^(GET|HEAD)$/, path: /^\/settings(\/branding)?\/?$/ },
   { path: /^\/teams\/(me|options)$/ },
   { path: /^\/security\/(status|me)(\/|$)/ },
-  { path: /^\/booking-settings\/my-link$/ },
   { path: /^\/lead-rotation\/me$/ },
   { path: /^\/task-defaults(\/|$)/ },
   { methods: /^(GET|HEAD)$/, path: /^\/custom-fields(\/[^/]+)?\/?$/ },
