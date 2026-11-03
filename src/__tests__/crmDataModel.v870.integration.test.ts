@@ -13,6 +13,7 @@ import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import crmRoutes from "../routes/crm.js";
 import companiesRoutes from "../routes/companies.js";
 import portalRoutes from "../routes/portal.js";
@@ -46,7 +47,7 @@ const MIGRATION = "migrations/2026_11_11_v870_crm_data_model.sql";
 // 2026-11-02). Postgres aborts one side; the migration is idempotent, so running it again is the right answer.
 async function runMigrationRetryingDeadlocks(): Promise<void> {
   for (let attempt = 1; ; attempt++) {
-    try { await pool.query(readFileSync(MIGRATION, "utf8")); return; }
+    try { await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); return; }
     catch (e: any) {
       if (attempt >= 5 || !["40P01", "55P03"].includes(String(e?.code))) throw e;
       await new Promise((r) => setTimeout(r, 200 * attempt));

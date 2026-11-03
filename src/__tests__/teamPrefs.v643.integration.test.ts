@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createApp } from "../app.js";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { deps } from "../system/deps.js";
 
 const SECRET = process.env.JWT_SECRET || "ci-integration-secret-min-10";
@@ -20,7 +21,7 @@ describe("v643 team mute / unread / status", () => {
   beforeAll(async () => {
     deps.db.ready = true;
     (deps.db as any).client = pool;
-    await pool.query(readFileSync("migrations/2026_09_28_v643_team_prefs.sql", "utf8"));
+    await rerunMigration(pool, readFileSync("migrations/2026_09_28_v643_team_prefs.sql", "utf8"));
     const c = await pool.query("INSERT INTO team_channels (kind, name, created_by) VALUES ('channel', 'v643-test', $1) RETURNING id", [me]);
     channelId = c.rows[0].id;
     await pool.query("INSERT INTO team_channel_members (channel_id, user_id, last_read_at) VALUES ($1, $2, now()), ($1, $3, now())", [channelId, me, other]);

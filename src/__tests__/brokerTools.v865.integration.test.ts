@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import portalRoutes from "../routes/portal.js";
 import brokerToolsRoutes from "../routes/brokerTools.js";
 import clientBrokerRoutes from "../routes/clientBroker.js";
@@ -37,8 +38,8 @@ describe("broker tools (real Postgres)", () => {
     markReady();
     deps.db.client = pool;
     deps.db.ready = true;
-    for (const m of MIGRATIONS) await pool.query(readFileSync(m, "utf8"));
-    for (const m of MIGRATIONS) await pool.query(readFileSync(m, "utf8")); // safe to run again
+    for (const m of MIGRATIONS) await rerunMigration(pool, readFileSync(m, "utf8"));
+    for (const m of MIGRATIONS) await rerunMigration(pool, readFileSync(m, "utf8")); // safe to run again
     for (const [id, role, first] of [[ADMIN, "Admin", "Ada"], [STAFF, "Staff", "Sam"]]) {
       await pool.query(`INSERT INTO users (id, email, active, role, first_name, last_name) VALUES ($1, $2, true, $3, $4, 'Broker')`, [id, `${first.toLowerCase()}-${tag}@example.com`, role, first]);
     }

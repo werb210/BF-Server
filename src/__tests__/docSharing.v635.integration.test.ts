@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createApp } from "../app.js";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { deps } from "../system/deps.js";
 
 const SECRET = process.env.JWT_SECRET || "ci-integration-secret-min-10";
@@ -36,7 +37,7 @@ describe("v635 documents follow the client", () => {
     (deps.db as any).client = pool;
     // A database built from the schema snapshot has not run migrations newer than the snapshot;
     // production runs this file on startup. Apply it here the same way (it is idempotent).
-    await pool.query(readFileSync("migrations/2026_09_28_v635_document_shares.sql", "utf8"));
+    await rerunMigration(pool, readFileSync("migrations/2026_09_28_v635_document_shares.sql", "utf8"));
     await pool.query("INSERT INTO contacts (id, name, phone, silo) VALUES ($1, 'Share Client', $2, 'BF')", [contactId, phone]);
     await addApp(capital, "Test - Todd's Gym", reqMeta);
     await addApp(equipment, "TEST TODDS GYM", reqMeta);

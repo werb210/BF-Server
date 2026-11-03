@@ -8,6 +8,7 @@ import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import automations from "../routes/automations.js";
 
 const tag = "v792" + Math.floor(Math.random() * 1e6);
@@ -35,7 +36,7 @@ const enroll = (ruleId: string, body: Record<string, unknown>, role = "Staff") =
 
 describe("v792 workflow test runs (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync("migrations/2026_10_11_workflow_graph.sql", "utf8"));
+    await rerunMigration(pool, readFileSync("migrations/2026_10_11_workflow_graph.sql", "utf8"));
     await pool.query(`INSERT INTO contacts (id, name, first_name, phone, silo, tags, lead_status) VALUES ($1, $2, 'Pat', '+17805550001', 'BF', ARRAY[$3], 'Hot')`, [contactId, "Pat " + tag, tag]);
   });
   afterAll(async () => {

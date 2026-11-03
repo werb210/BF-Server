@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { applicationRetention, documentRetention, contactRetention, placeHold, releaseHold, retentionReport } from "../retention/retention.js";
 
 const MIGRATION = "migrations/2026_10_24_v855_retention.sql";
@@ -31,8 +32,8 @@ async function cleanup() {
 
 describe("BF v855 retention and legal holds (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     await cleanup();
     await pool.query(`INSERT INTO contacts (id, name) VALUES ($1, 'Retention Contact')`, [CONTACT]);
     const ins = `INSERT INTO applications (id, name, created_at, updated_at, pipeline_state, status, submitted_at, contact_id)

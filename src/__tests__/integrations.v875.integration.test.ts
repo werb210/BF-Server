@@ -16,6 +16,7 @@ const { emitAutomationEvent } = vi.hoisted(() => ({ emitAutomationEvent: vi.fn()
 vi.mock("../modules/automation/automationEngine.js", async (orig) => ({ ...(await orig<any>()), emitAutomationEvent }));
 
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import { markReady } from "../startupState.js";
 import { deps } from "../system/deps.js";
 import { dbStaffUserLoader, setStaffUserLoader } from "../auth/staffUserState.js";
@@ -54,8 +55,8 @@ describe("v875 integrations (real Postgres)", () => {
     deps.db.ready = true;
     setStaffUserLoader(dbStaffUserLoader, { cache: false });
     setWebhookResolverForTests(async () => [{ address: "54.86.10.20", family: 4 }]);
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     await pool.query(`INSERT INTO users (id, email, active, role, first_name, last_name, silo, silos) VALUES ($1, $2, true, 'Admin', 'Int', 'Admin', 'BF', ARRAY['BF','SLF'])`,
       [ADMIN, `admin-${tag}@example.com`]);
   });

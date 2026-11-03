@@ -11,6 +11,7 @@ const notify = vi.hoisted(() => vi.fn(async () => ({ smsSent: 0, notifsCreated: 
 vi.mock("../services/notifications/notifyAllStaff.js", () => ({ notifyAllStaff: notify }));
 
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import ksSupportRoutes from "../routes/ksSupport.js";
 import { loadQueueSettings, matchKsCaller, parseQueueSettings, queueIsOpen, ringGroup, saveQueueSettings } from "../modules/ks/ksPhone.js";
 import { getTicket, listTickets, recordSupportCall, recordSupportVoicemail, replyToTicket, slaDueAt, updateTicket } from "../modules/ks/ksSupport.js";
@@ -42,8 +43,8 @@ function app() {
 
 describe("v853 Keystone phone line + support queue (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     process.env.KS_OPS_CRM_KEY = KEY;
     await pool.query(
       `INSERT INTO users (id, email, active, role, first_name, last_name, silo, silos) VALUES

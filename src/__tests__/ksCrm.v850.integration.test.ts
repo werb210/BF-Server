@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
+import { rerunMigration } from "./helpers/rerunMigration.js"; // BF_SERVER_v886_MIGRATION_RERUN
 import ksCrmRoutes from "../routes/ksCrm.js";
 import crmRoutes from "../routes/crm.js";
 import { loadCrmTimeline } from "../routes/crm/timeline.js";
@@ -40,8 +41,8 @@ const remember = (r: { body: { contact_id?: string | null; company_id?: string |
 
 describe("v850 Keystone CRM (real Postgres)", () => {
   beforeAll(async () => {
-    await pool.query(readFileSync(MIGRATION, "utf8"));
-    await pool.query(readFileSync(MIGRATION, "utf8")); // safe to run again
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8"));
+    await rerunMigration(pool, readFileSync(MIGRATION, "utf8")); // safe to run again
     process.env.KS_OPS_CRM_KEY = KEY;
     await pool.query(
       `INSERT INTO users (id, email, active, role, first_name, last_name, silo, silos) VALUES
