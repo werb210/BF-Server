@@ -353,10 +353,11 @@ router.get("/customers", safeHandler((req: any, res: any) => {
 // the CRM tab count badges. Cheap silo-scoped COUNT(*).
 router.get("/counts", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
-  // BF_SERVER_v870_CRM_DATA_MODEL - counts of what this user may see.
+  // BF_SERVER_v870_CRM_DATA_MODEL - counts of what this user may see. BF_SERVER_v885_COUNTS - archived (merged) contacts are
+  // left out, the same as the list, so the tab count matches the pager.
   const scope = await scopeForRequest(req, pool as any);
   const cp: unknown[] = [silo];
-  const c = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND ${ownerFilterSql(scope, "contact", "c", cp)}`, cp);
+  const c = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived' AND ${ownerFilterSql(scope, "contact", "c", cp)}`, cp);
   const cop: unknown[] = [silo];
   const co = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM companies co WHERE co.silo = $1 AND ${ownerFilterSql(scope, "company", "co", cop)}`, cop);
   res.json({ data: { contacts: c.rows[0]?.n ?? 0, companies: co.rows[0]?.n ?? 0 } });

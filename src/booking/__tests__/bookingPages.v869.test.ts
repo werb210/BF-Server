@@ -117,11 +117,10 @@ describe("reminders", () => {
     }
   });
 
-  it("does nothing for reminders the Admin switched off", async () => {
+  it("an old saved Booking pages setting no longer switches reminders off (BF_SERVER_v885_BOOKING_ORIGINAL)", async () => {
     remindersDb({ sms_reminders: true, sms_consent: true }, { reminders: { email_24h: false, email_1h: false, sms_24h: false, sms_1h: false } });
     const d = deps();
-    expect(await sendDueReminders({ query: h.query } as any, d)).toEqual({ email: 0, sms: 0, errors: 0 });
-    expect(claimed).toEqual([]);
+    expect((await sendDueReminders({ query: h.query } as any, d)).email).toBe(1);
   });
 });
 
@@ -155,33 +154,26 @@ describe("public booking pages", () => {
     h.createBooking.mockResolvedValue({ ok: true, booking: { id: "b-new", startsAt: "2026-12-08T16:00:00.000Z", staffFirstName: "Jane", kind: "teams", joinUrl: "https://meet.example/x", manageToken: TOKEN, contactId: "c1", contactCreated: true, durationMin: 45 } });
   });
 
-  it("a staff page and the team page show the meeting types; an unknown name is not found", async () => {
+  it("the client-app booking page is retired; the website's advisor lookup still works", async () => {
     const a = await pub();
-    const page = await request(a).get("/api/booking/page/jane");
-    expect(page.status).toBe(200);
-    expect(page.body.staff).toMatchObject({ id: JANE, firstName: "Jane" });
-    expect(page.body.meetingTypes[0]).toMatchObject({ name: "Intro call", duration_min: 45, kind: "video" });
-    const team = await request(a).get("/api/booking/page/team");
-    expect(team.body.team).toBe(true);
-    expect(team.body.staff).toBeNull();
-    expect((await request(a).get("/api/booking/page/nobody")).status).toBe(404);
+    expect((await request(a).get("/api/booking/page/jane")).status).toBe(404);
   });
 
-  it("booking a meeting type creates the booking, logs it on the contact's timeline and emails the change link", async () => {
+  it("booking creates the original call, logs it on the contact's timeline and emails the change link", async () => {
     const res = await request(await pub()).post("/api/booking").set("X-Forwarded-For", ip())
-      .send({ meetingTypeId: TYPE.id, name: "Pat Lee", email: "pat@x.test", phone: "403-555-0100", startsAt: "2026-12-08T16:00:00.000Z", sms_reminders: true });
+      .send({ kind: "teams", name: "Pat Lee", email: "pat@x.test", phone: "403-555-0100", startsAt: "2026-12-08T16:00:00.000Z", sms_reminders: true });
     expect(res.status).toBe(201);
     const input = h.createBooking.mock.calls[0]![0];
-    expect(input).toMatchObject({ kind: "teams", meetingType: { id: TYPE.id, duration_min: 45 }, smsReminders: false }); // no CASL consent, no texts
+    expect(input).toMatchObject({ kind: "teams", meetingType: { duration_min: 30 }, smsReminders: false }); // no CASL consent, no texts
     const [, tl] = callsMatching(h.query, /INSERT INTO crm_timeline_events/)[0]!;
-    expect(tl).toEqual(["c1", "booking_made", expect.stringContaining('"meeting_type":"Intro call"')]);
+    expect(tl).toEqual(["c1", "booking_made", expect.stringContaining('"booking_id":"b-new"')]);
     await vi.waitFor(() => expect(h.mail).toHaveBeenCalled());
     expect(h.mail.mock.calls[0]![0].text).toContain(`/book/manage/${TOKEN}`);
   });
 
   it("text reminders need the client's express consent", async () => {
     await request(await pub()).post("/api/booking").set("X-Forwarded-For", ip())
-      .send({ meetingTypeId: TYPE.id, name: "Pat Lee", email: "pat@x.test", phone: "403-555-0100", startsAt: "2026-12-08T16:00:00.000Z", sms_reminders: true,
+      .send({ kind: "phone", name: "Pat Lee", email: "pat@x.test", phone: "403-555-0100", startsAt: "2026-12-08T16:00:00.000Z", sms_reminders: true,
         casl_consent: true, casl_consent_text: "Yes, text me reminders.", casl_consent_at: new Date().toISOString() });
     expect(h.createBooking.mock.calls[0]![0].smsReminders).toBe(true);
   });
@@ -206,33 +198,4 @@ describe("public booking pages", () => {
   });
 });
 
-// ------------------------------------------------------------------ Settings > Booking pages
-const token = (id: string) => jwt.sign({ sub: id, id, role: "Admin", tokenVersion: 0, tv: 0 }, String(process.env.JWT_SECRET));
-describe("Settings > Booking pages", () => {
-  it("Admins add meeting types (audited); staff get their own link and the team link", async () => {
-    const audits: unknown[] = [];
-    h.query.mockReset();
-    h.query.mockImplementation(answerBySql([
-      [/FROM users\s+WHERE id = \$1|FROM users WHERE id/, (_s: string, p?: unknown[]) => ({ rows: [{ id: p?.[0], role: p?.[0] === JANE ? "Admin" : "Staff", active: true, status: "ACTIVE", token_version: 0, disabled: false }] })],
-      [/INSERT INTO booking_meeting_types/, (_s: string, p?: unknown[]) => ({ rows: [{ ...TYPE, slug: p?.[0], name: p?.[1] }] })],
-      [/FROM boreal_settings WHERE key = \$1/, { rows: [] }],
-      [/insert into audit_events/i, (_s: string, p?: unknown[]) => { audits.push(p?.[4]); return { rows: [] }; }],
-    ]));
-    const router = (await import("../../routes/bookingSettings.js")).default;
-    const a = express();
-    a.use(express.json());
-    a.use("/api/booking-settings", router);
-    const bad = await request(a).post("/api/booking-settings/meeting-types").set("Authorization", `Bearer ${token(JANE)}`).send({ name: "" });
-    expect(bad.status).toBe(400);
-    const ok = await request(a).post("/api/booking-settings/meeting-types").set("Authorization", `Bearer ${token(JANE)}`).send({ name: "Intro call", duration_min: 45, kind: "video" });
-    expect(ok.status).toBe(201);
-    expect(audits).toContain("booking_meeting_type.created");
-    const RAJ = "22222222-2222-4222-8222-222222222222";
-    const denied = await request(a).post("/api/booking-settings/meeting-types").set("Authorization", `Bearer ${token(RAJ)}`).send({ name: "x" });
-    expect(denied.status).toBe(403);
-    const mine = await request(a).get("/api/booking-settings/my-link").set("Authorization", `Bearer ${token(RAJ)}`);
-    expect(mine.body.mine).toMatchObject({ user_id: RAJ, slug: "raj" });
-    expect(mine.body.mine.url).toMatch(/\/book\/raj$/);
-    expect(mine.body.team).toMatch(/\/book\/team$/);
-  });
-});
+// BF_SERVER_v885_BOOKING_ORIGINAL - Settings > Booking pages (meeting types, my link) retired.

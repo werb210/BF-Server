@@ -90,10 +90,9 @@ export async function offeredTypes(_db: Q): Promise<MeetingType[]> {
 }
 
 export async function findOfferedType(db: Q, idOrSlug: unknown): Promise<MeetingType | null> {
-  const want = String(idOrSlug ?? "").trim();
-  const types = await offeredTypes(db);
-  if (!want) return types[0] ?? null;
-  return types.find((t) => t.id === want || t.slug === want) ?? null;
+  // BF_SERVER_v885_BOOKING_ORIGINAL - only the original call is offered; an old booking's retired type id reschedules as it.
+  void idOrSlug;
+  return (await offeredTypes(db))[0] ?? null;
 }
 
 export type TypeInput = { name: string; slug: string; description: string | null; duration_min: number; kind: "phone" | "video"; buffer_min: number; min_notice_min: number; max_days_ahead: number; active: boolean; sort: number };
