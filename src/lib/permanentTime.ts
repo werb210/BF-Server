@@ -12,6 +12,12 @@ export const PERMANENT_ZONES: Readonly<Record<string, string>> = {
   "America/Vancouver": "Etc/GMT+7", // UTC-7 all year
 };
 
+// BF_SERVER_v885_ALBERTA_ZONE_NAME - the zone NAME shown to staff for Alberta. Times are still computed with
+// ALBERTA_TZ (America/Regina, UTC-6 all year); showing "America/Regina" read as Saskatchewan time.
+export function displayZoneName(computeTz: string): string {
+  return Object.keys(PERMANENT_ZONES).find((name) => PERMANENT_ZONES[name] === computeTz) ?? computeTz;
+}
+
 export function isValidTimeZone(raw: unknown): boolean {
   const tz = String(raw ?? "").trim();
   if (!tz || tz.length > 64 || !/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(tz)) return false;

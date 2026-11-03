@@ -67,3 +67,26 @@ describe("v535 financial extraction", () => {
     expect(staff![1]).toEqual(["a1", "FY2024", null, "annual", "revenue", 33000000, "u1"]);
   });
 });
+
+describe("v885 credit summary periods", () => {
+  it("one column for the same period read from two documents with different labels", () => {
+    const table = buildTable([
+      cell("FY2026", "net_income", 481671, "annual", "2026-07-31"), cell("FY2026", "current_assets", 252983, "annual", "2026-07-31"),
+      cell("Jan-Jul 2026", "revenue", 1119284, "interim", "2026-07-31"), cell("Jan-Jul 2026", "net_income", 481671, "interim", "2026-07-31"),
+      cell("January-July 2026", "revenue", 1119284, "interim"), cell("January-July 2026", "gross_margin", 1119284, "interim"),
+    ]);
+    expect(table.periods.map((p) => p.label)).toEqual(["Jan-Jul 2026"]);
+    const row = (item: string) => table.rows.find((r) => r.item === item)?.values;
+    expect(row("revenue")).toEqual([1119284]);
+    expect(row("current_assets")).toEqual([252983]);
+    // gross profit equal to revenue with no cost of sales is not a gross margin
+    expect(row("gross_margin")).toBeUndefined();
+  });
+  it("keeps a fiscal year and an interim period apart when their figures differ", () => {
+    const table = buildTable([
+      cell("FY2025", "revenue", 2000000, "annual", "2025-07-31"),
+      cell("Jan-Jul 2025", "revenue", 1100000, "interim", "2025-07-31"),
+    ]);
+    expect(table.periods.map((p) => p.label)).toEqual(["FY2025", "Jan-Jul 2025"]);
+  });
+});

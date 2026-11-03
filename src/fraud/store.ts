@@ -1,6 +1,7 @@
 // BF_SERVER_v846_FRAUD - storage for check results, the fraud queue and the fraud settings.
 // Boreal has no plans: every one of the 15 checks is on. The two Admin settings live in the settings table
 // (keys fraud.watchlist_opt_in and fraud.include_prescreen_in_package, values "true" / "false").
+import { humanDuration } from "../lib/humanDuration.js";
 import type { Q } from "./types.js";
 import { FRAUD_CHECKS } from "./catalogue.js";
 import type { CheckResult, FraudStatus, Reason } from "./types.js";
@@ -21,6 +22,15 @@ export async function upsertResult(db: Q, applicationId: string, checkKey: strin
   );
 }
 
+// BF_SERVER_v885_FRAUD_TEXT - reasons stored before the wording fix say "changed 3791521 minute(s) after";
+// read them with the gap in words. Stored rows are not rewritten; the next scan stores the new wording.
+export function readableReasons(reasons: unknown[]): any[] {
+  return reasons.map((r: any) => {
+    const m = typeof r?.text === "string" ? r.text.match(/^The file was changed (\d+) minute\(s\) after it was created\.$/) : null;
+    return m ? { ...r, text: `The file was last changed ${humanDuration(Number(m[1]) * 60_000)} after it was created (dates stored in the PDF).` } : r;
+  });
+}
+
 export async function listResults(db: Q, applicationId: string): Promise<ResultRow[]> {
   const r = await db.query(
     `SELECT application_id, check_key, subject, status, reasons, details, provider, checked_at
@@ -29,7 +39,7 @@ export async function listResults(db: Q, applicationId: string): Promise<ResultR
   );
   return r.rows.map((x: any) => ({
     ...x,
-    reasons: Array.isArray(x.reasons) ? x.reasons : [],
+    reasons: Array.isArray(x.reasons) ? readableReasons(x.reasons) : [],
     details: x.details && typeof x.details === "object" ? x.details : {},
     checked_at: x.checked_at instanceof Date ? x.checked_at.toISOString() : String(x.checked_at),
   }));

@@ -2,6 +2,7 @@
 // staff review. This is deliberately NOT a verdict and never auto-rejects: it surfaces
 // reasons a human should look closer. The scoring is pure + deterministic (tested);
 // extractPdfMeta is the only side-effecting piece (parses a PDF buffer).
+import { humanDuration } from "../../lib/humanDuration.js";
 import { PDFDocument } from "pdf-lib";
 
 export type DocKind = "bank_statement" | "tax_return" | "financials" | "other";
@@ -81,8 +82,8 @@ export function scoreFraudSignals(meta: PdfMeta, ctx: { kind: DocKind; duplicate
 
   if (meta.createdAt != null && meta.modifiedAt != null && meta.modifiedAt - meta.createdAt > 60_000) {
     const severity = ctx.kind === "financials" ? "low" : "medium";
-    const mins = Math.round((meta.modifiedAt - meta.createdAt) / 60_000);
-    signals.push({ code: "modified_after_create", label: "Modified after creation", severity, detail: `Last modified ${mins} min after it was created.` });
+    // BF_SERVER_v885_FRAUD_TEXT - the gap in words, not a raw minute count.
+    signals.push({ code: "modified_after_create", label: "Modified after creation", severity, detail: `Last modified ${humanDuration(meta.modifiedAt - meta.createdAt)} after it was created.` });
   }
 
   if (meta.isPdf && !meta.parsed) {

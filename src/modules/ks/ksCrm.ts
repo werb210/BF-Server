@@ -439,7 +439,9 @@ export async function upsertKsCrm(q: Q, input: KsUpsertInput): Promise<KsUpsertR
     );
   }
   let newSteps = 0;
+  let highestStep = 0;
   for (const e of input.events) {
+    if (e.type === "demo_step" || e.type === "demo_completed") highestStep = Math.max(highestStep, stepNumberIn(e.summary));
     const added = await addTimelineNote(
       q,
       `event:${input.external_id}:${e.type}:${e.at}`,
@@ -449,11 +451,23 @@ export async function upsertKsCrm(q: Q, input: KsUpsertInput): Promise<KsUpsertR
     );
     if (added && e.type === "demo_step") newSteps += 1;
   }
-  if (newSteps) {
-    await q.query(`UPDATE ks_crm_refs SET demo_steps = demo_steps + $3 WHERE source = $1 AND external_id = $2`, [input.source, input.external_id, newSteps]);
+  // BF_SERVER_v885_KS_STEPS - the count of step events can miss one (two steps sent with the same time are one
+  // timeline entry), so the card said "8 steps done" next to "Reached step 9 of 9". Never less than the step reached.
+  if (newSteps || highestStep) {
+    await q.query(`UPDATE ks_crm_refs SET demo_steps = GREATEST(demo_steps + $3, $4) WHERE source = $1 AND external_id = $2`, [input.source, input.external_id, newSteps, highestStep]);
   }
 
   return { ok: true, contact_id: ids.contactId, company_id: ids.companyId, stage: companyStage ?? contactStage, created };
+}
+
+/** The step number in a demo event summary ("Reached step 9 of 9: Submit to lenders"), or 0. */
+export function stepNumberIn(summary: string | null | undefined): number {
+  const m = String(summary ?? "").match(/\bstep\s+(\d{1,3})\s+of\s+(\d{1,3})\b/i);
+  return m ? Math.min(Number(m[1]), Number(m[2])) : 0;
+}
+/** Steps done on a card: the stored count, but never fewer than the step the last event says was reached. */
+export function demoStepsDone(stored: unknown, lastSummary: string | null | undefined): number {
+  return Math.max(Number(stored ?? 0) || 0, stepNumberIn(lastSummary));
 }
 
 export type KsPipelineCard = {
@@ -558,7 +572,7 @@ export async function listKsPipeline(q: Q, opts: { search?: string | null; limit
     seats: r.seats == null ? null : Number(r.seats),
     status: r.status ?? null,
     demo_opened_at: r.demo_opened_at ? new Date(r.demo_opened_at).toISOString() : null,
-    demo_steps: Number(r.demo_steps ?? 0),
+    demo_steps: demoStepsDone(r.demo_steps, r.last_event_summary),
     demo_completed_at: r.demo_completed_at ? new Date(r.demo_completed_at).toISOString() : null,
     last_event_summary: r.last_event_summary ?? null,
     last_event_at: r.last_event_at ? new Date(r.last_event_at).toISOString() : null,

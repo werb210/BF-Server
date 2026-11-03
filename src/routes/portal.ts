@@ -12,7 +12,7 @@ import {
 } from "../modules/applications/applications.repo.js";
 // BF_SERVER_BLOCK_v202_PORTAL_FINANCIALS_ENDPOINT_v1
 import { listOcrFieldsForApplication } from "../modules/ocr/ocr.repo.js";
-import { OCR_FIELD_REGISTRY } from "../modules/ocr/ocrFieldRegistry.js";
+import { OCR_FIELD_REGISTRY, isMoneyOcrField, parseOcrAmount, ocrFieldDisplayLabel } from "../modules/ocr/ocrFieldRegistry.js";
 import { ApplicationStage } from "../modules/applications/pipelineState.js";
 import { PIPELINE_STATES as PIPELINE_STAGES } from "../modules/applications/pipelineState.js";
 import { safeHandler } from "../middleware/safeHandler.js";
@@ -160,6 +160,14 @@ function sanitizeField(fieldKey: string, rawValue: string | null): { value: stri
   const value = typeof rawValue === "string" ? rawValue.trim() : "";
   if (!value) return { value: null, status: "empty" };
 
+  // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - rows stored before the parser fix can hold a label
+  // fragment ("Receivable (A/R)", "for Liabilities and Equity $402,588.95") in a money field.
+  // Show those as unreadable instead of as a value; stored rows are left as they are.
+  if (isMoneyOcrField(fieldKey)) {
+    const n = parseOcrAmount(value);
+    if (n === null) return { value: null, status: "invalid_number" };
+    return { value: n, status: "ok" };
+  }
   if (NUMERIC_FIELDS.has(fieldKey)) {
     const n = Number(value.replace(/,/g, ""));
     if (!Number.isFinite(n)) return { value: null, status: "invalid_number" };
@@ -715,7 +723,7 @@ router.get(
           documentId: f.document_id,
           sourceDocumentType: f.source_document_type ?? null,
           fieldKey: f.field_key,
-          displayLabel: OCR_FIELD_LABEL_MAP.get(f.field_key) ?? f.field_key,
+          displayLabel: OCR_FIELD_LABEL_MAP.get(f.field_key) ?? ocrFieldDisplayLabel(f.field_key),
           value: sanitized.value,
           ocr_status: sanitized.status,
           confidence: f.confidence,

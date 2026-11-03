@@ -53,6 +53,9 @@ export const OCR_FIELD_REGISTRY: OcrFieldDefinition[] = [
   { field_key: "credit_cards", display_label: "Credit Cards", applies_to: ["balance_sheet"], required: false },
   { field_key: "payroll_liability", display_label: "Payroll", applies_to: ["balance_sheet"], required: false },
   { field_key: "other_accounts_payable", display_label: "Other Accounts Payable", applies_to: ["balance_sheet"], required: false },
+  // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - without its own entry, "Total Current Liabilities" was fuzzy-matched
+  // into Total Other Current Liabilities.
+  { field_key: "total_current_liabilities", display_label: "Total Current Liabilities", applies_to: ["balance_sheet"], required: false },
   { field_key: "total_other_current_liabilities", display_label: "Total Other Current Liabilities", applies_to: ["balance_sheet"], required: false },
   { field_key: "long_term_liabilities", display_label: "Long Term Liabilities", applies_to: ["balance_sheet"], required: false },
   { field_key: "total_liabilities", display_label: "Total Liabilities", applies_to: ["balance_sheet", "taxes"], required: false },
@@ -84,6 +87,8 @@ export const OCR_FIELD_REGISTRY: OcrFieldDefinition[] = [
   { field_key: "interest_income", display_label: "Interest Income", applies_to: ["income_statement"], required: false },
   { field_key: "research_development_costs", display_label: "Research and Development Costs", applies_to: ["income_statement"], required: false, aliases: ["R&D"] },
   { field_key: "extraordinary_gains_losses", display_label: "Extraordinary Gains or Losses", applies_to: ["income_statement"], required: false },
+  // BF_SERVER_v885_OCR_LABEL_FRAGMENTS - the model returns total_expenses; without an entry the portal showed the raw key.
+  { field_key: "total_expenses", display_label: "Total Expenses", applies_to: ["income_statement"], required: false, aliases: ["Total Operating Expenses"] },
 
   // -------- CASH FLOW STATEMENT --------
   { field_key: "change_in_accounts_receivable", display_label: "Change in Accounts Receivable", applies_to: ["cash_flow"], required: false },
@@ -152,6 +157,81 @@ export const OCR_FIELD_REGISTRY: OcrFieldDefinition[] = [
   { field_key: "company_phone", display_label: "Company Phone", applies_to: ["application"], required: false, aliases: ["Company phone #", "Business Phone"] },
   { field_key: "company_fax", display_label: "Company Fax", applies_to: ["application"], required: false, aliases: ["Company Fax #", "Business Fax"] },
 ];
+
+// BF_SERVER_v885_OCR_LABEL_FRAGMENTS - fields whose value is a dollar amount. A value
+// stored for one of these must be a plain number; text such as "Receivable (A/R)",
+// "Payable $57,010.55" or "for Liabilities and Equity $402,588.95" is the next label
+// on the statement, not this field's value.
+const NON_MONEY_KEYS = new Set([
+  "liability_vehicle_types",
+  "tax_id",
+  "business_number",
+  "corporation_name",
+  "tax_year",
+  "key_parties",
+  "holdback_percent",
+  "contract_executed_date",
+  "contract_completion_date",
+  "contract_additional_key_dates",
+  "general_contractor",
+  "subcontractor",
+  "contract_term",
+  "invoice_date",
+  "invoice_terms",
+]);
+const EXTRA_MONEY_KEYS = new Set([
+  "taxable_income",
+  "total_assets",
+  "contract_value",
+  "invoice_subtotal",
+  "invoice_tax",
+  "invoice_total",
+  "property_value",
+  "mortgage_balance",
+  "monthly_rent_or_mortgage",
+]);
+const MONEY_CATEGORIES = new Set<OcrDocumentCategory>(["balance_sheet", "income_statement", "cash_flow", "ar", "ap", "inventory", "equipment"]);
+
+export function isMoneyOcrField(key: string): boolean {
+  if (NON_MONEY_KEYS.has(key)) return false;
+  if (EXTRA_MONEY_KEYS.has(key)) return true;
+  const def = OCR_FIELD_REGISTRY.find((f) => f.field_key === key);
+  if (!def || def.applies_to === "all") return false;
+  return def.applies_to.some((c) => MONEY_CATEGORIES.has(c));
+}
+
+// Parses a statement amount: "$1,350.00", "(12,000)", "-5,000.25", "1,234 CAD",
+// ":$778,266.10". Returns null unless the whole value is one amount - any words
+// around the number mean the text was a label fragment, not a value.
+export function parseOcrAmount(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  let s = raw.trim().replace(/^[:=]+\s*/, "");
+  let negative = false;
+  const paren = s.match(/^\((.*)\)$/);
+  if (paren) { negative = true; s = paren[1]!.trim(); }
+  if (/^[-\u2212]/.test(s)) { negative = !negative; s = s.slice(1).trim(); }
+  if (/-$/.test(s)) { negative = !negative; s = s.slice(0, -1).trim(); }
+  s = s.replace(/^(?:CA\$|C\$|US\$|\$)\s*/i, "").replace(/\s*(?:CAD|USD|\$)$/i, "").trim();
+  const paren2 = s.match(/^\((.*)\)$/);
+  if (paren2) { negative = !negative; s = paren2[1]!.trim(); }
+  if (/^[-\u2212]/.test(s)) { negative = !negative; s = s.slice(1).trim(); }
+  if (!/^(?:\d{1,3}(?:[, ]\d{3})+|\d+)(?:\.\d+)?$/.test(s)) return null;
+  const n = Number(s.replace(/[, ]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return negative ? -n : n;
+}
+
+// Label for a field key; unknown keys read as words ("total_expenses" -> "Total Expenses").
+export function ocrFieldDisplayLabel(key: string): string {
+  const def = OCR_FIELD_REGISTRY.find((f) => f.field_key === key);
+  if (def) return def.display_label;
+  return String(key)
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 export function fetchOcrFieldRegistry(): OcrFieldDefinition[] {
   return [...OCR_FIELD_REGISTRY];

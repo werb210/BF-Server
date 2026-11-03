@@ -103,6 +103,7 @@ const STYLE = ["You write commercial credit write-ups for Boreal Financial, a Ca
   "House style (from real examples): plain, confident, factual prose; short paragraphs; money as $2.35MM for millions and $621M for thousands;",
   "Transaction = one or two sentences on what the client wants, why, and what it replaces. Overview = founding year and founder, what the business does,",
   "locations, staff, key customers, current lender and why they are moving, market position, and any special situation under its own short heading.",
+  "For when the business started, use application.business_start_date / application.founded_year exactly as given; never work out a year from years in business.",
   "Use ONLY the facts provided. Copy dollar figures exactly from the facts; never calculate new ones. If something is unknown, leave it out - never guess.",
   "Never promise approval or funding. Never mention personal lives of individuals."].join(" ");
 const DEAL_SECTION: Record<DealType, string> = {
@@ -127,6 +128,21 @@ export async function writeNarrative(facts: object, dealType: DealType): Promise
     { key: "rationale", title: "Rationale for approval", text: "", bullets: (Array.isArray(j.rationale) ? j.rationale : []).map(text).filter(Boolean).slice(0, 6) },
     { key: "risks", title: "Risks and mitigants", text: "", risks: (Array.isArray(j.risks) ? j.risks : []).map((x: any) => ({ risk: text(x?.risk), mitigant: text(x?.mitigant) })).filter((x: any) => x.risk).slice(0, 6) }];
 }
+// BF_SERVER_v885_CREDIT_START_DATE - the writer said "started in 2024" for a start date of
+// 2023-12-31: it guessed from years in business or read a UTC timestamp. Hand it the
+// calendar date as entered (date part only, no time-zone conversion) and its year.
+export function businessStartDate(md: any): string | null {
+  const raw = first(md, "business.startDate", "business.establishedDate", "kyc.businessStartDate", "business.start_date", "kyc.business_start_date");
+  if (!raw) return null;
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const year = raw.match(/^(\d{4})$/);
+  if (year) return `${year[1]}-01-01`;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // A written date such as "Dec 31, 2023" parses as local midnight; read it back in local terms.
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+}
 export async function gatherFacts(applicationId: string) {
   const a = await pool.query(`SELECT to_jsonb(a) AS a FROM applications a WHERE a.id::text = $1 LIMIT 1`, [applicationId]);
   const app = a.rows[0]?.a; if (!app) throw new Error("application_not_found");
@@ -138,7 +154,9 @@ export async function gatherFacts(applicationId: string) {
     import("./docKinds.js").then((m) => m.documentsOfKinds(applicationId, ["bank_statements_6_months", "flinks_banking"])).then((d) => d.length),
   ]);
   const md = app.metadata ?? {}; const usable = research.filter((f) => f.status === "reported" || f.status === "confirmed");
+  const startDate = businessStartDate(md);
   const facts = { application: { business: md.business ?? null, requested_amount: app.requested_amount, product: app.product_category,
+      business_start_date: startDate, founded_year: startDate ? Number(startDate.slice(0, 4)) : null,
       purpose: md.kyc?.purposeOfFunds ?? md.purpose ?? null, years_in_business: md.kyc?.yearsInBusiness ?? md.kyc?.salesHistory ?? null,
       principals: principalsFrom(md), notes: md.notes ?? null },
     financials: { periods: financials.periods.map((p) => p.label), rows: financials.rows.map((r) => ({ item: r.item, values: r.values })) },
@@ -166,8 +184,18 @@ export function mergeKeepingEdits(prev: SummaryDoc | null, next: SummaryDoc): Su
   const edited = new Map(prev.sections.filter((x) => x.edited).map((x) => [x.key, x])); const overview = { ...next.overview, ...((prev as any).overviewEdits ?? {}) };
   return { ...next, overview, sections: next.sections.map((x) => edited.get(x.key) ?? x), ...((prev as any).overviewEdits ? { overviewEdits: (prev as any).overviewEdits } : {}) } as SummaryDoc;
 }
-export async function loadSummaryV2(applicationId: string) {
-  const r = await pool.query(`SELECT doc, status, submitted_by_name, submitted_at, updated_at FROM credit_summaries_v2 WHERE application_id = $1`, [applicationId]); return r.rows[0] ?? null;
+// BF_SERVER_v885_CREDIT_SIGNER - signed_by is the name the sign-off shows: the submitter once
+// submitted, otherwise the staff member viewing it (the same rule the Word/PDF export uses), so the
+// portal never needs a placeholder such as "(the staff member who submits)".
+export async function loadSummaryV2(applicationId: string, requesterId: string | null = null) {
+  const r = await pool.query(`SELECT doc, status, submitted_by_name, submitted_at, updated_at FROM credit_summaries_v2 WHERE application_id = $1`, [applicationId]);
+  const row = r.rows[0]; if (!row) return null;
+  let signedBy: string | null = row.status === "submitted" ? s(row.submitted_by_name) : null;
+  if (!signedBy && requesterId) {
+    const u = await pool.query(`SELECT first_name, last_name, email FROM users WHERE id::text = $1 LIMIT 1`, [requesterId]);
+    signedBy = [s(u.rows[0]?.first_name), s(u.rows[0]?.last_name)].filter(Boolean).join(" ") || s(u.rows[0]?.email);
+  }
+  return { ...row, signed_by: signedBy };
 }
 export async function saveSummaryV2(applicationId: string, doc: SummaryDoc): Promise<void> {
   await pool.query(`INSERT INTO credit_summaries_v2 (application_id, doc, status, updated_at) VALUES ($1, $2::jsonb, 'draft', now())

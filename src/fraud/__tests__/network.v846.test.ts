@@ -177,8 +177,10 @@ describe("check 16: score and pre-screen", () => {
   it("the pre-screen text is honest about what was not covered, and renders as a PDF", async () => {
     const s = computeScore([row("fraud_1", "green"), { check_key: "fraud_6", subject: "", status: "not_configured", reasons: [{ code: "not_configured", severity: "info", text: "The corporate registry lookup is not set up." }] }], all);
     const lines = prescreenText(s, { company: "Northwind Capital", applicationName: "Acme", at: new Date("2026-10-23T12:00:00Z") });
-    expect(lines).toContain("Fraud score: 0 / 100 (low risk)");
-    expect(lines).toContain("  - Business reality check: The corporate registry lookup is not set up.");
+    // BF_SERVER_v885_FRAUD_TEXT - says how many checks the score rests on; internal "why" text is not sent to lenders.
+    expect(lines.find((l) => l.startsWith("Fraud score:"))).toMatch(/^Fraud score: 0 \/ 100 \(low risk\), based on 1 of \d+ checks$/);
+    expect(lines).toContain("  - Business reality check: not available for this file");
+    expect(lines.join("\n")).not.toContain("is not set up");
     expect(lines.at(-1)).toMatch(/not a finding of fraud/);
     const pdf = await renderPrescreenPdf(lines);
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
@@ -206,5 +208,24 @@ describe("profile, hashing, all checks on", () => {
   it("Boreal has no plans: all 15 checks are on, and there is no check 3", () => {
     expect([...allowedChecks()].map((k) => Number(k.slice(6))).sort((a, b) => a - b)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1).filter((n) => n !== 3));
     expect(FRAUD_CHECKS).toHaveLength(15);
+  });
+});
+
+describe("v885 lender pre-screen leaves out internal text", () => {
+  const all = new Set(FRAUD_CHECKS.map((c) => c.key));
+  const row = (check_key: string, status: StoredResult["status"], text = "x", subject = ""): StoredResult => ({ check_key, subject, status, reasons: [{ code: "c", severity: status === "red" ? "red" : status === "amber" ? "amber" : "info", text }] });
+  it("drops inside-job alerts and admin advice, and counts the checks", () => {
+    const s = computeScore([
+      row("fraud_1", "green"), row("fraud_14", "green"),
+      { check_key: "fraud_13", subject: "", status: "not_applicable", reasons: [{ code: "off", severity: "info", text: "Watchlist sharing is off. An Admin can turn it on in Settings -> Fraud protection." }] },
+    ], all);
+    expect(s.checks_run).toBe(2);
+    expect(s.checks_total).toBe(s.covered.length + s.not_covered.length);
+    expect(s.summary).toMatch(/based on 2 of \d+ checks; \d+ could not run yet/);
+    const text = prescreenText(s, { company: "Boreal Financial", applicationName: "Acme", at: new Date("2026-11-02T12:00:00Z") }).join("\n");
+    expect(text).not.toMatch(/Inside-job/);
+    expect(text).not.toMatch(/Admin|Settings/);
+    expect(text).toContain("  - Shared fraud watchlist: no information available yet");
+    expect(text).toMatch(/based on 1 of \d+ checks/);
   });
 });
