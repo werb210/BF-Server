@@ -206,6 +206,7 @@ const AREA_RULES: ReadonlyArray<[RegExp, Area]> = [
   [/^\/lender-connections(\/|$)/, "lenders"],
   [/^\/portal\/(lenders|lender-products)(\/|$)/, "lenders"],
   [/^\/(lenders|lender-products|lender-qa)(\/|$)/, "lenders"],
+  [/^\/lender-updates(\/|$)/, "lenders"], // BF_SERVER_v890_MAYA_LENDER_UPDATES
   [/^\/portal\/applications(\/|$)/, "applications"],
   [/^\/(applications|pipeline|offers|collateral|application-origin|banking|lender-referrals|broker-imports|pgi|fraud)(\/|$)/, "applications"],
   [/^\/credit(-summary(-v2)?|-research|-collateral|-financials)?(\/|$)/, "applications"],

@@ -5,6 +5,8 @@
 // intel keeps its transcript and simply gets retried on the next tick.
 import type { Pool } from "pg";
 import { askAI } from "../../modules/ai/openai.service.js";
+// BF_SERVER_v890_MAYA_LENDER_UPDATES
+import { cleanProfileUpdates, lenderPromptSection, loadLenderSnapshot, meetingLenderId, type LenderSnapshot, type ProfileUpdate } from "./lenderProfileUpdates.js";
 
 const MAX_TRANSCRIPT_CHARS = 40000;
 const MAX_TASKS = 6;
@@ -15,12 +17,13 @@ type IntelRow = {
   subject: string | null;
   contact_id: string | null;
   company_id: string | null;
+  lender_id: string | null;
   organizer_user_id: string | null;
   transcript_text: string;
 };
 
 type MayaTask = { title: string; body?: string; due_in_days?: number; priority?: string };
-type MayaIntel = { summary: string; tasks: MayaTask[] };
+type MayaIntel = { summary: string; tasks: MayaTask[]; profile_updates: ProfileUpdate[] };
 
 const PRIORITIES = new Set(["NONE", "LOW", "MEDIUM", "HIGH"]);
 
@@ -41,10 +44,10 @@ function vttToPlainText(vtt: string): string {
   return kept.join("\n");
 }
 
-function parseIntel(raw: string): MayaIntel | null {
+export function parseIntel(raw: string, lender: LenderSnapshot | null = null): MayaIntel | null {
   const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
   try {
-    const parsed = JSON.parse(cleaned) as Partial<MayaIntel>;
+    const parsed = JSON.parse(cleaned) as Partial<MayaIntel> & { profile_updates?: unknown };
     const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
     if (!summary) return null;
     const tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
@@ -59,15 +62,18 @@ function parseIntel(raw: string): MayaIntel | null {
         priority: typeof t?.priority === "string" ? t.priority.toUpperCase() : undefined,
       });
     }
-    return { summary: summary.slice(0, 4000), tasks: clean };
+    const profile_updates = lender ? cleanProfileUpdates(parsed.profile_updates, lender) : [];
+    return { summary: summary.slice(0, 4000), tasks: clean, profile_updates };
   } catch {
     return null;
   }
 }
 
-async function askMaya(row: IntelRow): Promise<MayaIntel | null> {
+async function askMaya(pool: Pool, row: IntelRow): Promise<MayaIntel | null> {
   const transcript = vttToPlainText(row.transcript_text).slice(0, MAX_TRANSCRIPT_CHARS);
   if (!transcript) return null;
+  const lenderId = await meetingLenderId(pool, row);
+  const lender = lenderId ? await loadLenderSnapshot(pool, lenderId) : null;
 
   const raw = await askAI([
     {
@@ -79,14 +85,15 @@ async function askMaya(row: IntelRow): Promise<MayaIntel | null> {
         '{"summary":"2-4 sentences","tasks":[{"title":"short imperative","body":"one line of context","due_in_days":3,"priority":"MEDIUM"}]}\n' +
         "The summary states what was discussed and what was agreed. " +
         "Tasks are ONLY concrete commitments someone made in the meeting - if nobody committed to anything, return an empty tasks array. " +
-        "Never invent a task. priority is one of NONE, LOW, MEDIUM, HIGH.",
+        "Never invent a task. priority is one of NONE, LOW, MEDIUM, HIGH." +
+        (lender ? "\n\n" + lenderPromptSection(lender) : ""),
     },
     {
       role: "user",
       content: `Meeting: ${row.subject ?? "(no subject)"}\n\nTranscript:\n${transcript}`,
     },
   ]);
-  return parseIntel(raw);
+  return parseIntel(raw, lender);
 }
 
 async function writeTasks(pool: Pool, row: IntelRow, tasks: MayaTask[]): Promise<number> {
@@ -131,7 +138,7 @@ async function writeTasks(pool: Pool, row: IntelRow, tasks: MayaTask[]): Promise
 
 export async function runMeetingIntel(pool: Pool): Promise<void> {
   const { rows } = await pool.query<IntelRow>(
-    `SELECT id, silo, subject, contact_id, company_id, organizer_user_id, transcript_text
+    `SELECT id, silo, subject, contact_id, company_id, lender_id, organizer_user_id, transcript_text
        FROM teams_meetings
       WHERE transcript_text IS NOT NULL
         AND length(transcript_text) > 0
@@ -142,7 +149,7 @@ export async function runMeetingIntel(pool: Pool): Promise<void> {
 
   for (const row of rows) {
     try {
-      const intel = await askMaya(row);
+      const intel = await askMaya(pool, row);
       if (!intel) {
         console.error("[meeting-intel] no usable response", { id: row.id });
         continue;
@@ -152,12 +159,13 @@ export async function runMeetingIntel(pool: Pool): Promise<void> {
         `UPDATE teams_meetings
             SET maya_summary = $2,
                 maya_tasks = $3::jsonb,
+                maya_profile_updates = $4::jsonb,
                 status = 'summarized',
                 updated_at = now()
           WHERE id = $1`,
-        [row.id, intel.summary, JSON.stringify(intel.tasks)],
+        [row.id, intel.summary, JSON.stringify(intel.tasks), JSON.stringify(intel.profile_updates)],
       );
-      console.log("[meeting-intel] summarized", { id: row.id, tasks_created: created });
+      console.log("[meeting-intel] summarized", { id: row.id, tasks_created: created, profile_updates: intel.profile_updates.length });
     } catch (err) {
       console.error("[meeting-intel] failed", {
         id: row.id,
