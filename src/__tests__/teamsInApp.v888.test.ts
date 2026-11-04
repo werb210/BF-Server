@@ -126,6 +126,7 @@ describe("clients join only meetings they are invited to", () => {
     const r = await request(a).get("/api/meetings/upcoming").set("Authorization", "Bearer " + clientToken());
     expect(r.status).toBe(200);
     expect(r.body.inAppVideo).toBe(true);
+    expect(r.body.timeZone).toBe("America/Regina");
     expect(r.body.meetings[0]).toMatchObject({ id: MEETING_ID, staffFirstName: "Alex", canJoinNow: true, joinUrl: JOIN });
     expect((await request(a).get("/api/meetings/upcoming")).status).toBe(401);
   });

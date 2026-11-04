@@ -143,6 +143,7 @@ router.get("/upcoming", safeHandler(async (req: any, res: any) => {
   if (!cPhone) { res.status(401).json({ error: "unauthorized" }); return; }
   const rows = await listMeetingsForClient(cPhone);
   res.json({
+    timeZone: ALBERTA_TZ, // the same Alberta time the booking sheet shows
     inAppVideo: isAcsConfigured(),
     meetings: rows.map((m) => ({
       id: m.id,
