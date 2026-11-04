@@ -90,6 +90,27 @@ const BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://server.boreal.financial
 router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Type", "text/xml");
   const params = req.body ?? {};
+  // BF_SERVER_v890_TWIML_STATUS_CALLBACK - the TwiML App's Status Callback URL points at this TwiML URL, so every call's
+  // "completed" event arrived here as if it were a new call: it ran the no-number branch ("There is no number to call")
+  // and the call's final status and duration were never recorded. A status callback (Twilio sends CallbackSource) is now
+  // recorded as a status update and answered with an empty response.
+  if (typeof params.CallbackSource === "string" && params.CallbackSource.trim()) {
+    const sid = String(params.CallSid ?? "").trim();
+    if (sid) {
+      await handleVoiceStatusWebhook({
+        callSid: sid,
+        callStatus: typeof params.CallStatus === "string" ? params.CallStatus : null,
+        callDuration: params.CallDuration ?? params.Duration ?? null,
+        from: typeof params.From === "string" ? params.From : null,
+        to: typeof params.To === "string" ? params.To : null,
+        errorCode: params.ErrorCode ? String(params.ErrorCode) : null,
+        errorMessage: typeof params.ErrorMessage === "string" ? params.ErrorMessage : null,
+      });
+    }
+    console.log(JSON.stringify({ event: "voice_status_on_twiml_url", callSid: sid || null, callStatus: params.CallStatus ?? null }));
+    res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response/>');
+    return;
+  }
   const to = String(params.To ?? params.to ?? "").trim();
   const from = String(params.From ?? params.from ?? "").trim();
   const callSid = String(params.CallSid ?? params.callSid ?? "").trim();
