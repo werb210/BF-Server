@@ -9,6 +9,12 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createRoom, recentDuplicateRoom, roomBySlug, inviteText, joinUrl, oneTapDial, isOpen, DIAL_IN_DISPLAY, type MeetingRoom } from "../services/meetingRooms.js";
 import { addParticipants, listParticipants, removeParticipant, searchPeople, MAX_PEOPLE, type Person } from "../services/meetingRooms.js"; // BF_SERVER_MEETING_PARTICIPANTS_v737
 import { notifyMeeting, cancelMeetingNotices } from "../services/meetingNotify.js"; // BF_SERVER_MEETING_NOTIFY_v741
+// BF_SERVER_v888_TEAMS_IN_APP - join Teams meetings inside the portal and the client app.
+import { principalFromRequest } from "../auth/principal.js";
+import {
+  isAcsConfigured, issueAcsToken, isTeamsJoinUrl, phone10, clientCanJoinNow,
+  findMeetingForClient, findMeetingForStaff, listMeetingsForClient, staffCalendarHasMeeting, staffIdentity,
+} from "../services/teams/inAppMeetings.js";
 
 const router = Router();
 const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -52,6 +58,104 @@ router.get("/join/:slug/ics", safeHandler(async (req: any, res: any) => {
   res.setHeader("Content-Disposition", 'attachment; filename="boreal-meeting.ics"');
   res.send(icsFor(room));
 }));
+// BF_SERVER_v888_TEAMS_IN_APP
+// POST /api/meetings/acs-token - an Azure Communication Services token for joining one
+// Teams meeting inside the app. Staff and signed-in clients both call it:
+//   client: { meetingId }                       - only meetings they are invited to
+//   staff:  { meetingId } or { joinUrl }        - meetings they organise or are invited to
+//           { joinUrl, calendarEventId }         - a Teams meeting on their own Outlook calendar
+// The Teams link always comes from our records or the staff member's calendar, never
+// from the request alone. Clients wait in the Teams lobby until the organiser admits them.
+const tokenHits = new Map<string, number[]>();
+function tooManyTokens(key: string): boolean {
+  const now = Date.now();
+  const recent = (tokenHits.get(key) ?? []).filter((t) => now - t < 3_600_000);
+  recent.push(now); tokenHits.set(key, recent);
+  return recent.length > 30;
+}
+const NOT_CONFIGURED = { error: "video_not_configured", message: "Joining in the app isn't switched on yet. Use Open in Teams instead." };
+
+function clientPhone(req: any): string | null {
+  const p = principalFromRequest(req);
+  return p && p.kind === "client" ? phone10(p.phone) : null;
+}
+// A client token goes straight to the handler; anything else must pass the staff checks.
+function staffOrClient(req: any, res: any, next: any) {
+  if (clientPhone(req) !== null) return next();
+  return requireAuth(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    return requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })(req, res, next);
+  });
+}
+
+router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) => {
+  const b = req.body ?? {};
+  const meetingId = typeof b.meetingId === "string" ? b.meetingId.trim() : "";
+  const askedUrl = typeof b.joinUrl === "string" ? b.joinUrl.trim() : "";
+  const calendarEventId = typeof b.calendarEventId === "string" ? b.calendarEventId.trim() : "";
+  const cPhone = clientPhone(req);
+
+  let joinUrl = "";
+  let displayName = "";
+  let subject: string | null = null;
+  let startsAt: string | null = null;
+  let who = "";
+
+  if (cPhone !== null) {
+    if (!cPhone) { res.status(401).json({ error: "unauthorized" }); return; }
+    if (!meetingId) { res.status(400).json({ error: "meeting_id_required" }); return; }
+    const m = await findMeetingForClient(cPhone, meetingId);
+    if (!m) { res.status(404).json({ error: "meeting_not_found", message: "We couldn't find that meeting for you." }); return; }
+    if (!clientCanJoinNow(m)) { res.status(409).json({ error: "not_open_yet", message: "You can join from an hour before the meeting starts." }); return; }
+    joinUrl = m.join_url; subject = m.subject; startsAt = m.scheduled_at;
+    displayName = (m.client_name || m.contact_name || "Boreal client").trim();
+    who = "client:" + cPhone;
+  } else {
+    const userId = String(req.user?.userId ?? req.user?.id ?? "");
+    const me = await staffIdentity(userId);
+    const m = await findMeetingForStaff({ userId, email: me.email || String(req.user?.email ?? "") }, { meetingId, joinUrl: askedUrl });
+    if (m) {
+      joinUrl = m.join_url; subject = m.subject; startsAt = m.scheduled_at;
+    } else if (calendarEventId && isTeamsJoinUrl(askedUrl)) {
+      const ev = await staffCalendarHasMeeting(userId, calendarEventId, askedUrl);
+      if (ev) { joinUrl = askedUrl; subject = ev.subject; startsAt = ev.startsAt; }
+    }
+    if (!joinUrl) { res.status(404).json({ error: "meeting_not_found", message: "That meeting isn't one you organise or are invited to." }); return; }
+    displayName = me.displayName;
+    who = "staff:" + userId;
+  }
+
+  if (!isAcsConfigured()) { res.status(503).json({ ...NOT_CONFIGURED, joinUrl }); return; }
+  if (tooManyTokens(who)) { res.status(429).json({ error: "too_many_requests", message: "Please wait a few minutes and try again.", joinUrl }); return; }
+  try {
+    const t = await issueAcsToken();
+    res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+  } catch (err) {
+    console.error("[teams-in-app] acs token failed", { message: err instanceof Error ? err.message : String(err) });
+    res.status(503).json({ error: "video_unavailable", message: "Video is unavailable right now. Use Open in Teams instead.", joinUrl });
+  }
+}));
+
+// GET /api/meetings/upcoming - the signed-in client's Teams meetings (booked calls and
+// meetings staff scheduled with them), for the client app's "Upcoming calls" card.
+router.get("/upcoming", safeHandler(async (req: any, res: any) => {
+  const cPhone = clientPhone(req);
+  if (!cPhone) { res.status(401).json({ error: "unauthorized" }); return; }
+  const rows = await listMeetingsForClient(cPhone);
+  res.json({
+    inAppVideo: isAcsConfigured(),
+    meetings: rows.map((m) => ({
+      id: m.id,
+      subject: m.subject,
+      startsAt: m.scheduled_at,
+      endsAt: m.scheduled_end_at,
+      staffFirstName: m.staff_first_name,
+      joinUrl: m.join_url,
+      canJoinNow: clientCanJoinNow(m),
+    })),
+  });
+}));
+
 router.get("/", ...staff, safeHandler(async (_req: any, res: any) => {
   const { rows } = await pool.query<MeetingRoom>(`SELECT id::text, code, slug, title, host_user_id::text, application_id, contact_id::text, starts_at, duration_min, status
        FROM meeting_rooms WHERE status <> 'cancelled' AND starts_at > now() - interval '1 day'

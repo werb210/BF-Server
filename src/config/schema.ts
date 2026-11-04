@@ -32,6 +32,9 @@ export const EnvSchema = z
     TWILIO_API_KEY: z.string().min(1).optional(),
     TWILIO_API_SECRET: z.string().min(1).optional(),
     TWILIO_VOICE_APP_SID: z.string().min(1).optional(),
+    // BF_SERVER_v888_TEAMS_IN_APP - Azure Communication Services resource (Keys page, "Connection string").
+    // Unset: in-app Teams joining is off and the apps offer "Open in Teams" instead.
+    ACS_CONNECTION_STRING: z.string().min(1).optional(),
     OTP_HASH_SECRET: z.string().min(1).optional(),
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),

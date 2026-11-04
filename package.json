@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@azure-rest/ai-document-intelligence": "^1.0.0",
+    "@azure/communication-identity": "^2.0.0",
     "@azure/storage-blob": "^12.31.0",
     "@simplewebauthn/server": "^13.3.1",
     "archiver": "^7.0.1",
