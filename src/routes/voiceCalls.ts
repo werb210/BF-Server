@@ -67,7 +67,7 @@ router.post("/token", auth, async (req: any, res) => {
   const identity: string = req.user?.userId || req.user?.id || req.user?.sub || "";
   if (!identity) return res.status(401).json({ error: "unauthorized" });
   try {
-    // BF_SERVER_v817_IPAD_VOIP - optional `app` ("dialer" default | "portal-ios") in body, query or X-Boreal-App header picks the push credential.
+    // BF_SERVER_v817_IPAD_VOIP - optional `app` ("dialer" default | "portal-ios" | "dialer-android") in body, query or X-Boreal-App header picks the push credential.
     const app = parseVoiceTokenApp(req.body?.app ?? req.query?.app ?? req.get?.("X-Boreal-App"));
     const token = generateVoiceToken(identity, { app });
     // BF_SERVER_v817_DIALER_MESSAGING - register the client identity in staff_presence so the

@@ -61,7 +61,7 @@ export function pushConfigReport(env: NodeJS.ProcessEnv = process.env) {
     statusFor("client_apns", clientApnsEnv(env), CLIENT_APNS_VARS,
       "applicant iOS push; CLIENT_APNS_TEAM_ID/_KEY_ID/_PRIVATE_KEY, else the shared WATCH_APNS_* values"),
     statusFor("watch_apns", env, WATCH_APNS_VARS, "Apple Watch push"),
-    statusFor("fcm", env, FCM_VARS, "Android push for both client apps"),
+    statusFor("fcm", env, FCM_VARS, "Android push for both client apps and the Android staff apps (portal and dialler)"), // BF_ANDROID_STAFF_v1
   ];
 
   // Shared credentials mean one missing value can look like several broken

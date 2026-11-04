@@ -104,7 +104,7 @@ describe("sendStaffAlert", () => {
     tokens([{ id: "t1", token: TOKEN_A, environment: "production" }, { id: "t2", token: TOKEN_B, environment: "sandbox" }]);
     expect(await sendStaffAlert(input)).toBe(2);
     expect(send.mock.calls.map((c: any[]) => [c[0].token, c[0].environment])).toEqual([[TOKEN_A, "production"], [TOKEN_B, "sandbox"]]);
-    expect(callsMatching(h.query, /FROM staff_push_tokens/)[0]![1]).toEqual([STAFF_USER_ID, ["dialer-ios", "portal-ios"]]); // v823
+    expect(callsMatching(h.query, /FROM staff_push_tokens/)[0]![1]).toEqual([STAFF_USER_ID, ["dialer-ios", "portal-ios", "portal-android", "dialer-android"]]); // v823, BF_ANDROID_STAFF_v1
   });
 
   it("BadDeviceToken tries the other host once and remembers it", async () => {
