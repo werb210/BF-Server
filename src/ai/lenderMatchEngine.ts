@@ -12,6 +12,11 @@
 // submission status if there is one.
 import { runQuery } from "../db.js";
 import { normalizeToPercent, scoreAmountFit, type PrequalInput } from "./scoringEngine.js";
+import { productCategoryLabel, toBucketId } from "../modules/applications/productCategoryChange.js"; // BF_SERVER_v887_PRODUCT_LABELS
+
+// BF_SERVER_v887_LENDER_MATCH_FIX - bumped when the match row shape or scoring changes, so lists cached in an older
+// shape are recalculated when the Lenders tab opens instead of showing old numbers.
+export const MATCH_VERSION = 887;
 
 type ProductRow = {
   product_id: string;
@@ -32,6 +37,7 @@ export type LenderMatch = {
   lenderName: string;
   productName: string;
   productCategory: string | null;
+  productCategoryLabel: string; // BF_SERVER_v887_PRODUCT_LABELS - plain words for productCategory
   matchPercent: number;
   reasoning: string;
   submissionMethod: string | null;
@@ -40,6 +46,7 @@ export type LenderMatch = {
   // (already aggregated via min/max in the SQL query above).
   amountMin: number | null;
   amountMax: number | null;
+  matchVersion: number; // BF_SERVER_v887_LENDER_MATCH_FIX
 };
 
 function geographyAllows(productCountry: string | null, applicantCountry: PrequalInput["country"]): boolean {
@@ -58,8 +65,10 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
             lp.category::text           as product_category,
             lp.country                  as country,
             lp.active                   as active,
-            coalesce(lp.min_amount, lp.amount_min)  as min_amount,
-            coalesce(lp.max_amount, lp.amount_max)  as max_amount,
+            -- BF_SERVER_v887_LENDER_MATCH_FIX - amount_min/amount_max are what the Lender product editor saves;
+            -- min_amount/max_amount are the older columns and only fill a gap.
+            coalesce(lp.amount_min, lp.min_amount)  as min_amount,
+            coalesce(lp.amount_max, lp.max_amount)  as max_amount,
             l.submission_method         as submission_method
        from lender_products lp
        join lenders          l   on l.id = lp.lender_id
@@ -70,44 +79,8 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
    order by lp.updated_at desc`
   );
 
-  // BF_SERVER_BLOCK_v210_LENDER_CATEGORY_ALIAS_AND_OCR_AUDIT_v1
-  // Map both the application's wanted category and the lender row's category
-  // to a canonical bucket ID. lender_products.category is a short-code enum
-  // (LOC, TERM, EQUIPMENT, ...) but the wizard stores the long bucket form
-  // (LINE_OF_CREDIT, TERM_LOAN, ...). Without this mapping, no rows match.
-  function toBucketId(raw: string | null | undefined): string | null {
-    if (raw === null || raw === undefined) return null;
-    const upper = String(raw).trim().toUpperCase().replace(/[\s\-/]+/g, "_").replace(/__+/g, "_");
-    if (!upper) return null;
-    // Aliases mirror BF-client/src/wizard/categoryAliases.ts
-    const map: Record<string, string> = {
-      LOC: "LINE_OF_CREDIT",
-      LINE_OF_CREDIT: "LINE_OF_CREDIT",
-      TERM: "TERM_LOAN",
-      TERM_LOAN: "TERM_LOAN",
-      WORKING_CAPITAL: "TERM_LOAN",
-      EQUIPMENT: "EQUIPMENT_FINANCE",
-      EQUIPMENT_FINANCE: "EQUIPMENT_FINANCE",
-      EQUIPMENT_FINANCING: "EQUIPMENT_FINANCE",
-      FACTORING: "FACTORING",
-      INVOICE_FACTORING: "FACTORING",
-      PO: "PURCHASE_ORDER_FINANCE",
-      PURCHASE_ORDER: "PURCHASE_ORDER_FINANCE",
-      PURCHASE_ORDER_FINANCE: "PURCHASE_ORDER_FINANCE",
-      PURCHASE_ORDER_FINANCING: "PURCHASE_ORDER_FINANCE",
-      MCA: "MERCHANT_CASH_ADVANCE",
-      MERCHANT_CASH_ADVANCE: "MERCHANT_CASH_ADVANCE",
-      MEDIA: "MEDIA",
-      MEDIA_FUNDING: "MEDIA",
-      ABL: "ASSET_BASED_LENDING",
-      ASSET_BASED_LENDING: "ASSET_BASED_LENDING",
-      SBA: "SBA_GOVERNMENT",
-      SBA_GOVERNMENT: "SBA_GOVERNMENT",
-      STARTUP: "STARTUP_CAPITAL",
-      STARTUP_CAPITAL: "STARTUP_CAPITAL",
-    };
-    return map[upper] ?? upper;
-  }
+  // BF_SERVER_BLOCK_v210_LENDER_CATEGORY_ALIAS_AND_OCR_AUDIT_v1 - toBucketId (product category aliases) now
+  // lives with the category labels in productCategoryChange.ts (v887) so the labels can use it too.
   // BF_SERVER_LENDER_MATCH_DUAL_v1 — match against the full set of wanted
   // categories (closing-cost companions carry TERM+LOC); fall back to the single
   // productCategory when no multi-category set is present.
@@ -132,25 +105,34 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
   return filtered
     .map((row): LenderMatch => {
       const minN = row.min_amount === null || row.min_amount === undefined ? null : Number(row.min_amount);
-      const maxN = row.max_amount === null || row.max_amount === undefined ? null : Number(row.max_amount);
+      // A maximum of 0 is how an empty box was sometimes saved: treat it as "no maximum on file".
+      const maxN = row.max_amount === null || row.max_amount === undefined || Number(row.max_amount) <= 0 ? null : Number(row.max_amount);
       const amountScore   = scoreAmountFit(requestedAmount, minN, maxN);
       const maturityScore = input.timeInBusiness && input.timeInBusiness >= 24 ? 0.9 : 0.65;
       const revenueScore  = input.revenue && input.revenue >= 120000 ? 0.9 : 0.6;
       const aggregate     = amountScore * 0.5 + maturityScore * 0.25 + revenueScore * 0.25;
-      const minText       = minN ? `$${minN.toLocaleString()}` : "no minimum";
-      const maxText       = maxN ? `$${maxN.toLocaleString()}` : "no maximum";
+      const minText       = minN ? `$${minN.toLocaleString("en-CA")}` : "no minimum";
+      const maxText       = maxN ? `$${maxN.toLocaleString("en-CA")}` : "no maximum";
+      // BF_SERVER_v887_LENDER_MATCH_FIX - say what the score is built from, in plain words.
+      const reasoning = [
+        minN === null && maxN === null ? "No amount range on file for this product" : `Amount range ${minText} to ${maxText}`,
+        input.timeInBusiness == null ? "time in business not given" : `${Math.round(input.timeInBusiness)} months in business`,
+        input.revenue == null ? "annual revenue not given" : `annual revenue about $${Math.round(input.revenue).toLocaleString("en-CA")}`,
+      ].join("; ") + ".";
       return {
         id:               row.product_id,
         lenderId:         row.lender_id,
         lenderName:       row.lender_name,
         productName:      row.product_name,
         productCategory:  row.product_category,
+        productCategoryLabel: productCategoryLabel(row.product_category),
         matchPercent:     normalizeToPercent(aggregate),
-        reasoning:        `Amount fit ${minText}-${maxText}; weighted by time-in-business and annual revenue signals.`,
+        reasoning,
         submissionMethod: row.submission_method,
         // BF_LENDERS_TAB_FIX_v55_SERVER
         amountMin:        minN,
         amountMax:        maxN,
+        matchVersion:     MATCH_VERSION,
       };
     })
     .sort((a: LenderMatch, b: LenderMatch) => b.matchPercent - a.matchPercent);

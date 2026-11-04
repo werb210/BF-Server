@@ -7,6 +7,7 @@
 // the lender products are ranked by how well the deal fits them. Signals only: staff decide; nothing moves a file.
 import type { Q } from "./common.js";
 import { cents, str } from "./common.js";
+import { productCategoryLabel } from "../modules/applications/productCategoryChange.js"; // BF_SERVER_v887_PRODUCT_LABELS
 
 export const FACTORS = {
   years_in_business: "Years in business",
@@ -197,7 +198,7 @@ export function rankProducts(products: Record<string, any>[], app: Record<string
     }
     if (want) {
       if (String(p.category ?? "").toUpperCase() === want) { reasons.push("Right product type."); fit += 20; }
-      else { concerns.push(`Product type is ${p.category ?? "unknown"}.`); fit -= 40; }
+      else { concerns.push(`Product type is ${productCategoryLabel(p.category) || "not set"}.`); fit -= 40; }
     }
     const minScore = firstNumber(p.min_credit_score);
     const score = result.inputs.credit_score ?? null;

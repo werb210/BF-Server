@@ -29,6 +29,7 @@ import { SYSTEM_TAGS, parseTagFilter, untaggedSql } from "../modules/crmUnify/ta
 import { dedupeStageEvents } from "../modules/crmUnify/contactPanel.js"; // BF_SERVER_v856_CRM_UNIFY
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { logWarn } from "../observability/logger.js"; // BF_SERVER_v789_WAITLIST_NO_TAKEOVER
+import { createMayaLeadFollowUp, isMayaWebsiteLead } from "../leads/mayaLeadFollowUp.js"; // BF_SERVER_v887_MAYA_LEAD_TASK
 import { emitAutomationEvent } from "../modules/automation/automationEngine.js"; // BF_SERVER_v786_WORKFLOW_GRAPH
 import { refuseIfAnyLocked, refuseIfLocked } from "../retention/retention.js"; // BF_SERVER_v855_RETENTION
 import { CRM_RULES, recordGuard } from "../visibility/recordGuard.js"; // BF_SERVER_v870_CRM_DATA_MODEL
@@ -1818,7 +1819,19 @@ router.post("/startup-waitlist", safeHandler(async (req: any, res: any) => {
       WHERE id = $1 AND silo = $4`,
     [id, list, consent, silo],
   );
-  res.status(200).json({ ok: true, id, created, list });
+  // BF_SERVER_v887_MAYA_LEAD_TASK - a lead Maya captured in the website chat gets a call-back task for its owner
+  // (lead rotation, else the contact owner, else an Admin). The lead is already saved: a task failure is logged, not fatal.
+  let followUpTaskId: string | null = null;
+  if (isMayaWebsiteLead(req.body?.source)) {
+    try {
+      const r = await createMayaLeadFollowUp(pool as any, { contactId: id, silo, name, isNewContact: created, message: (req.body?.message ?? "").toString().trim() || null });
+      followUpTaskId = r.created ? r.taskId : null;
+      if (!r.created) logWarn("crm.startup_waitlist.maya_task_skipped", { contactId: String(id), reason: r.reason });
+    } catch (err) {
+      logWarn("crm.startup_waitlist.maya_task_failed", { contactId: String(id), message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  res.status(200).json({ ok: true, id, created, list, followUpTaskId });
 }));
 
 // BF_SERVER_CONTACT_DOCUMENTS_v1 - list documents filed against a contact (e.g. auto-filed

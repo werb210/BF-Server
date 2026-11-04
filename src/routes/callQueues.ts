@@ -26,6 +26,9 @@ const router = Router();
 const db = (): Q => pool as unknown as Q;
 const admin = [auth, requireAuthorization({ roles: [ROLES.ADMIN] })];
 const staff = [auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS] })];
+// BF_SERVER_v887_MY_QUEUE_SWITCH - My Profile shows "available for queue calls" to Admin, Staff and Marketing, so
+// Marketing can read and set its own switch too (only its own: /me). Set-up and the live panel stay Admin-only.
+const self = [auth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.OPS, ROLES.MARKETING] })];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 router.get("/", ...admin, safeHandler(async (_req: any, res: any) => {
@@ -69,7 +72,7 @@ router.get("/live", ...admin, safeHandler(async (_req: any, res: any) => {
   res.json({ ok: true, ...(await livePanel(db())) });
 }));
 
-router.get("/me", ...staff, safeHandler(async (req: any, res: any) => {
+router.get("/me", ...self, safeHandler(async (req: any, res: any) => {
   const me = actorId(req);
   if (!me) return res.json({ ok: true, available: false, queues: [] });
   const r = await db().query(
@@ -86,7 +89,7 @@ async function setAndDispatch(userId: string, available: boolean) {
   for (const q of qs.rows) void dispatchQueue(pool, String(q.id)).catch((err) => console.error("[call-queue] dispatch after available failed", err instanceof Error ? err.message : err));
 }
 
-router.put("/me", ...staff, safeHandler(async (req: any, res: any) => {
+router.put("/me", ...self, safeHandler(async (req: any, res: any) => {
   const me = actorId(req);
   if (!me) return res.status(400).json({ ok: false, error: "no_user" });
   const available = req.body?.available === true;
