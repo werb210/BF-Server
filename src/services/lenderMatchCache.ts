@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { pool } from "../db.js";
-import { matchLenders, type LenderMatch } from "../ai/lenderMatchEngine.js";
+import { matchLenders, MATCH_VERSION, type LenderMatch } from "../ai/lenderMatchEngine.js";
+import { amountFromBand } from "./biHandoff.js"; // BF_SERVER_v887_LENDER_MATCH_FIX - the dropdown-band reader BI already uses
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 export type LenderMatchEnvelope = {
@@ -49,17 +50,36 @@ export function extractMatchInputs(app: { metadata: any; requested_amount: any; 
   const province = typeof meta.province === "string" ? meta.province
     : (typeof meta.state === "string" ? meta.state : null);
   const industry = typeof meta.industry === "string" ? meta.industry : null;
+  // BF_SERVER_v887_LENDER_MATCH_FIX - the wizard saves revenue and time in business as dropdown bands under kyc
+  // ("$150,001 to $500,000", "1 to 3 Years") and the start date under business.startDate. Only the old top-level
+  // keys were read, so every file scored with the "unknown" defaults and every lender showed the same 71%.
   const revenue = (() => {
-    const raw = meta.annualRevenue ?? meta.revenue ?? null;
+    const raw = meta.annualRevenue ?? meta.revenue ?? meta.kyc?.annualRevenue ?? meta.kyc?.revenueLast12Months
+      ?? meta.financialProfile?.annualRevenue ?? meta.business?.annualRevenue ?? meta.business?.estimatedRevenue ?? null;
     if (raw === null || raw === undefined || raw === "") return null;
-    const n = typeof raw === "number" ? raw : Number(String(raw).replace(/[^0-9.\-]/g, ""));
-    return Number.isFinite(n) ? n : null;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    return amountFromBand(String(raw));
   })();
   const timeInBusiness = (() => {
     const raw = meta.timeInBusinessMonths ?? meta.monthsInBusiness ?? meta.timeInBusiness ?? null;
-    if (raw === null || raw === undefined || raw === "") return null;
-    const n = typeof raw === "number" ? raw : Number(raw);
-    return Number.isFinite(n) ? n : null;
+    if (raw !== null && raw !== undefined && raw !== "") {
+      const n = typeof raw === "number" ? raw : Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    const start = String(meta.business?.startDate ?? meta.business?.establishedDate ?? meta.kyc?.businessStartDate ?? "").trim();
+    const m = /^(\d{4})(?:-(\d{2}))?/.exec(start);
+    if (m) {
+      const now = new Date();
+      const months = (now.getUTCFullYear() - Number(m[1])) * 12 + (now.getUTCMonth() - (m[2] ? Number(m[2]) - 1 : 0));
+      if (months >= 0 && months < 2400) return months;
+    }
+    const band = meta.kyc?.yearsInBusiness ?? meta.kyc?.salesHistory ?? meta.business?.yearsInBusiness ?? meta.yearsInBusiness ?? null;
+    if (band === null || band === undefined || band === "") return null;
+    if (typeof band === "number") return Number.isFinite(band) ? band * 12 : null;
+    if (/^\s*zero\s*$/i.test(String(band))) return 0;
+    if (/under\s*1|less than\s*1/i.test(String(band))) return 6;
+    const years = amountFromBand(String(band));
+    return years === null ? null : Math.round(years * 12);
   })();
   // BF_SERVER_BLOCK_v210_LENDER_CATEGORY_ALIAS_AND_OCR_AUDIT_v1
   // Wizard stores product category in several places depending on which step
@@ -234,10 +254,13 @@ export async function readLenderMatchEnvelope(applicationId: string): Promise<Le
   // BF_SERVER_MATCH_REFRESH_v732 - out-of-date matches (a lender product was added or
   // changed) are recalculated on the spot instead of waiting for someone to press
   // Recalculate. If the recalculation fails, the previous list is shown as before.
-  if (stale && computedAt) {
+  // BF_SERVER_v887_LENDER_MATCH_FIX - a list saved by an older match engine (no matchVersion, or an older one) is
+  // recalculated too, so files matched before this fix stop showing the same 71% and no funding range.
+  const oldShape = cached.length > 0 && cached.some((m) => Number(m?.matchVersion ?? 0) < MATCH_VERSION);
+  if ((stale && computedAt) || oldShape) {
     try {
       const fresh = await computeAndCacheLenderMatches(applicationId);
-      return { status: "ready", outstanding: [], computed_at: new Date().toISOString(), matches: fresh.matches, inputs: fresh.inputs ?? inputs, missing_inputs: fresh.missing_inputs ?? missingInputs };
+      if (stale || fresh.inputs !== null) return { status: "ready", outstanding: [], computed_at: new Date().toISOString(), matches: fresh.matches, inputs: fresh.inputs ?? inputs, missing_inputs: fresh.missing_inputs ?? missingInputs };
     } catch (err) {
       console.warn("[lender-matches] auto-refresh failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
     }

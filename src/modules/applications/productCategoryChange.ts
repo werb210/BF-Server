@@ -15,6 +15,56 @@ export const PRODUCT_CATEGORIES: ReadonlyArray<{ value: string; label: string }>
   { value: "MEDIA", label: "Media Funding" },
 ];
 
+// BF_SERVER_BLOCK_v210_LENDER_CATEGORY_ALIAS_AND_OCR_AUDIT_v1
+// Map both the application's wanted category and the lender row's category
+// to a canonical bucket ID. lender_products.category is a short-code enum
+// (LOC, TERM, EQUIPMENT, ...) but the wizard stores the long bucket form
+// (LINE_OF_CREDIT, TERM_LOAN, ...). Without this mapping, no rows match.
+export function toBucketId(raw: string | null | undefined): string | null {
+  if (raw === null || raw === undefined) return null;
+  const upper = String(raw).trim().toUpperCase().replace(/[\s\-/]+/g, "_").replace(/__+/g, "_");
+  if (!upper) return null;
+  // Aliases mirror BF-client/src/wizard/categoryAliases.ts
+  const map: Record<string, string> = {
+    LOC: "LINE_OF_CREDIT",
+    LINE_OF_CREDIT: "LINE_OF_CREDIT",
+    TERM: "TERM_LOAN",
+    TERM_LOAN: "TERM_LOAN",
+    WORKING_CAPITAL: "TERM_LOAN",
+    EQUIPMENT: "EQUIPMENT_FINANCE",
+    EQUIPMENT_FINANCE: "EQUIPMENT_FINANCE",
+    EQUIPMENT_FINANCING: "EQUIPMENT_FINANCE",
+    FACTORING: "FACTORING",
+    INVOICE_FACTORING: "FACTORING",
+    PO: "PURCHASE_ORDER_FINANCE",
+    PURCHASE_ORDER: "PURCHASE_ORDER_FINANCE",
+    PURCHASE_ORDER_FINANCE: "PURCHASE_ORDER_FINANCE",
+    PURCHASE_ORDER_FINANCING: "PURCHASE_ORDER_FINANCE",
+    MCA: "MERCHANT_CASH_ADVANCE",
+    MERCHANT_CASH_ADVANCE: "MERCHANT_CASH_ADVANCE",
+    MEDIA: "MEDIA",
+    MEDIA_FUNDING: "MEDIA",
+    ABL: "ASSET_BASED_LENDING",
+    ASSET_BASED_LENDING: "ASSET_BASED_LENDING",
+    SBA: "SBA_GOVERNMENT",
+    SBA_GOVERNMENT: "SBA_GOVERNMENT",
+    STARTUP: "STARTUP_CAPITAL",
+    STARTUP_CAPITAL: "STARTUP_CAPITAL",
+  };
+  return map[upper] ?? upper;
+}
+
+// BF_SERVER_v887_PRODUCT_LABELS - plain words for any stored product code (TERM, TERM_LOAN, LOC, MCA ...), from the
+// label list above. Staff screens and match reasons use this instead of the raw code. Unknown codes are split into words.
+export function productCategoryLabel(raw: unknown): string {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return "";
+  const bucket = toBucketId(String(raw));
+  const hit = PRODUCT_CATEGORIES.find((c) => c.value === bucket);
+  if (hit) return hit.label;
+  const words = String(raw).trim().replace(/[_\-]+/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function normalizeProductCategory(raw: unknown): string | null {
   const v = String(raw ?? "").trim().toUpperCase().replace(/[\s\-/]+/g, "_");
   return PRODUCT_CATEGORIES.some((c) => c.value === v) ? v : null;

@@ -26,8 +26,8 @@ vi.mock("../middleware/twilioWebhookValidation.js", () => ({ twilioWebhookValida
 
 const MIGRATION = "migrations/2026_11_12_v871_calling_tools.sql";
 const tag = randomUUID().slice(0, 8);
-const ADMIN = randomUUID(), S1 = randomUUID(), S2 = randomUUID();
-const PEOPLE = [ADMIN, S1, S2];
+const ADMIN = randomUUID(), S1 = randomUUID(), S2 = randomUUID(), M1 = randomUUID();
+const PEOPLE = [ADMIN, S1, S2, M1];
 const C1 = randomUUID(), C2 = randomUUID(), A1 = randomUUID();
 const tok = (id: string, role: string) => `Bearer ${jwt.sign({ sub: id, id, role, tokenVersion: 0, tv: 0 }, String(process.env.JWT_SECRET))}`;
 
@@ -51,7 +51,7 @@ describe("v871 calling tools (real Postgres)", () => {
     const sql = readFileSync(MIGRATION, "utf8");
     await pool.query(sql);
     await pool.query(sql); // safe to run again
-    for (const [id, role, first] of [[ADMIN, "Admin", "Ada"], [S1, "Staff", "Sam"], [S2, "Staff", "Sue"]]) {
+    for (const [id, role, first] of [[ADMIN, "Admin", "Ada"], [S1, "Staff", "Sam"], [S2, "Staff", "Sue"], [M1, "Marketing", "Mia"]]) {
       await pool.query(
         `INSERT INTO users (id, email, active, is_active, status, role, first_name, last_name, silo, silos)
          VALUES ($1, $2, true, true, 'ACTIVE', $3, $4, 'V871', 'BF', ARRAY['BF','BI'])`,
@@ -85,6 +85,16 @@ describe("v871 calling tools (real Postgres)", () => {
     await clean(`DELETE FROM audit_events WHERE actor_user_id = ANY($1::uuid[])`, [PEOPLE]);
     await clean(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [PEOPLE]);
     resetStaffUserLoader();
+  });
+
+  // BF_SERVER_v887_MY_QUEUE_SWITCH - My Profile shows the queue switch to Marketing as well; only its own switch.
+  it("Marketing reads and sets its own queue switch, but not the Admin live panel", async () => {
+    const me = await http().get("/api/call-queues/me").set("Authorization", tok(M1, "Marketing"));
+    expect(me.status).toBe(200);
+    expect(me.body).toMatchObject({ ok: true, available: false, queues: [] });
+    expect((await http().put("/api/call-queues/me").set("Authorization", tok(M1, "Marketing")).send({ available: true })).body).toMatchObject({ ok: true, available: true });
+    expect((await http().put("/api/call-queues/me").set("Authorization", tok(M1, "Marketing")).send({ available: false })).status).toBe(200);
+    expect((await http().get("/api/call-queues/live").set("Authorization", tok(M1, "Marketing"))).status).toBe(403);
   });
 
   describe("call scripts", () => {
