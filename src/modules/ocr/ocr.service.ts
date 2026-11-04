@@ -25,7 +25,7 @@ import { isPermanentOcrError } from "./officeText.js"; // BF_SERVER_v848_OFFICE_
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
 import { type OcrJobRecord } from "./ocr.types.js";
 import { logError, logInfo } from "../../observability/logger.js";
-import { fetchOcrFieldRegistry, isMoneyOcrField, parseOcrAmount, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
+import { OCR_FIELD_REGISTRY, fetchOcrFieldRegistry, isMoneyOcrField, parseOcrAmount, type OcrFieldDefinition } from "./ocrFieldRegistry.js";
 import {
   isNumericOcrField,
   refreshOcrInsightsForApplication,
@@ -385,7 +385,46 @@ export function extractOcrFields(
   );
   const regexResults = extractFieldsFromText(text, filteredRegistry);
   for (const r of regexResults) results.push(r);
-  return results;
+  // BF_SERVER_v886_OCR_SIGNS_AND_KINDS - a P&L never yields balance-sheet fields (an equipment lease payment is not
+  // Equipment Value; a payroll expense is not a payroll liability) and a balance sheet never yields P&L-only fields;
+  // and an amount the statement prints as negative ("-$1,000.00", "(1,000.00)") stays negative (the model and the
+  // text pass both dropped the sign).
+  const kind = statementKind(text);
+  return results.filter((r) => fitsStatement(r.fieldKey, kind)).map((r) => withStatementSign(r, text));
+}
+
+type StatementKind = "income_statement" | "balance_sheet" | null;
+export function statementKind(text: string): StatementKind {
+  const t = String(text ?? "").slice(0, 4000);
+  const bs = /balance sheet|statement of financial position/i.test(t);
+  const is = /profit\s*(?:and|&)\s*loss|income statement|statement of (?:operations|income|earnings)/i.test(t);
+  if (bs === is) return null;
+  return bs ? "balance_sheet" : "income_statement";
+}
+const P_AND_L_TAGS = new Set(["income_statement", "cash_flow", "application", "taxes", "contracts", "invoices"]);
+function fitsStatement(fieldKey: string, kind: StatementKind): boolean {
+  if (!kind) return true;
+  const def = OCR_FIELD_REGISTRY.find((f) => f.field_key === fieldKey);
+  if (!def || def.applies_to === "all") return true;
+  const tags = def.applies_to as readonly string[];
+  if (kind === "income_statement") return tags.some((t) => P_AND_L_TAGS.has(t));
+  // A balance sheet: drop fields that only an income statement carries.
+  return !(tags.length > 0 && tags.every((t) => t === "income_statement"));
+}
+const escapeRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export function withStatementSign<T extends { fieldKey: string; value: string }>(r: T, text: string): T {
+  if (!isMoneyOcrField(r.fieldKey)) return r;
+  const n = Number(r.value);
+  if (!Number.isFinite(n) || n <= 0) return r;
+  const shown = n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const re = new RegExp(`([-\u2212(]?)\\s*(?:CA\\$|C\\$|US\\$|\\$)?\\s*${escapeRe(shown)}(?![\\d])(\\s*\\))?`, "g");
+  let negative = 0, positive = 0;
+  for (const m of String(text ?? "").matchAll(re)) {
+    const before = String(text).slice(Math.max(0, (m.index ?? 0) - 1), m.index ?? 0);
+    if (/[\d.,]/.test(before) && !m[1]) continue; // part of a longer number
+    if (m[1] || m[2]) negative += 1; else positive += 1;
+  }
+  return negative > 0 && positive === 0 ? { ...r, value: (-n).toString() } : r;
 }
 
 export async function enqueueOcrForDocument(documentId: string): Promise<OcrJobRecord> {
@@ -550,6 +589,8 @@ export async function processOcrJob(
     const extractedFields = extractOcrFields(result.text, modelFields);
 
     try {
+      // BF_SERVER_v886_OCR_REEXTRACT - a re-run replaces the document's fields instead of adding a second set.
+      await dbQuery(`DELETE FROM ocr_results WHERE document_id = $1`, [job.document_id]);
       await insertDocumentOcrFields({
         documentId: job.document_id,
         applicationId: job.application_id,

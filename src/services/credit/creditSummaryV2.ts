@@ -195,6 +195,17 @@ export async function loadSummaryV2(applicationId: string, requesterId: string |
     const u = await pool.query(`SELECT first_name, last_name, email FROM users WHERE id::text = $1 LIMIT 1`, [requesterId]);
     signedBy = [s(u.rows[0]?.first_name), s(u.rows[0]?.last_name)].filter(Boolean).join(" ") || s(u.rows[0]?.email);
   }
+  // BF_SERVER_v886_CREDIT_LIVE_TABLE - a draft shows the financial table as it is now (one column per period, gross
+  // margin blank when it only repeats revenue, staff cell edits included), not the copy saved when it was generated.
+  // A submitted summary keeps the table it was submitted with.
+  if (row.status !== "submitted" && row.doc && typeof row.doc === "object") {
+    try {
+      const table = await loadFinancialTable(applicationId);
+      if (table.periods.length) row.doc = { ...row.doc, financials: table };
+    } catch (err) {
+      console.warn("[credit-summary-v2] live financial table failed", { applicationId, message: err instanceof Error ? err.message : String(err) });
+    }
+  }
   return { ...row, signed_by: signedBy };
 }
 export async function saveSummaryV2(applicationId: string, doc: SummaryDoc): Promise<void> {

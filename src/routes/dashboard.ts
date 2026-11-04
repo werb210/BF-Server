@@ -200,7 +200,7 @@ router.get("/metrics", requireAuth, scopedRequest, safeHandler(async (req: any, 
       // BF_SERVER_v885_DASHBOARD_DEFINITIONS - the cards count different things on purpose; these
       // sentences say what each one counts so they can be shown under the numbers.
       definitions: {
-        activeApplications: "Open applications on the Pipeline board. Accepted, Rejected and Hold are not counted, so this is lower than the board's total.",
+        activeApplications: "Open applications on the Pipeline board. Accepted, Rejected, On hold and Fraud are not counted, so this is lower than the board's total.", // BF_SERVER_v886 - Fraud was left out of the wording
         pipelineByStage: "Every application on the Pipeline board today, by its current stage, however old it is.",
       },
     },

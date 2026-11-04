@@ -30,6 +30,12 @@ router.use("/", adminDashboardRoutes);
 // BF_SERVER_BLOCK_v221_ADMIN_USERS_LIST_v1
 // Staff list for the calendar attendee picker and other admin surfaces.
 // Excludes soft-deleted users. Active users only.
+// BF_SERVER_v886_OCR_REEXTRACT - Admin: re-read every stored document with the current field parser now.
+router.post("/data-repairs/ocr-reextract", requireAuthorization({ roles: [ROLES.ADMIN] }), safeHandler(async (_req: any, res: any) => {
+  const { reextractAll } = await import("../modules/ocr/reextract.js");
+  res.json({ ok: true, ...(await reextractAll(knowledgePool as any)) });
+}));
+
 router.get("/users", requireCapability([CAPABILITIES.USER_MANAGE]), async (_req: any, res: any) => {
   try {
     const r = await (await import("../db.js")).pool.query<{
