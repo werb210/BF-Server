@@ -31,7 +31,18 @@ export async function revenueForecast() {
             ${liveStageFilter("a.pipeline_state")}
        ) x GROUP BY 1`,
   );
-  const stages = rows.map((r) => ({ stage: r.stage, files: r.files, amount: Math.round(r.amount_cad), full_commission: Math.round(r.commission_cad), odds: STAGE_ODDS[r.stage] ?? 0, expected_commission: Math.round(r.commission_cad * (STAGE_ODDS[r.stage] ?? 0)) }))
+  // BF_SERVER_v889_ONE_FORECAST - Todd, Nov 4: one set of odds everywhere. The chances come from Settings > CRM set-up >
+  // Pipelines (the same ones as the forecast strip on each application); STAGE_ODDS is only the fallback for a stage
+  // that has no chance saved there.
+  let pipelineOdds: Record<string, number> = {};
+  try {
+    const { loadProbabilities } = await import("../../forecast/forecast.js");
+    pipelineOdds = await loadProbabilities();
+  } catch (err) {
+    console.warn("[reports] revenue forecast: pipeline odds unavailable, using defaults", err instanceof Error ? err.message : String(err));
+  }
+  const oddsFor = (stage: string) => (typeof pipelineOdds[stage] === "number" ? pipelineOdds[stage]! / 100 : STAGE_ODDS[stage] ?? 0);
+  const stages = rows.map((r) => ({ stage: r.stage, files: r.files, amount: Math.round(r.amount_cad), full_commission: Math.round(r.commission_cad), odds: oddsFor(r.stage), expected_commission: Math.round(r.commission_cad * oddsFor(r.stage)) }))
     .sort((a, b) => b.odds - a.odds);
   return { stages, total: stages.reduce((s, r) => s + r.expected_commission, 0), full_total: stages.reduce((s, r) => s + r.full_commission, 0) };
 }
