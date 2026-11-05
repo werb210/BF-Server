@@ -179,7 +179,10 @@ export async function qboRequest(method: "GET" | "POST", path: string, body?: un
     try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
     if (!res.ok || parsed?.Fault) {
       const f = faultMessage(parsed);
-      throw new QboError("QuickBooks " + method + " " + path.split("?")[0] + " failed (" + res.status + "): " + f.message, res.status, f.code);
+      // BF_SERVER_v896_INTUIT_TID - Intuit's transaction id, so Intuit support can find the failed call.
+      const tid = intuitTid(res);
+      console.warn("[quickbooks] api error", { method, path: path.split("?")[0], status: res.status, code: f.code, intuit_tid: tid });
+      throw new QboError("QuickBooks " + method + " " + path.split("?")[0] + " failed (" + res.status + "): " + f.message + (tid ? " (intuit_tid " + tid + ")" : ""), res.status, f.code);
     }
     return parsed;
   }
@@ -215,4 +218,11 @@ export async function revokeAndDisconnect(deps?: QboDeps): Promise<{ revoked: bo
   }
   await dbOf(deps).query(`DELETE FROM qbo_connections WHERE id = $1`, [CONNECTION_ID]);
   return { revoked };
+}
+
+/** BF_SERVER_v896_INTUIT_TID - the intuit_tid response header (Intuit support's id for a call), or null. */
+export function intuitTid(res: unknown): string | null {
+  const h = (res as { headers?: { get?: (n: string) => string | null } } | null)?.headers;
+  const v = typeof h?.get === "function" ? h.get("intuit_tid") : null;
+  return v ? String(v).slice(0, 100) : null;
 }
