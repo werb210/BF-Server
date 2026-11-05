@@ -25,7 +25,7 @@ export function fraudProviders(env: NodeJS.ProcessEnv = process.env, fetchImpl?:
     ipIntel: ipinfoProvider(env, fetchImpl),
     idv: idvProvider(env),
     voice: voiceProvider(env),
-    address: addressProvider(env),
+    address: addressProvider(env, fetchImpl),
   };
 }
 
@@ -39,6 +39,6 @@ export function providerStatus(p: FraudProviders): ProviderStatus[] {
     { key: "ipIntel", label: "IP address location and VPN", provider: p.ipIntel.name, configured: p.ipIntel.configured(), setting: "IPINFO_TOKEN", used_by: ["fraud_9"] },
     { key: "idv", label: "ID verification vendor", provider: p.idv.name, configured: p.idv.configured(), setting: "ONFIDO_API_TOKEN, ONFIDO_WORKFLOW_ID, ONFIDO_WEBHOOK_TOKEN, ONFIDO_REGION (Settings > ID verification)", used_by: ["fraud_8"] }, // BF_SERVER_v872_KYC
     { key: "voice", label: "Voice / deepfake analysis vendor", provider: p.voice.name, configured: p.voice.configured(), setting: "not available yet (vendor to be chosen)", used_by: ["fraud_15"] },
-    { key: "address", label: "Address verification vendor", provider: p.address.name, configured: p.address.configured(), setting: "not available yet (built-in mail-drop list is used)", used_by: ["fraud_6"] },
+    { key: "address", label: "Address verification vendor", provider: p.address.name, configured: p.address.configured(), setting: "GOOGLE_PLACES_API_KEY (Address Validation API enabled on it), or GOOGLE_ADDRESS_VALIDATION_KEY; the built-in mail-drop list is always used too", used_by: ["fraud_6"] },
   ];
 }
