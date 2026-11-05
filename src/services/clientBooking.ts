@@ -226,5 +226,14 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   const joinUrl = ev.onlineMeeting?.joinUrl ?? null;
   await pool.query(`UPDATE client_bookings SET graph_event_id = $2, join_url = $3 WHERE id = $1`, [id, ev.id ?? null, joinUrl]);
   await pool.query(`UPDATE crm_meetings SET graph_id = $2, location = COALESCE($3, location), updated_at = now() WHERE id = $1`, [meetingId, ev.id ?? null, joinUrl]);
+  // BF_SERVER_v888_TEAMS_IN_APP - register the Teams booking like a CRM-scheduled meeting, so the
+  // client can join it in the app and the existing poller brings back the recording link,
+  // transcript and Maya summary onto the contact's timeline. Auto-record as the CRM popup does.
+  if (input.kind === "teams" && ev.id && joinUrl) {
+    const { registerBookingTeamsMeeting } = await import("./teams/inAppMeetings.js");
+    await registerBookingTeamsMeeting({ contactId, crmMeetingId: meetingId, staffUserId: staff.id, staffMailbox: mailboxOf(staff), subject, graphEventId: ev.id, joinUrl, startsAt: input.startsAt, endsAt: end });
+    const { enableAutoRecording } = await import("./teams/autoRecord.js");
+    void enableAutoRecording(pool, ev.id, mailboxOf(staff), joinUrl);
+  }
   return { ok: true, booking: { id, startsAt: input.startsAt.toISOString(), staffFirstName: staff.first_name, kind: input.kind, joinUrl, manageToken: manage.token, contactId: contactId!, contactCreated, durationMin: type.duration_min } };
 }
