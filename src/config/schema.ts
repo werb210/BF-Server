@@ -298,6 +298,7 @@ export const EnvSchema = z
     TWILIO_MAIN_LINE_NUMBER: z.string().optional(), // phone number(s), E.164; read in voice/directLines.ts
     TWILIO_RCS_MESSAGING_SERVICE_SID: z.string().optional(), // identifier; read in lib/smsFrom.ts
     TWILIO_PUSH_CREDENTIAL_SID: z.string().optional(), // identifier (CR...); read in telephony/services/tokenService.ts
+    TWILIO_PUSH_CREDENTIAL_SID_ANDROID: z.string().optional(), // identifier (CR...), Android staff app (Twilio FCM push credential); read in telephony/services/tokenService.ts // BF_ANDROID_STAFF_v1
     TWILIO_PUSH_CREDENTIAL_SID_PORTAL: z.string().optional(), // identifier (CR...), staff portal iPad app; read in telephony/services/tokenService.ts // BF_SERVER_v817_IPAD_VOIP
     TWILIO_SHORTEN_LINKS: z.string().optional(), // setting; read in lib/smsFrom.ts
     TWILIO_SMS_FROM: z.string().optional(), // phone number(s), E.164; read in services/marketingSms.ts

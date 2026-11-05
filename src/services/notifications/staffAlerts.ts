@@ -7,6 +7,7 @@
 import { pool } from "../../db.js";
 import { AppleWatchApnsProvider } from "../../watch/apnsProvider.js";
 import type { WatchPushProvider } from "../../watch/notifications.js";
+import { getFcmProvider } from "../fcmProvider.js";
 
 // BF_SERVER_v823_PUSH - TASK / task_due: task reminders and the "due today" digest reach the phone and iPad too.
 export const STAFF_ALERT_CATEGORIES = ["MISSED_CALL", "VOICEMAIL", "CLIENT_MESSAGE", "SMS", "HANDOFF", "TASK"] as const;
@@ -16,8 +17,21 @@ export type StaffAlertType = typeof STAFF_ALERT_TYPES[number];
 
 // BF_SERVER_v823_PUSH - the iPad portal app (com.borealfinancial.portal) registers its ordinary APNs token as
 // "portal-ios" and gets the same alerts as the iPhone dialler; before this only incoming calls (VoIP) reached it.
-export const STAFF_PUSH_APPS = ["dialer-ios", "portal-ios"] as const;
+// BF_ANDROID_STAFF_v1 - the Android apps register their Firebase (FCM) tokens: the Android staff portal as
+// "portal-android" and the Android dialler (boreal-dialer-ios android/) as "dialer-android". Both get the same alerts as
+// their iPad and iPhone twins, sent through Firebase (FIREBASE_SERVICE_ACCOUNT_JSON) as data-only messages the app
+// draws itself.
+export const STAFF_PUSH_APPS = ["dialer-ios", "portal-ios", "portal-android", "dialer-android"] as const;
 export type StaffPushApp = typeof STAFF_PUSH_APPS[number];
+export const STAFF_FCM_APPS: readonly StaffPushApp[] = ["portal-android", "dialer-android"];
+
+/** BF_ANDROID_STAFF_v1 - APNs device tokens are hex; FCM registration tokens are case-sensitive base64url with ":". */
+export function staffPushTokenOf(raw: unknown, app: StaffPushApp): string | null {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (STAFF_FCM_APPS.includes(app)) return /^[A-Za-z0-9_:-]{100,4096}$/.test(s) ? s : null;
+  const hex = s.toLowerCase();
+  return /^[0-9a-f]{64,200}$/.test(hex) ? hex : null;
+}
 export const DEFAULT_STAFF_APNS_BUNDLE_ID = "com.borealfinancial.dialer";
 export const DEFAULT_PORTAL_APNS_BUNDLE_ID = "com.borealfinancial.portal";
 
@@ -163,9 +177,25 @@ export function buildStaffAlertPayload(input: Omit<StaffAlertInput, "userId">): 
   };
 }
 
+/**
+ * BF_ANDROID_STAFF_v1 - the FCM data for the Android staff app: the same allowlisted ids as the APNs payload, the
+ * category (drives the notification channel and the "Call back" button) and the portal path a tap opens.
+ */
+export function buildStaffFcmData(input: Omit<StaffAlertInput, "userId">): Record<string, string> {
+  const apns = buildStaffAlertPayload(input);
+  const data: Record<string, string> = { schema: "1", categoryId: input.category, type: input.type };
+  for (const key of ["contactId", "applicationId", "phone", "threadKind", "voicemailId", "senderName"] as const) {
+    const v = apns[key];
+    if (typeof v === "string" && v) data[key] = v;
+  }
+  data.url = portalAlertUrl(input.data?.url) ?? (input.category === "TASK" ? "/tasks" : "/communications");
+  return data;
+}
+
 /** Sends one alert to every registered dialler of the staff member. Returns how many devices accepted it. */
 export async function sendStaffAlert(input: StaffAlertInput, dependencies: { query?: Q["query"] } = {}): Promise<number> {
-  if (!provider && !portalProvider) return 0;
+  const fcm = getFcmProvider(); // BF_ANDROID_STAFF_v1
+  if (!provider && !portalProvider && !fcm) return 0;
   if (!STAFF_ALERT_CATEGORIES.includes(input.category)) return 0;
   const query = dependencies.query ?? pool.query.bind(pool);
   const dialerPayload = buildStaffAlertPayload(input);
@@ -189,6 +219,30 @@ export async function sendStaffAlert(input: StaffAlertInput, dependencies: { que
   for (const row of rows) {
     if (seenTokens.has(row.token)) continue;
     seenTokens.add(row.token);
+    // BF_ANDROID_STAFF_v1 - Android: Firebase, data-only (title/body travel in data; the app draws the notification).
+    if (STAFF_FCM_APPS.includes(row.app as StaffPushApp)) {
+      if (!fcm) continue;
+      try {
+        await fcm.send({ token: row.token }, {
+          title: input.title.replace(/\s+/g, " ").trim().slice(0, STAFF_ALERT_TITLE_MAX),
+          body: input.body.replace(/\s+/g, " ").trim().slice(0, STAFF_ALERT_BODY_MAX),
+          data: buildStaffFcmData(input),
+        });
+        sent += 1;
+      } catch (error) {
+        const failure = error as { invalidRegistration?: unknown };
+        const reason = String((error as Error)?.message ?? error).slice(0, 200);
+        if (failure.invalidRegistration === true) {
+          await query(`DELETE FROM staff_push_tokens WHERE id::text=$1`, [row.id])
+            .catch((e: unknown) => console.warn(JSON.stringify({ event: "staff_push_token_cleanup_failed", tokenId: row.id, error: String((e as Error)?.message ?? e).slice(0, 200) })));
+        } else {
+          await query(`UPDATE staff_push_tokens SET last_error=$2, updated_at=now() WHERE id::text=$1`, [row.id, reason])
+            .catch((e: unknown) => console.warn(JSON.stringify({ event: "staff_push_error_record_failed", tokenId: row.id, error: String((e as Error)?.message ?? e).slice(0, 200) })));
+        }
+        console.warn(JSON.stringify({ event: "staff_push_failed", userId: input.userId, tokenId: row.id, app: row.app, reason, dropped: failure.invalidRegistration === true }));
+      }
+      continue;
+    }
     const environment = row.environment === "sandbox" ? "sandbox" : "production";
     const isPortal = row.app === "portal-ios";
     const sender = isPortal ? portalProvider : provider;

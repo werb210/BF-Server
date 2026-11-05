@@ -13,7 +13,7 @@ function db(rows: Array<{ id: string; token: string; environment: string; app: s
 
 describe("v823 iPad portal alerts", () => {
   it("accepts the portal app", () => {
-    expect([...STAFF_PUSH_APPS]).toEqual(["dialer-ios", "portal-ios"]);
+    expect([...STAFF_PUSH_APPS]).toEqual(["dialer-ios", "portal-ios", "portal-android", "dialer-android"]); // BF_ANDROID_STAFF_v1
   });
 
   it("sends each device through its own app's sender; only the iPad gets the page to open", async () => {
@@ -31,7 +31,7 @@ describe("v823 iPad portal alerts", () => {
     expect(portal.send).toHaveBeenCalledTimes(1);
     expect((dialer.send.mock.calls[0] as any[])[1].url).toBeUndefined();
     expect((portal.send.mock.calls[0] as any[])[1].url).toBe("/communications");
-    expect((query.mock.calls[0] as any[])[1]).toEqual([USER, ["dialer-ios", "portal-ios"]]);
+    expect((query.mock.calls[0] as any[])[1]).toEqual([USER, ["dialer-ios", "portal-ios", "portal-android", "dialer-android"]]);
   });
 
   it("only passes an in-portal path", () => {
