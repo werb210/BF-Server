@@ -72,7 +72,8 @@ router.get("/me", safeHandler(async (req: any, res: any) => {
 
 router.post(
   "/ai-knowledge",
-  requireAdminWrite,
+  requireKnowledgeWrite, // BF_SERVER_v892_SETTINGS_YOU - AI Knowledge is under YOU for every role: brokers and Marketing upload files too
+
   knowledgeUpload.single("file"),
   safeHandler(async (req: any, res: any) => {
     try {
