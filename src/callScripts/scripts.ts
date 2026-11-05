@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { cleanSilo, listDefinitions, writeRecordValues } from "../customFields/service.js";
 import type { ObjectType } from "../customFields/definitions.js";
+import { borealIntakeScript } from "./borealIntake.js";
 
 export type Q = { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
 
@@ -31,6 +32,8 @@ export type Question = {
 export type Section = { id: string; title: string; body: string; questions: Question[] };
 export type Script = {
   id: string; silo: string; name: string; description: string | null; use_for: UseFor; sections: Section[]; position: number; archived_at: string | null;
+  /** BF_SERVER_v891_ONE_CALL_SCRIPT - the script the dialler opens first (at most one active per silo). */
+  dialer_default: boolean;
 };
 export type ScriptInput = Omit<Script, "id" | "silo" | "position" | "archived_at">;
 
@@ -78,13 +81,13 @@ export async function validateScript(db: Q, raw: any, silo: string): Promise<{ o
     return { id: idOf(s?.id), title, body: str(s?.body).slice(0, LIMITS.text), questions };
   });
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { name, description, use_for, sections } };
+  return { ok: true, value: { name, description, use_for, dialer_default: raw?.dialer_default === true, sections } };
 }
 
 /**
- * Starter scripts an Admin adds with one click and then edits. Boreal's intake call scripts are not in this repo,
- * so these follow the questions Boreal's application asks first (time in business, monthly revenue, amount, use of
- * funds); Boreal Insurance (BI) gets a personal guarantee insurance intake instead.
+ * Starter scripts an Admin adds with one click and then edits. BF gets Boreal's own intake call first (v891, the
+ * script the dialler used to show), then intakes that follow the questions Boreal's application asks first (time in
+ * business, monthly revenue, amount, use of funds); Boreal Insurance (BI) gets a personal guarantee insurance intake.
  */
 export function starterScripts(silo: string): ScriptInput[] {
   const q = (label: string, type: QuestionType, options: string[] = [], required = false, help = ""): Question =>
@@ -92,7 +95,7 @@ export function starterScripts(silo: string): ScriptInput[] {
   const recorded = "Mention that the call may be recorded.";
   if (cleanSilo(silo) === "BI") {
     return [{
-      name: "Intake - personal guarantee insurance", description: "First call with a business owner who signed, or is about to sign, a personal guarantee.", use_for: "any", sections: [
+      name: "Intake - personal guarantee insurance", description: "First call with a business owner who signed, or is about to sign, a personal guarantee.", use_for: "any", dialer_default: false, sections: [
         { id: "opening", title: "Opening", body: `Introduce yourself and Boreal Risk Management. Confirm you are speaking with the guarantor. ${recorded}`, questions: [
           q("Is this a good time to talk for ten minutes?", "yes_no"),
           q("Their role in the business", "single_select", ["Owner", "Partner", "Executive", "Other"]),
@@ -134,17 +137,18 @@ export function starterScripts(silo: string): ScriptInput[] {
     q("Notes", "long_text"),
   ] };
   return [
-    { name: "Intake - term loan", description: "First call with a term loan or working capital lead.", use_for: "any", sections: [opening, business,
+    { ...borealIntakeScript(), dialer_default: false }, // BF_SERVER_v891_ONE_CALL_SCRIPT
+    { name: "Intake - term loan", description: "First call with a term loan or working capital lead.", use_for: "any", dialer_default: false, sections: [opening, business,
       { id: "need", title: "The need", body: "Find out how much, what for and how soon.", questions: [
         q("Amount requested", "money", [], true), q("Use of funds", "single_select", ["Working capital", "Expansion", "Inventory", "Refinance debt", "Other"], true),
         q("How soon do they need the money?", "single_select", ["This week", "Within a month", "1-3 months", "Just exploring"]),
       ] }, close] },
-    { name: "Intake - line of credit", description: "First call with a line of credit lead.", use_for: "any", sections: [opening, business,
+    { name: "Intake - line of credit", description: "First call with a line of credit lead.", use_for: "any", dialer_default: false, sections: [opening, business,
       { id: "need", title: "The need", body: "A line is for ongoing needs; confirm it fits better than a term loan.", questions: [
         q("Limit requested", "money", [], true), q("How will they draw on it?", "long_text"),
         q("Do they have receivables lenders could look at?", "yes_no"),
       ] }, close] },
-    { name: "Intake - equipment", description: "First call with an equipment financing lead.", use_for: "any", sections: [opening, business,
+    { name: "Intake - equipment", description: "First call with an equipment financing lead.", use_for: "any", dialer_default: false, sections: [opening, business,
       { id: "equipment", title: "The equipment", body: "Lenders price on the asset: get the details.", questions: [
         q("What is the equipment?", "text", [], true), q("New or used", "single_select", ["New", "Used"], true),
         q("Purchase price", "money", [], true), q("Do they have a quote or invoice from the vendor?", "yes_no"),
@@ -223,5 +227,6 @@ export function rowToScript(r: any): Script {
   return {
     id: String(r.id), silo: cleanSilo(r.silo), name: r.name, description: r.description ?? null, use_for: r.use_for,
     sections: Array.isArray(r.sections) ? r.sections : [], position: Number(r.position ?? 0), archived_at: r.archived_at ? new Date(r.archived_at).toISOString() : null,
+    dialer_default: r.dialer_default === true,
   };
 }

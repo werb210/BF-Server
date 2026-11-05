@@ -34,10 +34,11 @@ describe("building a script", () => {
 });
 
 describe("starter intake scripts", () => {
-  it("Boreal Financial gets term loan, line of credit and equipment intakes", () => {
+  it("Boreal Financial gets its own intake call, then term loan, line of credit and equipment intakes", () => {
     const names = starterScripts("BF").map((s) => s.name);
-    expect(names).toEqual(["Intake - term loan", "Intake - line of credit", "Intake - equipment"]);
-    const q = starterScripts("BF")[0]!.sections.flatMap((s) => s.questions).map((x) => x.label);
+    expect(names).toEqual(["Boreal intake call", "Intake - term loan", "Intake - line of credit", "Intake - equipment"]);
+    expect(starterScripts("BF").every((s) => s.dialer_default === false)).toBe(true);
+    const q = starterScripts("BF")[1]!.sections.flatMap((s) => s.questions).map((x) => x.label);
     expect(q).toEqual(expect.arrayContaining(["Months in business", "Average monthly revenue", "Amount requested", "Use of funds"]));
   });
 

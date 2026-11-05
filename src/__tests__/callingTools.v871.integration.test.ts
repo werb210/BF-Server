@@ -157,6 +157,24 @@ describe("v871 calling tools (real Postgres)", () => {
       }
     });
 
+    it("BF has Boreal's intake call as its dialler script, and an Admin can pick another (v891)", async () => {
+      const first = await http().get("/api/call-scripts").set("Authorization", tok(S1, "Staff"));
+      const intake = first.body.scripts.find((x: any) => x.name === "Boreal intake call");
+      expect(intake).toMatchObject({ silo: "BF", use_for: "calls", dialer_default: true });
+      expect(intake.sections[0].title).toBe("Recording consent (read first)");
+      try {
+        const cur = first.body.scripts.find((x: any) => x.id === scriptId);
+        const r = await http().put(`/api/call-scripts/${scriptId}`).set("Authorization", tok(ADMIN, "Admin")).send({ ...cur, dialer_default: true });
+        expect(r.status).toBe(200);
+        expect(r.body.script.dialer_default).toBe(true);
+        const after = await http().get("/api/call-scripts").set("Authorization", tok(S1, "Staff"));
+        expect(after.body.scripts.filter((x: any) => x.dialer_default).map((x: any) => x.id)).toEqual([scriptId]);
+      } finally {
+        await pool.query(`UPDATE call_scripts SET dialer_default = false WHERE id = $1::uuid`, [scriptId]);
+        await pool.query(`UPDATE call_scripts SET dialer_default = true WHERE id = $1::uuid`, [intake.id]);
+      }
+    });
+
     it("archive, restore and duplicate stay in the silo", async () => {
       const dup = await http().post(`/api/call-scripts/${scriptId}/duplicate`).set("Authorization", tok(ADMIN, "Admin"));
       expect(dup.status).toBe(201);
