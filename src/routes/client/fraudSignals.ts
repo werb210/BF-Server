@@ -8,7 +8,7 @@ import { pool } from "../../db.js";
 import { rateLimitKeyFromRequest } from "../../middleware/clientIp.js";
 import type { Q } from "../../fraud/types.js";
 import { parseSignals, recordSignals } from "../../fraud/deviceSignals.js";
-import { ipinfoProvider } from "../../fraud/providers/lookups.js";
+import { fraudProviders } from "../../fraud/providers/index.js";
 
 const router = Router();
 
@@ -28,7 +28,7 @@ router.post("/fraud-signals", limiter, (req, res) => {
   void (async () => {
     try {
       const db = pool as unknown as Q;
-      await recordSignals(db, parsed, { ip: req.ip ?? null, ipIntel: ipinfoProvider() });
+      await recordSignals(db, parsed, { ip: req.ip ?? null, ipIntel: fraudProviders().ipIntel }); // BF_SERVER_v897_FREE_IP_CHECK - ipinfo when IPINFO_TOKEN is set, else public RDAP
     } catch (err) {
       console.warn("[fraud] device signals not stored", { message: (err as Error)?.message ?? String(err) });
     }

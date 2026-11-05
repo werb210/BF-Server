@@ -6,7 +6,7 @@ const ok = (body: unknown) => async () => ({ ok: true, status: 200, json: async 
 
 describe("Google address validation", () => {
   it("is off without a key and when FRAUD_ADDRESS_PROVIDER=list", () => {
-    expect(addressProvider({ NODE_ENV: "test" } as any, ok({}) as any).configured()).toBe(false);
+    expect(addressProvider({ NODE_ENV: "test" } as any, ok({}) as any).name).toBe("openstreetmap"); // v897: no Google key -> OpenStreetMap
     expect(addressProvider({ NODE_ENV: "test", GOOGLE_PLACES_API_KEY: "k", FRAUD_ADDRESS_PROVIDER: "list" } as any, ok({}) as any).configured()).toBe(false);
     expect(addressProvider({ NODE_ENV: "test", GOOGLE_PLACES_API_KEY: "k" } as any, ok({}) as any).configured()).toBe(true);
   });
