@@ -181,6 +181,50 @@ export async function issueAcsToken(): Promise<AcsToken> {
   return { token: out.token, expiresOn: out.expiresOn.toISOString(), acsUserId: out.user.communicationUserId };
 }
 
+// BF_SERVER_v890_TEAMS_IDENTITY - staff join as themselves (their own Teams identity: their name, no lobby, the
+// organiser's controls) instead of as an anonymous guest. The portal signs the person in to Microsoft for Azure
+// Communication Services (scopes Teams.ManageCalls and Teams.ManageChats on the Boreal Entra app) and sends that
+// token here; ACS checks it and exchanges it for an ACS token for that Teams user. Clients always join as guests.
+export type TeamsTokenClaims = { oid: string; appId: string; email: string };
+
+/** Reads the claims we need from a Microsoft access token (ACS itself checks the signature). Null if malformed. */
+export function teamsTokenClaims(aadToken: unknown): TeamsTokenClaims | null {
+  if (typeof aadToken !== "string" || aadToken.length > 8000) return null;
+  const parts = aadToken.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const c = JSON.parse(Buffer.from(parts[1]!, "base64url").toString("utf8")) as Record<string, unknown>;
+    const oid = String(c.oid ?? "");
+    const appId = String(c.appid ?? c.azp ?? "");
+    const email = String(c.upn ?? c.preferred_username ?? c.unique_name ?? "").toLowerCase();
+    if (!/^[0-9a-f-]{36}$/i.test(oid) || !appId) return null;
+    return { oid, appId, email };
+  } catch { return null; }
+}
+
+/** The Entra app the portal signs in with (the token must be for it). */
+export function teamsClientId(): string {
+  return String(process.env.ACS_TEAMS_CLIENT_ID ?? process.env.MSAL_CLIENT_ID ?? "").trim();
+}
+
+/**
+ * Exchanges the staff member's Microsoft token for an ACS token for their Teams identity. The token must be for
+ * Boreal's Entra app and for the same mailbox as their Boreal account.
+ */
+export async function issueTeamsUserToken(aadToken: string, staffEmail: string): Promise<AcsToken & { identity: "teams" }> {
+  const conn = String(process.env.ACS_CONNECTION_STRING ?? "").trim();
+  if (!conn) throw new Error("acs_not_configured");
+  const claims = teamsTokenClaims(aadToken);
+  if (!claims) throw new Error("teams_token_invalid");
+  const clientId = teamsClientId();
+  if (!clientId || claims.appId !== clientId) throw new Error("teams_token_wrong_app");
+  if (staffEmail && claims.email && claims.email !== staffEmail.toLowerCase()) throw new Error("teams_token_wrong_person");
+  const { CommunicationIdentityClient } = await import("@azure/communication-identity");
+  const client = new CommunicationIdentityClient(conn);
+  const out = await client.getTokenForTeamsUser({ teamsUserAadToken: aadToken, clientId, userObjectId: claims.oid });
+  return { token: out.token, expiresOn: out.expiresOn.toISOString(), acsUserId: "teams:" + claims.oid, identity: "teams" };
+}
+
 /**
  * A Teams booking made through "Book a call" becomes a teams_meetings row, so the
  * existing transcript poller pulls its recording link, transcript and Maya summary

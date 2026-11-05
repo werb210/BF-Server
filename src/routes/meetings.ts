@@ -12,7 +12,7 @@ import { notifyMeeting, cancelMeetingNotices } from "../services/meetingNotify.j
 // BF_SERVER_v888_TEAMS_IN_APP - join Teams meetings inside the portal and the client app.
 import { principalFromRequest } from "../auth/principal.js";
 import {
-  isAcsConfigured, issueAcsToken, isTeamsJoinUrl, phone10, clientCanJoinNow,
+  isAcsConfigured, issueAcsToken, issueTeamsUserToken, isTeamsJoinUrl, phone10, clientCanJoinNow,
   findMeetingForClient, findMeetingForStaff, listMeetingsForClient, staffCalendarHasMeeting, staffIdentity,
 } from "../services/teams/inAppMeetings.js";
 
@@ -127,9 +127,21 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
 
   if (!isAcsConfigured()) { res.status(503).json({ ...NOT_CONFIGURED, joinUrl }); return; }
   if (tooManyTokens(who)) { res.status(429).json({ error: "too_many_requests", message: "Please wait a few minutes and try again.", joinUrl }); return; }
+  // BF_SERVER_v890_TEAMS_IDENTITY - staff who sent their Microsoft token join as themselves. If the exchange fails
+  // (permissions not granted yet, a guest account), they still join, as a named guest, and the reason is logged.
+  if (cPhone === null && typeof b.teamsToken === "string" && b.teamsToken) {
+    try {
+      const me = await staffIdentity(String(req.user?.userId ?? req.user?.id ?? ""));
+      const t = await issueTeamsUserToken(b.teamsToken, me.email || String(req.user?.email ?? ""));
+      res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+      return;
+    } catch (err) {
+      console.warn("[teams-in-app] teams identity token failed; joining as a guest", { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
   try {
     const t = await issueAcsToken();
-    res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+    res.status(200).json({ ...t, identity: "guest", displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
   } catch (err) {
     console.error("[teams-in-app] acs token failed", { message: err instanceof Error ? err.message : String(err) });
     res.status(503).json({ error: "video_unavailable", message: "Video is unavailable right now. Use Open in Teams instead.", joinUrl });
