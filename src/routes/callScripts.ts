@@ -3,7 +3,7 @@
 //   GET    /                        staff: active scripts (Admins: ?include_archived=1), question types, custom fields to map to
 //   POST   /                        Admin: create                { name, description, use_for, sections }
 //   POST   /starters                Admin: add the starter intake scripts for the silo
-//   PUT    /:id                     Admin: replace
+//   PUT    /:id                     Admin: replace (dialer_default: true makes it the silo's dialler script)
 //   POST   /:id/archive | /unarchive | /duplicate    Admin
 //   GET    /runs?contact_id=|application_id=          staff who may see the record: past runs (newest first)
 //   POST   /runs                    staff: start or save a run   { script_id, contact_id?, application_id?, call_sid?, answers, finish? }
@@ -55,12 +55,16 @@ async function save(req: any, res: any, id: string | null) {
   if (!v.ok) return res.status(400).json({ ok: false, error: "validation_error", message: Object.values(v.errors)[0], errors: v.errors });
   const s = v.value;
   try {
+    // BF_SERVER_v891_ONE_CALL_SCRIPT - one dialler script per silo: choosing this one clears the old choice.
+    if (s.dialer_default) {
+      await db().query(`UPDATE call_scripts SET dialer_default = false, updated_at = now() WHERE silo = $1 AND dialer_default AND ($2::uuid IS NULL OR id <> $2::uuid)`, [silo, id]);
+    }
     const r = id
-      ? await db().query(`UPDATE call_scripts SET name = $2, description = $3, use_for = $4, sections = $5::jsonb, updated_by = $6::uuid, updated_at = now() WHERE id = $1::uuid RETURNING *`,
-        [id, s.name, s.description, s.use_for, JSON.stringify(s.sections), actorId(req)])
-      : await db().query(`INSERT INTO call_scripts (silo, name, description, use_for, sections, position, created_by, updated_by)
-          VALUES ($1, $2, $3, $4, $5::jsonb, (SELECT COALESCE(max(position), 0) + 1 FROM call_scripts WHERE silo = $1), $6::uuid, $6::uuid) RETURNING *`,
-        [silo, s.name, s.description, s.use_for, JSON.stringify(s.sections), actorId(req)]);
+      ? await db().query(`UPDATE call_scripts SET name = $2, description = $3, use_for = $4, sections = $5::jsonb, dialer_default = $7, updated_by = $6::uuid, updated_at = now() WHERE id = $1::uuid RETURNING *`,
+        [id, s.name, s.description, s.use_for, JSON.stringify(s.sections), actorId(req), s.dialer_default])
+      : await db().query(`INSERT INTO call_scripts (silo, name, description, use_for, sections, position, created_by, updated_by, dialer_default)
+          VALUES ($1, $2, $3, $4, $5::jsonb, (SELECT COALESCE(max(position), 0) + 1 FROM call_scripts WHERE silo = $1), $6::uuid, $6::uuid, $7) RETURNING *`,
+        [silo, s.name, s.description, s.use_for, JSON.stringify(s.sections), actorId(req), s.dialer_default]);
     const script = rowToScript(r.rows[0]);
     await auditFor(req, id ? "call_script.updated" : "call_script.created", { name: script.name, sections: script.sections.length, silo }, { type: "call_script", id: script.id });
     return res.status(id ? 200 : 201).json({ ok: true, script });
@@ -118,7 +122,8 @@ router.post("/:id/:action(archive|unarchive|duplicate)", ...admin, safeHandler(a
         VALUES ($1, $2, $3, $4, $5::jsonb, (SELECT COALESCE(max(position), 0) + 1 FROM call_scripts WHERE silo = $1), $6::uuid, $6::uuid) RETURNING *`,
         [row.silo, `${row.name} (copy)`.slice(0, 120), row.description, row.use_for, JSON.stringify(row.sections), actorId(req)])).rows[0];
     } else {
-      out = (await db().query(`UPDATE call_scripts SET archived_at = ${action === "archive" ? "now()" : "NULL"}, updated_by = $2::uuid, updated_at = now() WHERE id = $1::uuid RETURNING *`, [row.id, actorId(req)])).rows[0];
+      // v891: an archived script stops being the dialler script, so unarchiving never clashes with the new one.
+      out = (await db().query(`UPDATE call_scripts SET archived_at = ${action === "archive" ? "now(), dialer_default = false" : "NULL"}, updated_by = $2::uuid, updated_at = now() WHERE id = $1::uuid RETURNING *`, [row.id, actorId(req)])).rows[0];
     }
   } catch (err: any) {
     if (err?.code === "23505") return res.status(409).json({ ok: false, error: "duplicate_name", message: "An active script already has that name. Rename one first." });
