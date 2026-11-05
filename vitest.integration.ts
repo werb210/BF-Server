@@ -25,6 +25,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/lenderApi.v873.integration.test.ts", // BF_SERVER_v873_LENDER_API - needs Postgres
   "src/__tests__/dealTools.v872.integration.test.ts", // BF_SERVER_v872_DEAL_TOOLS - needs Postgres
   "src/__tests__/callingTools.v871.integration.test.ts", // BF_SERVER_v871_CALLING_TOOLS - needs Postgres
+  "src/__tests__/ksSharedMailboxes.v895.integration.test.ts", // BF_SERVER_v895_KS_INBOX - needs Postgres
   "src/__tests__/crmDataModel.v870.integration.test.ts", // BF_SERVER_v870_CRM_DATA_MODEL - needs Postgres
   "src/__tests__/staffRefresh.v868.integration.test.ts", // BF_SERVER_v868_SLIDING_REFRESH - needs Postgres
   "src/__tests__/settingsPack.v869.integration.test.ts", // BF_SERVER_v869_SETTINGS_PACK - needs Postgres
