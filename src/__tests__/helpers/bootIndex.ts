@@ -88,6 +88,9 @@ export type Boot = {
   started(): string[];
   /** Resolves once the worker block has registered its SIGTERM handler (i.e. finished). */
   workersDone(): Promise<void>;
+  /** BF_SERVER_v894_BOOT_DRAIN - waits until this boot's background worker block has gone quiet, so none of its
+   *  late starts land in the next test's boot. Call before restore(). */
+  drain(): Promise<void>;
   logText(level?: "log" | "warn" | "error"): string;
   restore(): void;
 };
@@ -261,6 +264,17 @@ export async function bootIndex(opts: BootOptions = {}): Promise<Boot> {
       await vi.waitFor(() => {
         if (!handlers.has("SIGTERM")) throw new Error("worker block not finished");
       }, { timeout: 10_000, interval: 5 });
+    },
+    async drain() {
+      const sleep = (ms: number) => new Promise((r) => realSetTimeout(r, ms));
+      const deadline = Date.now() + 10_000;
+      let seen = events.length;
+      let quietSince = Date.now();
+      while (Date.now() < deadline) {
+        await sleep(20);
+        if (events.length !== seen) { seen = events.length; quietSince = Date.now(); }
+        else if (Date.now() - quietSince > 400) return;
+      }
     },
     logText(level) {
       return logs.filter((l) => !level || l.level === level).map((l) => l.args.map((a) => (typeof a === "string" ? a : String(a))).join(" ")).join("\n");

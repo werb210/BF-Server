@@ -15,7 +15,7 @@ describe("v479 BF workers switch", () => {
   });
   describe("gates the whole worker block in index.ts, before the first worker starts", () => {
     let boot: Boot | null = null;
-    afterEach(() => { boot?.restore(); boot = null; });
+    afterEach(async () => { await boot?.drain(); boot?.restore(); boot = null; }); // BF_SERVER_v894_BOOT_DRAIN
 
     it("BF_WORKERS_ENABLED=false starts no worker at all and says so", async () => {
       boot = await bootIndex({ env: { BF_WORKERS_ENABLED: "false" } });
