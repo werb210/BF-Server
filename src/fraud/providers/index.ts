@@ -3,7 +3,7 @@
 import type { FetchLike } from "./http.js";
 import { corporationsCanadaProvider, type RegistryProvider } from "./registry.js";
 import {
-  addressProvider, idvProvider, ipinfoProvider, rdapProvider, twilioLineTypeProvider, voiceProvider,
+  addressProvider, idvProvider, ipinfoProvider, rdapIpProvider, rdapProvider, twilioLineTypeProvider, voiceProvider,
   type AddressProvider, type DomainAgeProvider, type IdvProvider, type IpIntelProvider, type LineTypeProvider, type VoiceProvider,
 } from "./lookups.js";
 
@@ -22,7 +22,7 @@ export function fraudProviders(env: NodeJS.ProcessEnv = process.env, fetchImpl?:
     registry: corporationsCanadaProvider(env, fetchImpl),
     domainAge: rdapProvider(env, fetchImpl),
     lineType: twilioLineTypeProvider(env, fetchImpl),
-    ipIntel: ipinfoProvider(env, fetchImpl),
+    ipIntel: String(env.IPINFO_TOKEN ?? "").trim() ? ipinfoProvider(env, fetchImpl) : rdapIpProvider(env, fetchImpl), // BF_SERVER_v897_FREE_IP_CHECK
     idv: idvProvider(env),
     voice: voiceProvider(env),
     address: addressProvider(env, fetchImpl),
@@ -36,9 +36,9 @@ export function providerStatus(p: FraudProviders): ProviderStatus[] {
     { key: "registry", label: "Corporate registry (Canada federal)", provider: p.registry.name, configured: p.registry.configured(), setting: "CORPORATIONS_CANADA_API_KEY", used_by: ["fraud_6"] },
     { key: "domainAge", label: "Website and email domain age", provider: p.domainAge.name, configured: p.domainAge.configured(), setting: "on by default (FRAUD_RDAP=off turns it off)", used_by: ["fraud_6", "fraud_7"] },
     { key: "lineType", label: "Phone line type", provider: p.lineType.name, configured: p.lineType.configured(), setting: "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN", used_by: ["fraud_6", "fraud_7"] },
-    { key: "ipIntel", label: "IP address location and VPN", provider: p.ipIntel.name, configured: p.ipIntel.configured(), setting: "IPINFO_TOKEN", used_by: ["fraud_9"] },
+    { key: "ipIntel", label: "IP address location and VPN", provider: p.ipIntel.name, configured: p.ipIntel.configured(), setting: "IPINFO_TOKEN for VPN/proxy flags; without it, public RDAP gives country and data-centre networks", used_by: ["fraud_9"] },
     { key: "idv", label: "ID verification vendor", provider: p.idv.name, configured: p.idv.configured(), setting: "ONFIDO_API_TOKEN, ONFIDO_WORKFLOW_ID, ONFIDO_WEBHOOK_TOKEN, ONFIDO_REGION (Settings > ID verification)", used_by: ["fraud_8"] }, // BF_SERVER_v872_KYC
     { key: "voice", label: "Voice / deepfake analysis vendor", provider: p.voice.name, configured: p.voice.configured(), setting: "not available yet (vendor to be chosen)", used_by: ["fraud_15"] },
-    { key: "address", label: "Address verification vendor", provider: p.address.name, configured: p.address.configured(), setting: "GOOGLE_PLACES_API_KEY (Address Validation API enabled on it), or GOOGLE_ADDRESS_VALIDATION_KEY; the built-in mail-drop list is always used too", used_by: ["fraud_6"] },
+    { key: "address", label: "Address verification vendor", provider: p.address.name, configured: p.address.configured(), setting: "OpenStreetMap by default (no key); GOOGLE_PLACES_API_KEY with the Address Validation API for Google; the built-in mail-drop list is always used too", used_by: ["fraud_6"] },
   ];
 }
