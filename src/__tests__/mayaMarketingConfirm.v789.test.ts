@@ -83,7 +83,8 @@ describe("v789 Maya marketing send needs its own preview", () => {
     expect(r.body).toMatchObject({ ok: true, preview: true, recipients: 12, expires_in_minutes: 15 });
     expect(r.body.pending_action_id).toMatch(/^aaaaaaaa-/);
     expect(h.rows[0]).toMatchObject({ staff_user_id: STAFF, status: "pending" });
-    expect(h.rows[0].expires_at - h.rows[0].created_at).toBeLessThanOrEqual(15 * 60_000);
+    // BF_SERVER_v899 - the two timestamps are taken a moment apart, so allow 1 s of clock drift (it failed at 900001 ms).
+    expect(h.rows[0].expires_at - h.rows[0].created_at).toBeLessThanOrEqual(15 * 60_000 + 1_000);
     expect(h.ran).toEqual([]);
   });
 
