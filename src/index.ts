@@ -99,6 +99,16 @@ export async function start(): Promise<void> {
       process.exit(1);
     }
   }
+  // BF_SERVER_v886_OCR_REEXTRACT - once per database, re-read every stored document with the current field parser
+  // (two minutes after start, in the background; never fatal).
+  {
+    const t = setTimeout(() => {
+      void Promise.all([import("./db.js"), import("./modules/ocr/reextract.js")])
+        .then(([{ pool }, m]) => m.runOcrReextractOnce(pool as any))
+        .catch((err) => console.error("[startup] ocr re-extract failed:", err instanceof Error ? err.message : String(err)));
+    }, 120_000);
+    (t as any).unref?.();
+  }
   // BF_SERVER_TEMPLATE_LANDING_BACKFILL_v28 - repair marketing template landing
   // pages (bad host from a misconfigured LANDING_BASE_URL, or seeded rows that
   // never had html and so never had a page). Deliberately not fatal.
