@@ -185,6 +185,7 @@ import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
 import watchDataRoutes from "../watch/dataRoutes.js";
 import brokerToolsRoutes from "./brokerTools.js"; // BF_SERVER_v865_BROKER_TOOLS
+import lenderUpdatesRoutes from "./lenderUpdates.js"; // BF_SERVER_v890_MAYA_LENDER_UPDATES
 import clientBrokerRoutes from "./clientBroker.js"; // BF_SERVER_v865_BROKER_TOOLS
 import dealDeskRoutes from "./dealDesk.js"; // BF_SERVER_v867_BROKER_TOOLS_2
 import vendorPortalRoutes from "./vendorPortal.js"; // BF_SERVER_v867_BROKER_TOOLS_VENDORS
@@ -343,6 +344,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/client/documents-needed", router: clientDocumentsNeededRoutes },
   // BF_SERVER_v865_BROKER_TOOLS - deal tools for staff, and the client app's side of them.
   { path: "/broker-tools", router: brokerToolsRoutes },
+  { path: "/lender-updates", router: lenderUpdatesRoutes }, // BF_SERVER_v890_MAYA_LENDER_UPDATES - Maya-proposed lender changes
   { path: "/client-broker", router: clientBrokerRoutes },
   // BF_SERVER_v867_BROKER_TOOLS_2 - invoices, credit lines, rate cards and structuring, scorecards, contracts, vendors, bureau.
   { path: "/deal-desk", router: dealDeskRoutes },
