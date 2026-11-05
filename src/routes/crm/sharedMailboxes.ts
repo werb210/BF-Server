@@ -47,6 +47,8 @@ router.get("/:address/signature", safeHandler(async (req: any, res: any) => {
 // PUT /api/crm/shared-mailboxes/:address/signature  body: { signature_html }
 router.put("/:address/signature", safeHandler(async (req: any, res: any) => {
   const role = (req.user?.role ?? "").toString();
+  // BF_SERVER_v893_SHARED_SIGNATURE_ADMIN - a shared mailbox's signature is set by an Admin; everyone else sets only their own.
+  if (role.toUpperCase() !== "ADMIN") return res.status(403).json({ error: "admin_only" });
   const silo = resolveSiloFromRequest(req);
   const address = String(req.params.address ?? "").toLowerCase();
   const html = typeof req.body?.signature_html === "string" ? req.body.signature_html : "";

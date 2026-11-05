@@ -152,8 +152,45 @@ export function classifyAddressByList(address: string): AddressType {
   return { kind: "unknown", matched: null, source: "list" };
 }
 
-/** A paid address-verification service (Canada Post AddressComplete, Smarty) plugs in here; none is wired in yet. */
-export function addressProvider(env: NodeJS.ProcessEnv = process.env): AddressProvider {
-  const chosen = String(env.FRAUD_ADDRESS_PROVIDER ?? "").trim();
-  return { name: chosen || "none", configured: () => false, async classify() { return null; } };
+/** BF_SERVER_v893_ADDRESS_VALIDATION - Google Address Validation's answer, mapped to the same kinds as the list.
+ *  The built-in list still wins for virtual offices and mail drops (Google cannot tell those from a street address). */
+export function parseGoogleAddressValidation(body: any, address: string): AddressType | null {
+  const result = body?.result;
+  if (!result || typeof result !== "object") return null;
+  const listed = classifyAddressByList(address);
+  if (listed.kind !== "unknown") return { ...listed, source: "list+google" };
+  const meta = result.metadata ?? {};
+  const verdict = result.verdict ?? {};
+  if (meta.poBox === true) return { kind: "po_box", matched: "PO box (Google)", source: "google" };
+  const granularity = String(verdict.validationGranularity ?? "").toUpperCase();
+  const premise = granularity === "PREMISE" || granularity === "SUB_PREMISE";
+  if (premise && verdict.addressComplete === true && verdict.hasUnconfirmedComponents !== true) {
+    return { kind: "street", matched: String(result.address?.formattedAddress ?? "") || null, source: "google" };
+  }
+  return { kind: "unknown", matched: granularity ? `not confirmed (${granularity.toLowerCase()})` : "not confirmed", source: "google" };
+}
+
+/** BF_SERVER_v893_ADDRESS_VALIDATION - Google Address Validation, using GOOGLE_ADDRESS_VALIDATION_KEY or the server's
+ *  existing GOOGLE_PLACES_API_KEY (the Address Validation API must be enabled on that key's Google Cloud project).
+ *  FRAUD_ADDRESS_PROVIDER=list turns it off. Any error returns null, so the check falls back to the built-in list. */
+export function addressProvider(env: NodeJS.ProcessEnv = process.env, fetchImpl?: FetchLike): AddressProvider {
+  const chosen = String(env.FRAUD_ADDRESS_PROVIDER ?? "").trim().toLowerCase();
+  const key = String(env.GOOGLE_ADDRESS_VALIDATION_KEY ?? env.GOOGLE_PLACES_API_KEY ?? "").trim();
+  const f = fetchImpl ?? defaultFetch();
+  const on = Boolean(key) && chosen !== "list" && chosen !== "off";
+  return {
+    name: on ? "google" : "none",
+    configured: () => on && networkAllowed(fetchImpl, env),
+    async classify(address: string) {
+      if (!on || !networkAllowed(fetchImpl, env) || !address.trim()) return null;
+      const r = await requestJson(f, `https://addressvalidation.googleapis.com/v1:validateAddress?key=${encodeURIComponent(key)}`, {
+        body: { address: { addressLines: [address.trim()] } },
+      });
+      if (!r.ok) {
+        console.warn("[fraud] google address validation failed; using the built-in list", { error: r.error });
+        return null;
+      }
+      return parseGoogleAddressValidation(r.body, address);
+    },
+  };
 }
