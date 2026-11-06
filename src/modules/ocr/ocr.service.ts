@@ -21,6 +21,7 @@ import {
 } from "./ocr.repo.js";
 import { createOpenAiOcrProvider, createAzureDocIntelOcrProvider, type OcrProvider } from "./ocr.provider.js";
 import { isPermanentOcrError } from "./officeText.js"; // BF_SERVER_v848_OFFICE_DOCS
+import { resolveMimeType } from "./mimeType.js"; // BF_SERVER_v906_OCR_MIME
 // BF_SERVER_BLOCK_1_30_DOC_INTEL_AND_BANKING
 import { createOcrStorage, OcrStorageValidationError, type OcrStorage } from "./ocr.storage.js";
 import { type OcrJobRecord } from "./ocr.types.js";
@@ -68,20 +69,21 @@ async function callDocIntelWithRetry<T>(callFn: () => Promise<T>, maxAttempts = 
   throw lastErr ?? new Error("DocIntel exhausted retries");
 }
 
-function parseMetadata(metadata: unknown): { mimeType: string; fileName?: string } {
+// BF_SERVER_v906_OCR_MIME - the mime type is no longer required in the version's metadata: it is worked out from the
+// file name or the file's bytes when missing (resolveMimeType), and saved back so the next reader has it.
+function parseMetadata(metadata: unknown): { mimeType: string | null; fileName?: string; originalName?: string } {
   if (!metadata || typeof metadata !== "object") {
     throw new Error("missing_document_metadata");
   }
-  const record = metadata as { mimeType?: unknown; fileName?: unknown };
-  if (!record.mimeType || typeof record.mimeType !== "string") {
-    throw new Error("missing_document_mime_type");
-  }
-  const result: { mimeType: string; fileName?: string } = {
-    mimeType: record.mimeType,
+  const record = metadata as { mimeType?: unknown; fileName?: unknown; originalName?: unknown; filename?: unknown };
+  const result: { mimeType: string | null; fileName?: string; originalName?: string } = {
+    mimeType: typeof record.mimeType === "string" && record.mimeType.trim() ? record.mimeType : null,
   };
   if (typeof record.fileName === "string") {
     result.fileName = record.fileName;
   }
+  const other = typeof record.originalName === "string" ? record.originalName : typeof record.filename === "string" ? record.filename : null;
+  if (other) result.originalName = other;
   return result;
 }
 
@@ -505,8 +507,24 @@ export async function processOcrJob(
     if (!version) {
       throw new Error("document_version_missing");
     }
-    const { mimeType, fileName } = parseMetadata(version.metadata);
+    const meta = parseMetadata(version.metadata);
+    const fileName = meta.fileName;
     const buffer = await storage.fetchBuffer({ content: version.content });
+    // BF_SERVER_v906_OCR_MIME
+    const resolved = resolveMimeType({ stored: meta.mimeType, fileNames: [meta.fileName, meta.originalName, document.filename, document.title], buffer });
+    if (!resolved.mimeType) {
+      throw new Error("missing_document_mime_type");
+    }
+    const mimeType = resolved.mimeType;
+    if (resolved.inferred) {
+      await dbQuery(
+        `UPDATE document_versions SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('mimeType', $2::text) WHERE id::text = ($1)::text`,
+        [version.id, mimeType],
+      ).catch((err: unknown) => {
+        logError("ocr_mime_type_backfill_failed", { code: "ocr_mime_type_backfill_failed", documentId: job.document_id, error: err instanceof Error ? err.message : "unknown_error" });
+      });
+      logInfo("ocr_mime_type_inferred", { jobId: job.id, documentId: job.document_id, mimeType });
+    }
     const extractPayload = {
       buffer,
       mimeType,

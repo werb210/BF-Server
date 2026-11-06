@@ -30,13 +30,52 @@ export async function isSbaApplication(applicationId: string): Promise<boolean> 
 
   // Fallback for an application that has not been matched to a product yet:
   // the wizard records the SBA / Start-up purpose on the kyc slice.
-  const a = await dbQuery<{ purpose: string | null }>(
-    `SELECT metadata->'kyc'->>'purposeOfFunds' AS purpose
+  // BF_SERVER_v906_SBA_ONLY_US - an application filed under an SBA product counts; a "start up" purpose counts only on a
+  // US file. SBA is a US program: Canadian start-ups were showing the SBA Signing tab and the SBA signing gate.
+  const a = await dbQuery<{ purpose: string | null; product_category: string | null; metadata: any }>(
+    `SELECT metadata->'kyc'->>'purposeOfFunds' AS purpose, product_category, metadata
        FROM applications WHERE id::text = ($1)::text LIMIT 1`,
     [applicationId],
-  ).catch(() => ({ rows: [] as Array<{ purpose: string | null }> }));
-  const p = String(a.rows[0]?.purpose ?? "").toLowerCase();
-  return p.includes("sba") || p.includes("start up") || p.includes("start-up");
+  ).catch((err: unknown) => {
+    console.warn("[sba-trigger] application read failed", { applicationId, message: (err as Error)?.message });
+    return { rows: [] as Array<{ purpose: string | null; product_category: string | null; metadata: any }> };
+  });
+  const row = a.rows[0];
+  return sbaFromApplication(row?.purpose ?? null, row?.product_category ?? null, row?.metadata ?? null);
+}
+
+const CA_PROVINCES = new Set(["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"]);
+
+/** BF_SERVER_v906_SBA_ONLY_US - does the application say the business is in Canada? */
+export function isCanadianMetadata(md: any): boolean {
+  if (!md || typeof md !== "object") return false;
+  const pick = (...vals: unknown[]) => vals.map((v) => String(v ?? "").trim()).filter(Boolean);
+  const countries = pick(md.country, md.business?.country, md.businessDetails?.country, md.kyc?.country, md.kyc?.businessCountry, md.formData?.business?.country, md.borrower?.country);
+  if (countries.some((c) => /^(ca|can|canada)$/i.test(c))) return true;
+  if (countries.some((c) => /^(us|usa|united states)/i.test(c))) return false;
+  const provinces = pick(md.business?.province, md.business?.state, md.businessDetails?.province, md.businessDetails?.state, md.kyc?.province, md.kyc?.businessProvince, md.province, md.formData?.business?.province);
+  if (provinces.some((p) => CA_PROVINCES.has(p.toUpperCase()))) return true;
+  const postal = pick(md.business?.postalCode, md.businessDetails?.postalCode, md.kyc?.postalCode, md.postalCode);
+  return postal.some((p) => /^[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d$/.test(p));
+}
+
+/** BF_SERVER_v906_SBA_ONLY_US - the application-level signals: an SBA product, an SBA purpose, or a US start-up. */
+export function sbaFromApplication(purpose: string | null, productCategory: string | null, metadata: any): boolean {
+  if (["SBA", "SBA_GOVERNMENT"].includes(String(productCategory ?? "").trim().toUpperCase())) return true;
+  const p = String(purpose ?? "").toLowerCase();
+  if (/\bsba\b/.test(p)) return true;
+  if (p.includes("start up") || p.includes("start-up") || p.includes("startup")) return isUsMetadata(metadata);
+  return false;
+}
+
+/** BF_SERVER_v906_SBA_ONLY_US - a US business: the country says so, or a US ZIP code with no Canadian signal. */
+export function isUsMetadata(md: any): boolean {
+  if (!md || typeof md !== "object" || isCanadianMetadata(md)) return false;
+  const pick = (...vals: unknown[]) => vals.map((v) => String(v ?? "").trim()).filter(Boolean);
+  const countries = pick(md.country, md.business?.country, md.businessDetails?.country, md.kyc?.country, md.kyc?.businessCountry, md.formData?.business?.country, md.borrower?.country);
+  if (countries.some((c) => /^(us|usa|united states)/i.test(c))) return true;
+  const postal = pick(md.business?.postalCode, md.business?.zip, md.businessDetails?.postalCode, md.businessDetails?.zip, md.kyc?.postalCode, md.kyc?.zip, md.postalCode, md.zip);
+  return postal.some((z) => /^\d{5}(-\d{4})?$/.test(z));
 }
 
 /** Which SBA forms must be in before signing can open. */

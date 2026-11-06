@@ -9,12 +9,22 @@ const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.ST
 router.get("/:applicationId", ...staff, safeHandler(async (req: any, res: any) => {
   const { loadSummaryV2 } = await svc(); res.json({ summary: await loadSummaryV2(String(req.params.applicationId), req.user?.id ? String(req.user.id) : null) });
 }));
+// BF_SERVER_v906_CREDIT_STEPS - the state of each button (read financials, read collateral, research, generate).
+router.get("/:applicationId/steps", ...staff, safeHandler(async (req: any, res: any) => {
+  const { listSteps } = await import("../services/credit/steps.js");
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ steps: await listSteps(String(req.params.applicationId)) });
+}));
 router.post("/:applicationId/generate", ...staff, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.applicationId); const { generateSummaryV2, loadSummaryV2, mergeKeepingEdits, saveSummaryV2 } = await svc();
+  const { markStep } = await import("../services/credit/steps.js"); // BF_SERVER_v906_CREDIT_STEPS
+  const actor = req.user?.id ? String(req.user.id) : null;
+  await markStep("generate", id, "running", null, actor);
   try { const prev = await loadSummaryV2(id); const doc = mergeKeepingEdits(req.query?.overwrite === "1" ? null : prev?.doc ?? null, await generateSummaryV2(id));
-    await saveSummaryV2(id, doc); console.info("[credit-summary-v2] generated", { applicationId: id, dealType: doc.dealType, missing: doc.missing.length, warnings: doc.warnings.length });
+    await saveSummaryV2(id, doc); await markStep("generate", id, "done", `Draft ready${doc.missing.length ? `; ${doc.missing.length} item(s) still missing` : ""}.`, actor); console.info("[credit-summary-v2] generated", { applicationId: id, dealType: doc.dealType, missing: doc.missing.length, warnings: doc.warnings.length });
     res.json({ summary: await loadSummaryV2(id, req.user?.id ? String(req.user.id) : null) });
   } catch (e) { const msg = (e as Error)?.message ?? "failed"; console.error("[credit-summary-v2] generate_failed", { applicationId: id, message: msg });
+    await markStep("generate", id, "failed", msg, actor);
     res.status(msg === "application_not_found" ? 404 : 502).json({ error: "generate_failed", message: msg }); }
 }));
 router.put("/:applicationId/sections/:key", ...staff, safeHandler(async (req: any, res: any) => {

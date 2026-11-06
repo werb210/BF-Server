@@ -15,7 +15,9 @@ router.get("/:applicationId", ...staff, safeHandler(async (req: any, res: any) =
 router.post("/:applicationId/extract", ...staff, safeHandler(async (req: any, res: any) => {
   const id = String(req.params.applicationId);
   try {
-    const result = await (await svc()).extractApplicationCollateral(id);
+    const { runStep } = await import("../services/credit/steps.js"); // BF_SERVER_v906_CREDIT_STEPS
+    const result: any = await runStep("collateral", id, req.user?.id ? String(req.user.id) : null, async () => (await svc()).extractApplicationCollateral(id),
+      (r: any) => `Read ${r?.documents ?? 0} document(s).`);
     console.info("[credit-collateral] extracted", { applicationId: id, ...result });
     res.json({ ...result, ...(await (await svc()).loadCollateral(id)) });
   } catch (error) {

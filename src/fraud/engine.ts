@@ -21,7 +21,7 @@ import { evaluateInsider, evaluateNetwork, evaluateVoice, type VoiceOutcome } fr
 import { buildNetwork, accountNumbersFor } from "./network.js";
 import { checkWatchlist, evaluateWatchlist, watchlistEntries, watchlistReady } from "./watchlist.js";
 import { getFraudSettings } from "./store.js";
-import { computeScore } from "./score.js";
+import { bankStatementIds, computeScore } from "./score.js"; // BF_SERVER_v906_FRAUD_FLOOR
 import { notApplicable, type CheckResult } from "./types.js";
 import type { OpsFetch } from "./opsLink.js";
 
@@ -345,7 +345,9 @@ export async function runFraudChecks(db: Q, applicationId: string, deps: EngineD
   // Check 16 last: the score over everything stored.
   await step("fraud_16", async () => {
     const all = await listResults(db, applicationId);
-    const s = computeScore(all, allowed);
+    // BF_SERVER_v906_FRAUD_FLOOR - a tampered bank statement holds the score in High risk.
+    const docs = await db.query(`SELECT id::text AS id, COALESCE(category, document_type) AS category FROM documents WHERE application_id::text = $1`, [applicationId]);
+    const s = computeScore(all, allowed, { bankStatementIds: bankStatementIds(docs.rows as Array<{ id: string; category: string | null }>) });
     return {
       status: s.band === "high" ? "red" : s.band === "medium" ? "amber" : "green",
       reasons: s.reasons.length ? s.reasons.map((r) => ({ code: r.check, severity: r.severity, text: r.text })) : [{ code: "score_clean", severity: "info", text: "No fraud signals were found by the checks that ran." }],

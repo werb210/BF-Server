@@ -18,7 +18,7 @@ import { getSilo } from "../middleware/silo.js";
 import type { Q } from "../fraud/types.js";
 import { FRAUD_CHECKS } from "../fraud/catalogue.js";
 import { allowedChecks, enqueueFraudRun, getFraudSettings, listResults, queueStatus, saveFraudSettings } from "../fraud/store.js";
-import { computeScore, prescreenText } from "../fraud/score.js";
+import { bankStatementIds, computeScore, prescreenText } from "../fraud/score.js"; // BF_SERVER_v906_FRAUD_FLOOR
 import { buildNetwork, loadProfile } from "../fraud/engine.js";
 import { sameSiloNetwork } from "../fraud/network.js";
 import { fraudProviders, providerStatus } from "../fraud/providers/index.js";
@@ -84,8 +84,15 @@ router.get("/applications/:id", ...staff, safeHandler(async (req: any, res) => {
       statement_math: math ? { status: math.status, reasons: math.reasons, checked_at: math.checked_at } : null,
     };
   });
-  const score = computeScore(rows, allowed);
   const queue = await queueStatus(db(), app.id);
+  // BF_SERVER_v906_FRAUD_FLOOR - a tampered bank statement floors the score; while a run is queued or a document is
+  // still waiting for its tamper scan the score is marked not final (the tab shows "Checks still running").
+  const pendingDocuments = documents.filter((d: any) => !d.generated && !d.tamper).length;
+  const score = computeScore(rows, allowed, {
+    bankStatementIds: bankStatementIds(docs.rows.map((d: any) => ({ id: String(d.id), category: d.category ?? null }))),
+    queued: Boolean(queue.queued),
+    pendingDocuments,
+  });
   // BF_SERVER_v885_FRAUD_TEXT - the score shown is from the last finished run; say so while a new run waits,
   // instead of "Checks are running" next to a score that reads as final.
   const lastRun = rows.reduce<string | null>((m, r) => { const t = r.checked_at ? new Date(r.checked_at as any).toISOString() : null; return t && (!m || t > m) ? t : m; }, null);
@@ -120,7 +127,8 @@ router.get("/applications/:id/prescreen", ...staff, safeHandler(async (req: any,
   res.setHeader("Cache-Control", "no-store");
   const app = await appInSilo(String(req.params.id), res);
   if (!app) return res.status(404).json({ ok: false, error: "not_found" });
-  const s = computeScore(await listResults(db(), app.id), allowedChecks());
+  const docRows = await db().query(`SELECT id::text AS id, COALESCE(category, document_type) AS category FROM documents WHERE application_id::text = $1`, [app.id]);
+  const s = computeScore(await listResults(db(), app.id), allowedChecks(), { bankStatementIds: bankStatementIds(docRows.rows as Array<{ id: string; category: string | null }>) }); // BF_SERVER_v906_FRAUD_FLOOR
   const include = app.include ?? (await getFraudSettings(db())).include_prescreen_in_package;
   return res.json({ ok: true, score: s, include_in_package: include, lines: prescreenText(s, { company: FRAUD_COMPANY_NAME, applicationName: app.name, at: new Date() }) });
 }));

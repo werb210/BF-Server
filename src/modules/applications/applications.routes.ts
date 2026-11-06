@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { requireAuth, requireCapability } from '../../middleware/auth.js';
+import { requireAuth, requireAuthorization, requireCapability } from '../../middleware/auth.js';
+import { ROLES } from '../../auth/roles.js'; // BF_SERVER_v906_BANKING_INSIGHTS
 import { CAPABILITIES } from '../../auth/capabilities.js';
 import { familyAppIdsSql } from './applications.repo.js'; // BF_SERVER_v797_FAMILY_DOCS
 import { pool } from '../../db.js';
@@ -13,6 +14,7 @@ import { prettyDocLabel } from '../../lib/docDisplay.js'; // BF_SERVER_PNL_DISPL
 import { computeOutstandingDocs } from '../../routes/clientDocumentsNeeded.js';
 import { getSilo } from '../../middleware/silo.js';
 import { requireAdmin } from '../../middleware/requireAdmin.js';
+import { buildBankingInsights } from '../../services/banking/bankingInsights.js'; // BF_SERVER_v906_BANKING_INSIGHTS
 // BF_APP_LENDERS_ENDPOINT_v42 — Block 42-A
 import { matchLenders, type LenderMatch } from '../../ai/lenderMatchEngine.js';
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
@@ -798,7 +800,9 @@ router.get("/:id/contacts", requireAuth, safeHandler(async (req: any, res: any) 
 // Admin-only force-retry. Resets next_attempt_at and attempt_count so the
 // banking auto-worker picks the row up on the next tick. Worker handles
 // the actual run; this just opens the gate.
-router.post('/:id/banking-analysis/retry', requireAuth, requireAdmin, safeHandler(async (req: any, res: any) => {
+// BF_SERVER_v906_BANKING_INSIGHTS - staff (not only Admins) can re-run the analysis: the tab's "Re-run analysis" button
+// is on every staff member's screen and failed for Staff with a 403.
+router.post('/:id/banking-analysis/retry', requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.id || '').trim();
   if (!applicationId) return res.status(400).json({ error: 'application_id_required' });
   const r = await pool.query(
@@ -822,6 +826,24 @@ router.post('/:id/banking-analysis/retry', requireAuth, requireAdmin, safeHandle
     );
   }
   return res.status(202).json({ applicationId, queued: true });
+}));
+
+// BF_SERVER_v906_BANKING_INSIGHTS - "What the OCR read": the transactions parsed from one statement (or every
+// statement), in statement order, for the per-statement expandable on the Banking Analysis tab.
+router.get('/:id/banking-analysis/transactions', safeHandler(async (req: any, res: any) => {
+  const applicationId = String(req.params.id ?? '').trim();
+  const app = await pool.query(`SELECT id FROM applications WHERE id::text = ($1)::text AND silo = $2 LIMIT 1`, [applicationId, getSilo(res)]);
+  if (!app.rows[0]) throw new AppError('not_found', 'Application not found.', 404);
+  const documentId = String(req.query.document_id ?? '').trim() || null;
+  const r = await pool.query<any>(
+    `SELECT document_id, transaction_date::text AS date, description, amount::float8 AS amount, balance_after::float8 AS balance, is_nsf
+       FROM banking_transactions
+      WHERE application_id::text = ($1)::text AND ($2::text IS NULL OR document_id = $2::text)
+      ORDER BY transaction_date ASC, created_at ASC, id ASC LIMIT 2000`,
+    [applicationId, documentId],
+  );
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ applicationId, documentId, transactions: r.rows, truncated: r.rows.length >= 2000 });
 }));
 
 router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
@@ -874,6 +896,18 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
   const monthlyRes = await pool.query<any>(`SELECT month_start::text AS month, total_deposits::text AS deposits, total_withdrawals::text AS withdrawals, net_cash_flow::text AS net, ending_balance::text AS ending_balance, nsf_count FROM banking_monthly_summaries WHERE application_id::text = ($1)::text ORDER BY month_start ASC`, [applicationId]);
   const rich = richRes.rows[0] ?? null;
   const monthly = monthlyRes.rows;
+  // BF_SERVER_v906_BANKING_INSIGHTS - figures worked out from the parsed transactions: the monthly trend when the
+  // monthly rows are missing, NSFs, days below zero, payees and payors, lender / MCA payments, balance by month, and
+  // what the OCR read from each statement.
+  const txRes = await pool.query<any>(
+    `SELECT document_id, transaction_date::text AS transaction_date, description, amount::float8 AS amount,
+            balance_after::float8 AS balance_after, is_nsf
+       FROM banking_transactions WHERE application_id::text = ($1)::text
+      ORDER BY transaction_date ASC, created_at ASC, id ASC LIMIT 20000`,
+    [applicationId],
+  );
+  const insights = buildBankingInsights(txRes.rows);
+  const monthFigures = new Map(insights.months.map((m) => [m.month.slice(0, 7), m]));
   const documentStatuses = Array.isArray(rich?.accounts)
     ? (rich.accounts.find((entry: any) => entry && Array.isArray(entry.documentStatuses))?.documentStatuses ?? [])
     : [];
@@ -902,14 +936,35 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
       ? "OCR could not parse these documents as bank statements. Verify the uploaded files are bank-statement PDFs and not photos, screenshots, or summary letters."
       : null,
     monthsDetected: rich?.months_detected ?? null,
-    monthGroups: monthly.map((m: any) => ({
-      month: m.month,
-      deposits: Number(m.deposits ?? 0),
-      withdrawals: Number(m.withdrawals ?? 0),
-      net: Number(m.net ?? 0),
-      endingBalance: m.ending_balance == null ? null : Number(m.ending_balance),
-      nsfCount: Number(m.nsf_count ?? 0),
-    })),
+    monthGroups: monthly.length ? monthly.map((m: any) => {
+      const f = monthFigures.get(String(m.month).slice(0, 7));
+      return {
+        month: m.month,
+        deposits: Number(m.deposits ?? 0),
+        withdrawals: Number(m.withdrawals ?? 0),
+        net: Number(m.net ?? 0),
+        endingBalance: m.ending_balance == null ? null : Number(m.ending_balance),
+        nsfCount: Number(m.nsf_count ?? 0),
+        averageBalance: f?.averageBalance ?? null, // BF_SERVER_v906_BANKING_INSIGHTS
+        daysNegative: f?.daysNegative ?? 0,
+        depositCount: f?.depositCount ?? null,
+        withdrawalCount: f?.withdrawalCount ?? null,
+      };
+    }) : insights.months.map((m) => ({ ...m })), // BF_SERVER_v906_BANKING_INSIGHTS - monthly rows missing: from the transactions
+    monthsSource: monthly.length ? 'monthly_summaries' : insights.months.length ? 'transactions' : 'none',
+    insights: {
+      nsfCount: insights.nsfCount,
+      daysNegative: insights.daysNegative,
+      topPayees: insights.topPayees,
+      topPayors: insights.topPayors,
+      lenderPayments: insights.lenderPayments,
+      transactionCount: txRes.rows.length,
+    },
+    statements: insights.statements.map((st) => {
+      const d = (Array.isArray(documentStatuses) ? documentStatuses : []).find((x: any) => String(x?.document_id) === st.document_id) as any;
+      return { ...st, filename: d?.filename ?? null };
+    }),
+    running: ['pending', 'in_progress', 'analysis_in_progress', 'queued'].includes(String(rich?.analysis_status ?? '')),
     dateRange: rich ? { start: rich.period_start, end: rich.period_end } : null,
     accounts: rich?.accounts ?? [],
     inflows: rich ? {
@@ -920,17 +975,18 @@ router.get('/:id/banking-analysis', safeHandler(async (req: any, res: any) => {
       totalWithdrawals: rich.total_withdrawals == null ? null : Number(rich.total_withdrawals),
     } : null,
     cashFlow: rich ? {
-      currentMonthNet: rich.current_month_net_cash_flow == null ? null : Number(rich.current_month_net_cash_flow),
+      currentMonthNet: rich.current_month_net_cash_flow == null ? (insights.months.length ? insights.months[insights.months.length - 1]!.net : null) : Number(rich.current_month_net_cash_flow),
       monthsProfitableNumerator: rich.months_profitable_numerator,
       monthsProfitableDenominator: rich.months_profitable_denominator,
     } : null,
     balances: rich ? {
       averageDailyBalance: rich.average_daily_balance == null ? null : Number(rich.average_daily_balance),
-      negativeBalanceDays: rich.negative_balance_days,
+      // BF_SERVER_v906_BANKING_INSIGHTS - the run never wrote negative_balance_days; count them from the balances.
+      negativeBalanceDays: rich.negative_balance_days ?? (txRes.rows.length ? insights.daysNegative : null),
     } : null,
     riskFlags: rich ? {
       averageMonthlyNsfs: rich.average_monthly_nsfs == null ? null : Number(rich.average_monthly_nsfs),
-      daysWithInsufficientFunds: rich.days_with_insufficient_funds,
+      daysWithInsufficientFunds: rich.days_with_insufficient_funds ?? (txRes.rows.length ? insights.daysNegative : null),
       unusualTransactions: rich.unusual_transactions ?? [],
     } : null,
     topVendors: rich?.top_vendors ?? [],
