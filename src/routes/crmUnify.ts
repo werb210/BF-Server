@@ -39,8 +39,8 @@ import { companyPeople, isPersonRole, personKey, ROLE_LABELS } from "../modules/
 import { companyDetails, detailUpdates } from "../modules/crmUnify/companyDetails.js";
 import { companyDuplicates, contactDuplicates, dismissDuplicate, duplicateGroups, mergePreview } from "../modules/crmUnify/duplicates.js";
 import { mergeCompanies } from "../modules/crmUnify/companyMerge.js";
-import { applyCleanup, listBatches, scanCleanup, undoCleanup, validChange } from "../modules/crmUnify/cleanup.js";
-import { cachedSummary, generateSummary, SummaryError } from "../modules/crmUnify/aiSummary.js";
+import { applyCleanup, ignoreChanges, listBatches, scanCleanup, undoCleanup, unignoreAll, validChange } from "../modules/crmUnify/cleanup.js";
+import { cachedSummary, findMoreSources, generateSummary, SummaryError } from "../modules/crmUnify/aiSummary.js";
 import { ksLicenseeInfo } from "../modules/crmUnify/ksLicensee.js";
 import { resolveContactSurvivor } from "../modules/crmUnify/mergeChain.js";
 import { backfillCrmPeople } from "../modules/crmUnify/peopleSync.js";
@@ -341,6 +341,22 @@ router.post("/cleanup/apply", requireWrite, safeHandler(async (req: any, res: an
   }
 }));
 
+// BF_SERVER_v907_CLEANUP_IGNORE - "Ignore" a proposed change so it is not proposed again; "Show ignored again" clears them.
+router.post("/cleanup/ignore", requireWrite, safeHandler(async (req: any, res: any) => {
+  const list: unknown[] = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  const changes = list.filter(validChange).slice(0, 5000);
+  if (!changes.length) return res.status(400).json({ ok: false, error: "no_valid_changes" });
+  const silo = resolveSiloFromRequest(req);
+  const ignored = await ignoreChanges(pool, silo, changes, userIdOf(req));
+  await audit(req, "crm.cleanup_ignored", "crm_cleanup_ignore", resolveSiloFromRequest(req), { ignored });
+  res.json({ ok: true, data: { ignored } });
+}));
+router.post("/cleanup/ignore/clear", requireWrite, safeHandler(async (req: any, res: any) => {
+  const entity = entityOf(req.body?.entity) ?? "contact";
+  const cleared = await unignoreAll(pool, resolveSiloFromRequest(req), entity);
+  res.json({ ok: true, data: { cleared } });
+}));
+
 router.get("/cleanup/batches", safeHandler(async (req: any, res: any) => {
   res.json({ ok: true, data: await listBatches(pool, resolveSiloFromRequest(req)) });
 }));
@@ -391,6 +407,33 @@ router.post("/ai-summary/:entity/:id", summaryLimiter, safeHandler(async (req: a
   }
   if (!out) return res.status(404).json({ ok: false, error: "not_found", message: "This record was not found in this business." });
   res.json({ ok: true, data: out });
+}));
+
+// BF_SERVER_v907_MORE_SOURCES - "Find more sources": public pages (LinkedIn profile URL, team / about pages) by web search.
+router.post("/ai-summary/:entity/:id/sources", summaryLimiter, safeHandler(async (req: any, res: any) => {
+  const entity = entityOf(req.params.entity);
+  const id = String(req.params.id);
+  if (!entity || !isUuid(id)) return res.status(400).json({ ok: false, error: "invalid_request" });
+  if (!process.env.OPENAI_API_KEY) return res.status(503).json({ ok: false, error: "ai_unavailable", message: "The AI service is not set up on the server (OPENAI_API_KEY)." });
+  try {
+    const out = await findMoreSources(pool, {
+      search: async (prompt) => {
+        const { sharedOpenAI } = await import("../lib/sharedClients.js");
+        const response: any = await sharedOpenAI(process.env.OPENAI_API_KEY).responses.create({
+          model: process.env.RESEARCH_LLM_MODEL || process.env.CREDIT_LLM_MODEL || "gpt-5.4-mini",
+          tools: [{ type: "web_search_preview" }],
+          input: prompt,
+        } as any);
+        const text = String(response?.output_text ?? "");
+        try { return JSON.parse(/\{[\s\S]*\}/.exec(text)?.[0] ?? "{}"); } catch { return {}; }
+      },
+    }, resolveSiloFromRequest(req), entity, id);
+    if (!out) return res.status(404).json({ ok: false, error: "not_found", message: "This record was not found in this business." });
+    res.json({ ok: true, data: out });
+  } catch (err) {
+    console.error("[crm-ai-summary] more sources failed", { entity, id, message: (err as Error)?.message });
+    res.status(503).json({ ok: false, error: "search_failed", message: "The web search did not answer. Try again in a minute." });
+  }
 }));
 
 /* ---------- Keystone licensee ---------- */

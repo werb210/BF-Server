@@ -202,7 +202,7 @@ export async function refuseIfLocked(
   return true;
 }
 
-async function auditRefusal(req: any, type: RetentionTarget, id: string, s: RetentionStatus): Promise<void> {
+export async function auditRefusal(req: any, type: RetentionTarget, id: string, s: RetentionStatus): Promise<void> {
   try {
     await recordAuditEvent({
       actorUserId: actorId(req), targetUserId: null, targetType: type, targetId: id,
