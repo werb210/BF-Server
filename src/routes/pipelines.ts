@@ -19,7 +19,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { actorId, auditFor } from "../settingsPack/common.js";
 import { canSeeRecord, narrowToOwners, ownerFilterSql, scopeForRequest, teamOwnerIds } from "../visibility/scope.js";
 import {
-  LENDING_ID, PIPELINE_LIMIT, canAddPipeline, cleanSilo, extraPipelines, lendingPipeline, moveApplication, pipelineById, saveLendingProbabilities,
+  LENDING_ID, PIPELINE_LIMIT, canAddPipeline, cleanSilo, extraPipelines, lendingPipeline, moveApplication, pipelineById, saveLendingDisplay, saveLendingProbabilities,
   validatePipeline, weighted, writeStages, type Q,
 } from "../pipelines/pipelines.js";
 
@@ -60,6 +60,13 @@ router.post("/", ...admin, safeHandler(async (req: any, res: any) => {
 router.put("/lending/probabilities", ...admin, safeHandler(async (req: any, res: any) => {
   const probabilities = await saveLendingProbabilities(db(), req.body ?? {}, actorId(req));
   await auditFor(req, "pipeline.lending_probabilities", { probabilities }, { type: "pipeline", id: LENDING_ID });
+  res.json({ ok: true, pipeline: await lendingPipeline(db()) });
+}));
+
+// BF_SERVER_v909_LENDING_STAGE_DISPLAY - Admin: { "Off to Lender": { label: "With lenders", hidden: false, position: 4 }, ... }
+router.put("/lending/display", ...admin, safeHandler(async (req: any, res: any) => {
+  const display = await saveLendingDisplay(db(), req.body ?? {}, actorId(req));
+  await auditFor(req, "pipeline.lending_display", { display }, { type: "pipeline", id: LENDING_ID });
   res.json({ ok: true, pipeline: await lendingPipeline(db()) });
 }));
 
