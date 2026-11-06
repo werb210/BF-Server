@@ -36,8 +36,32 @@ export function applicantNameFrom(metadata: unknown): { first: string | null; la
   return { first, last };
 }
 
+// BF_SERVER_v907_CLEANUP_IGNORE - proposals staff chose to ignore (crm_cleanup_ignores).
+export const ignoreKey = (c: Pick<CleanupChange, "entityId" | "field" | "after">) => `${c.entityId}|${c.field}|${c.after}`;
+export async function ignoredSet(db: Q, silo: string, entity: "contact" | "company"): Promise<Set<string>> {
+  const r = await db.query(`SELECT entity_id::text AS id, field, after_value FROM crm_cleanup_ignores WHERE silo = $1 AND entity = $2`, [silo, entity]);
+  return new Set(r.rows.map((x: any) => ignoreKey({ entityId: String(x.id), field: String(x.field), after: String(x.after_value) })));
+}
+export async function ignoreChanges(db: Q, silo: string, changes: CleanupChange[], userId: string | null): Promise<number> {
+  let n = 0;
+  for (const c of changes) {
+    const r = await db.query(
+      `INSERT INTO crm_cleanup_ignores (silo, entity, entity_id, field, after_value, before_value, ignored_by)
+       VALUES ($1, $2, $3::uuid, $4, $5, $6, $7::uuid) ON CONFLICT DO NOTHING`,
+      [silo, c.entity, c.entityId, c.field, c.after, c.before, userId && /^[0-9a-f-]{36}$/i.test(userId) ? userId : null],
+    );
+    n += r.rowCount ?? 0;
+  }
+  return n;
+}
+export async function unignoreAll(db: Q, silo: string, entity: "contact" | "company"): Promise<number> {
+  const r = await db.query(`DELETE FROM crm_cleanup_ignores WHERE silo = $1 AND entity = $2`, [silo, entity]);
+  return r.rowCount ?? 0;
+}
+
 export async function scanCleanup(db: Q, silo: string, entity: "contact" | "company", limit = 2000): Promise<CleanupChange[]> {
   const out: CleanupChange[] = [];
+  const ignored = await ignoredSet(db, silo, entity); // BF_SERVER_v907_CLEANUP_IGNORE
   if (entity === "contact") {
     const r = await db.query(
       `SELECT c.id::text AS id, c.name, c.first_name, c.last_name, c.email, c.secondary_email, c.phone, c.secondary_phone, c.job_title,
@@ -62,6 +86,7 @@ export async function scanCleanup(db: Q, silo: string, entity: "contact" | "comp
     for (const row of r.rows) {
       const known = applicantNameFrom(row.app_metadata);
       for (const p of proposeContactFixes(row, known)) {
+        if (ignored.has(ignoreKey({ entityId: String(row.id), field: p.field, after: p.after }))) continue;
         out.push({ entity, entityId: String(row.id), record: String(row.name ?? row.email ?? row.id), ...p });
         if (out.length >= limit) return out;
       }
@@ -87,6 +112,7 @@ export async function scanCleanup(db: Q, silo: string, entity: "contact" | "comp
     );
     for (const row of r.rows) {
       for (const p of proposeCompanyFixes(row)) {
+        if (ignored.has(ignoreKey({ entityId: String(row.id), field: p.field, after: p.after }))) continue;
         out.push({ entity, entityId: String(row.id), record: String(row.name ?? row.legal_name ?? row.id), ...p });
         if (out.length >= limit) return out;
       }
