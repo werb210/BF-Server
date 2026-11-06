@@ -124,7 +124,7 @@
   "name": "YE26 Write-Off · CDN Lenders · 10 · Thu Dec 10 · Personal guarantees on larger deals",
   "subject": "Personal guarantees on larger deals",
   "preview": "How we help owners sign bigger guarantees.",
-  "body": "Hi {{first_name}},\n\nLarger equipment purchases mean larger personal guarantees, and some owners hesitate to sign.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which protects the owner's personal assets if a guarantee is called. It can make an owner comfortable with the guarantee you need.\n\nIf you'd like a one-page summary to share with your credit team, reply and I'll send it.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "body": "Hi {{first_name}},\n\nLarger equipment purchases mean larger personal guarantees, and some owners hesitate to sign.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which can pay the owner part of their loss if a guarantee is enforced, subject to the policy terms. It can make an owner more comfortable with the guarantee you need.\n\nIf you'd like a one-page summary to share with your credit team, reply and I'll send it.\n\nTodd Werboweski\nDirector, Boreal Financial",
   "image": "cdn-lenders-10.jpg",
   "ctaLabel": "",
   "ctaUrl": ""
@@ -280,7 +280,7 @@
   "name": "YE26 Write-Off · US Lenders · 10 · Thu Dec 10 · Personal guarantees on larger deals",
   "subject": "Personal guarantees on larger deals",
   "preview": "Personal Guarantee Insurance for Canadian owners.",
-  "body": "Hi {{first_name}},\n\nBigger equipment deals mean bigger personal guarantees. Through Boreal Insurance we offer Personal Guarantee Insurance, which protects an owner's personal assets if a guarantee is called.\n\nIt can make an owner comfortable signing the guarantee you need. Reply if you'd like a one-page summary for your credit team.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "body": "Hi {{first_name}},\n\nBigger equipment deals mean bigger personal guarantees. Through Boreal Insurance we offer Personal Guarantee Insurance, which can pay an owner part of their loss if a guarantee is enforced, subject to the policy terms.\n\nIt can make an owner comfortable signing the guarantee you need. Reply if you'd like a one-page summary for your credit team.\n\nTodd Werboweski\nDirector, Boreal Financial",
   "image": "us-lenders-10.jpg",
   "ctaLabel": "",
   "ctaUrl": ""
@@ -436,7 +436,7 @@
   "name": "YE26 Write-Off · Referrers · 10 · Thu Dec 10 · Protecting owners who sign personal guarantees",
   "subject": "Protecting owners who sign personal guarantees",
   "preview": "Personal Guarantee Insurance.",
-  "body": "Hi {{first_name}},\n\nLarger purchases usually mean the owner signs a personal guarantee. Through Boreal Insurance we offer Personal Guarantee Insurance, which protects the owner's personal assets if the guarantee is called.\n\nFor clients nervous about putting their home behind a loan, it's worth a conversation. Reply and I'll send a one-page summary.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "body": "Hi {{first_name}},\n\nLarger purchases usually mean the owner signs a personal guarantee. Through Boreal Insurance we offer Personal Guarantee Insurance, which can pay the owner part of their loss if the guarantee is enforced, subject to the policy terms.\n\nFor clients nervous about putting their home behind a loan, it's worth a conversation. Reply and I'll send a one-page summary.\n\nTodd Werboweski\nDirector, Boreal Financial",
   "image": "referrers-10.jpg",
   "ctaLabel": "",
   "ctaUrl": ""
@@ -590,9 +590,9 @@
   "n": 10,
   "date": "Thu Dec 10",
   "name": "YE26 Write-Off · Clients · 10 · Thu Dec 10 · Protect your home while you grow",
-  "subject": "Protect your home while you grow",
+  "subject": "Signing a personal guarantee? Read this first",
   "preview": "Personal Guarantee Insurance.",
-  "body": "Hi {{first_name}},\n\nLarger purchases usually mean signing a personal guarantee. Through Boreal Insurance, Personal Guarantee Insurance protects your personal assets, like your home, if a guarantee is ever called.\n\nAsk us about it when you apply.\n\nThe Boreal Financial team\n\nProposed legislation. Tax treatment depends on your situation; confirm with your accountant. Financing is subject to lender approval.",
+  "body": "Hi {{first_name}},\n\nLarger purchases usually mean signing a personal guarantee. Through Boreal Insurance, Personal Guarantee Insurance can pay you part of your loss if a guarantee is ever enforced, subject to the policy terms. It isn't available in Quebec.\n\nAsk us about it when you apply.\n\nThe Boreal Financial team\n\nProposed legislation. Tax treatment depends on your situation; confirm with your accountant. Financing is subject to lender approval.",
   "image": "clients-10.jpg",
   "ctaLabel": "Get pre-approved",
   "ctaUrl": "https://boreal.financial/apply?utm_source=email&utm_medium=email&utm_campaign=ye26_writeoff"
@@ -683,7 +683,7 @@
   "name": "YE26 Write-Off · Weekly Clients · 05 · Wed Dec 9 · Last full week for December 31 year-ends",
   "subject": "Last full week for December 31 year-ends",
   "preview": "The equipment must be in use, not just ordered.",
-  "body": "Hi {{first_name}},\n\nThe write-off applies in the year the equipment goes into use. For a December 31 year-end, it has to be delivered and running by then.\n\nIf you're still deciding, apply this week so approval and delivery can fit. Larger purchases usually need a personal guarantee; ask us about Personal Guarantee Insurance from Boreal Insurance, which protects your personal assets.\n\nThe Boreal Financial team\n\nProposed legislation. Tax treatment depends on your situation; confirm with your accountant. Financing is subject to lender approval.",
+  "body": "Hi {{first_name}},\n\nThe write-off applies in the year the equipment goes into use. For a December 31 year-end, it has to be delivered and running by then.\n\nIf you're still deciding, apply this week so approval and delivery can fit. Larger purchases usually need a personal guarantee; ask us about Personal Guarantee Insurance from Boreal Insurance, which can pay part of your loss if a guarantee is enforced, subject to the policy terms.\n\nThe Boreal Financial team\n\nProposed legislation. Tax treatment depends on your situation; confirm with your accountant. Financing is subject to lender approval.",
   "image": "wk-clients-05.jpg",
   "ctaLabel": "Get pre-approved",
   "ctaUrl": "https://boreal.financial/apply?utm_source=email&utm_medium=email&utm_campaign=ye26_writeoff"
@@ -722,7 +722,7 @@
   "name": "YE26 Write-Off · Weekly Lawyers · 02 · Wed Nov 18 · Clients signing personal guarantees",
   "subject": "Clients signing personal guarantees",
   "preview": "Insurance that protects the guarantor's personal assets.",
-  "body": "Hi {{first_name}},\n\nWhen you advise a client on a personal guarantee, the risk to their home and savings is usually the hardest part of the conversation.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which covers a share of the guarantor's loss if a guarantee is called. It gives clients a way to manage that risk rather than refuse the loan.\n\nReply if you'd like a one-page summary to keep on file for clients.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "body": "Hi {{first_name}},\n\nWhen you advise a client on a personal guarantee, the risk to their home and savings is usually the hardest part of the conversation.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which can pay the guarantor part of their loss if a guarantee is enforced, subject to the policy terms. It gives clients a way to manage that risk rather than refuse the loan.\n\nReply if you'd like a one-page summary to keep on file for clients.\n\nTodd Werboweski\nDirector, Boreal Financial",
   "image": "wk-lawyers-02.jpg",
   "ctaLabel": "",
   "ctaUrl": ""
@@ -891,7 +891,7 @@
   "name": "YE26 Write-Off · Weekly Insurance · 03 · Wed Nov 25 · Personal Guarantee Insurance for your commercial clients",
   "subject": "Personal Guarantee Insurance for your commercial clients",
   "preview": "Protecting owners who sign for business loans.",
-  "body": "Hi {{first_name}},\n\nMost small business loans need the owner's personal guarantee, which puts their home and savings behind the business.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which covers a share of the owner's loss if a guarantee is called. It's a coverage many owners don't know exists.\n\nReply if you'd like a one-page summary and details on referring clients to Boreal Insurance.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "body": "Hi {{first_name}},\n\nMost small business loans need the owner's personal guarantee, which puts their home and savings behind the business.\n\nThrough Boreal Insurance we offer Personal Guarantee Insurance, which can pay the owner part of their loss if a guarantee is enforced, subject to the policy terms. It's a coverage many owners don't know exists.\n\nReply if you'd like a one-page summary and details on referring clients to Boreal Insurance.\n\nTodd Werboweski\nDirector, Boreal Financial",
   "image": "wk-insurance-03.jpg",
   "ctaLabel": "",
   "ctaUrl": ""

@@ -37,11 +37,11 @@ describe("seedYearEndTemplates", () => {
   it("inserts missing templates into BF and never touches one that exists", async () => {
     const existing = new Set([loadYearEndTemplates()[0]!.name]);
     const query = vi.fn(async (sql: string, params?: unknown[]) => {
-      if (/SELECT 1 FROM marketing_template/.test(sql)) return { rows: existing.has(String(params?.[1])) ? [{ "?column?": 1 }] : [] };
+      if (/FROM marketing_template/.test(sql)) return { rows: existing.has(String(params?.[1])) ? [{ id: "t1", version: null }] : [] };
       return { rows: [] };
     });
     const out = await seedYearEndTemplates({ query } as any, { publicBase: "https://server.example.test" });
-    expect(out).toEqual({ total: 72, inserted: 71, skipped: 1 });
+    expect(out).toEqual({ total: 72, inserted: 71, refreshed: 0, skipped: 1 });
     const inserts = query.mock.calls.filter(([s]) => /INSERT INTO marketing_template/.test(String(s)));
     expect(inserts).toHaveLength(71);
     expect(inserts[0]![1]![0]).toBe("BF");
@@ -60,5 +60,31 @@ describe("public image route", () => {
     expect(ok.headers["content-type"]).toBe("image/jpeg");
     expect((await request(app).get("/api/public/email/ye26/templates.json")).status).toBe(404);
     expect((await request(app).get("/api/public/email/ye26/..%2F..%2Fpackage.json")).status).toBe(404);
+  });
+});
+
+// BF_SERVER_v904_YE26_REFRESH
+describe("refreshing seeded templates", () => {
+  const first = loadYearEndTemplates()[0]!;
+  const run = async (version: string | null) => {
+    const query = vi.fn(async (sql: string, params?: unknown[]) =>
+      /SELECT id/.test(sql) && params?.[1] === first.name ? { rows: [{ id: "t1", version }] } : { rows: [] });
+    const out = await seedYearEndTemplates({ query } as any, { publicBase: "https://server.example.test" });
+    return { out, updates: query.mock.calls.filter(([s]) => /UPDATE marketing_template/.test(String(s))) };
+  };
+  it("refreshes a template still as seeded at an older version", async () => {
+    const { out, updates } = await run("1");
+    expect(out.refreshed).toBe(1);
+    expect(updates[0]![1]![0]).toBe("t1");
+  });
+  it("never touches a template staff saved (no version) or one already current", async () => {
+    expect((await run(null)).updates).toHaveLength(0);
+    expect((await run("2")).updates).toHaveLength(0);
+  });
+  it("describes Personal Guarantee Insurance as paying part of the loss, never protecting assets outright", () => {
+    for (const t of loadYearEndTemplates()) {
+      expect(t.body).not.toMatch(/protects (the|an|your) (owner|personal)|covers a share/);
+      expect(t.body).not.toMatch(/commission/i);
+    }
   });
 });
