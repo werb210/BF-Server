@@ -77,6 +77,17 @@ describe("refreshing seeded templates", () => {
     expect(out.refreshed).toBe(1);
     expect(updates[0]![1]![0]).toBe("t1");
   });
+  it("refreshes an untouched v1 seed (no marker, original body) but not an edited one", async () => {
+    const seeded = async (body: string, createdBy = "ye26-seed") => {
+      const query = vi.fn(async (sql: string, params?: unknown[]) =>
+        /SELECT id/.test(sql) && params?.[1] === first.name ? { rows: [{ id: "t1", version: null, body, created_by: createdBy }] } : { rows: [] });
+      await seedYearEndTemplates({ query } as any, { publicBase: "https://server.example.test" });
+      return query.mock.calls.filter(([s]) => /UPDATE marketing_template/.test(String(s))).length;
+    };
+    expect(await seeded(first.body)).toBe(1); // email 1's body is the same in v1 and v2
+    expect(await seeded(first.body + " edited")).toBe(0);
+    expect(await seeded(first.body, "someone")).toBe(0);
+  });
   it("never touches a template staff saved (no version) or one already current", async () => {
     expect((await run(null)).updates).toHaveLength(0);
     expect((await run("2")).updates).toHaveLength(0);
