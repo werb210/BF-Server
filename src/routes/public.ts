@@ -1,4 +1,6 @@
 import { Router } from "express";
+import fs from "node:fs"; // BF_SERVER_v903_YE26_TEMPLATES
+import path from "node:path"; // BF_SERVER_v903_YE26_TEMPLATES
 import { randomUUID } from "node:crypto"; // BF_SERVER_v791_LEAD_SCHEMA
 import { dbQuery } from "../db.js";
 import { requireFields } from "../middleware/validate.js";
@@ -29,6 +31,19 @@ router.get("/email/logo.png", (_req, res) => {
   // can be embedded cross-origin in the portal email preview iframe.
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.end(buf);
+});
+
+// BF_SERVER_v903_YE26_TEMPLATES - header images for the year-end 2026 email templates. Public (they are in sent
+// emails), filename-whitelisted so nothing else in assets/ can be read.
+router.get("/email/ye26/:file", (req, res) => {
+  const file = String(req.params.file ?? "");
+  if (!/^[a-z0-9-]+\.jpg$/.test(file)) { res.status(404).end(); return; }
+  const full = path.join(process.cwd(), "assets", "email", "ye26", file);
+  if (!fs.existsSync(full)) { res.status(404).end(); return; }
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  res.end(fs.readFileSync(full));
 });
 
 // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK - private, expiring package download.
