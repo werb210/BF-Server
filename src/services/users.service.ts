@@ -20,8 +20,19 @@ const updateMeSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   phone: z.string().optional(),
-  profileImage: z.string().optional(),
+  profileImage: z.string().nullable().optional(),
 });
+
+// BF_SERVER_v909_AVATARS - a profile photo is a small image (the portal sends a 256 px JPEG data URL) or an https URL;
+// null or "" removes it.
+export const MAX_AVATAR_CHARS = 1_500_000;
+export function validProfileImage(v: unknown): { ok: true; value: string | null } | { ok: false; message: string } {
+  if (v === null || v === "") return { ok: true, value: null };
+  const s = String(v).trim();
+  if (s.length > MAX_AVATAR_CHARS) return { ok: false, message: "The photo is too large. Choose a smaller image." };
+  if (/^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(s) || /^https:\/\/[^\s"'<>]+$/i.test(s)) return { ok: true, value: s };
+  return { ok: false, message: "The photo must be a JPEG, PNG, WebP or GIF image." };
+}
 
 const adminUpdateSchema = z.object({
   role: z.enum(["Admin", "Marketing", "Staff", "Lender", "Referrer"]).optional(),
@@ -196,7 +207,12 @@ export async function updateMe(req: Request, res: Response) {
     if (input.email) normalized.email = input.email;
     if ((input as any).phone) normalized.phone = (input as any).phone;
     // BF_SERVER_AVATAR_MAP_v1 — persist the profile image (data URL) the portal sends.
-    if (input.profileImage) normalized.profile_image_url = input.profileImage;
+    // BF_SERVER_v909_AVATARS - checked; null or "" removes the photo.
+    if (input.profileImage !== undefined) {
+      const img = validProfileImage(input.profileImage);
+      if (!img.ok) { res.status(400).json({ ok: false, error: "invalid_profile_image", message: img.message }); return; }
+      normalized.profile_image_url = img.value;
+    }
 
     if (Object.keys(normalized).length === 0) {
       res["json"]({ ok: true });

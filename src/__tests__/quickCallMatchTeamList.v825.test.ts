@@ -18,7 +18,7 @@ import { listStaffUsers } from "../services/team/team.service.js";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const QUICK_SQL = /FROM users u\s+LEFT JOIN staff_presence sp/;
-const TEAM_SQL = /SELECT id, first_name, last_name, email FROM users/;
+const TEAM_SQL = /SELECT id, first_name, last_name, email(, profile_image_url)? FROM users/; // BF_SERVER_v909_AVATARS - the team list now carries the photo
 
 const app = express();
 app.use(express.json());

@@ -54,6 +54,7 @@ export interface TeamChannelSummary {
 }
 
 export interface TeamUser {
+  avatar_url?: string | null; // BF_SERVER_v909_AVATARS
   id: string;
   name: string;
   email: string | null;
@@ -370,16 +371,18 @@ export async function listPresence(): Promise<Array<{ user_id: string; status: s
 }
 
 export async function listStaffUsers(): Promise<TeamUser[]> {
-  const r = await runQuery<{ id: string; first_name: string | null; last_name: string | null; email: string | null }>(
-    `SELECT id, first_name, last_name, email FROM users
+  // BF_SERVER_v909_AVATARS - the profile photo, so team chat shows it instead of initials.
+  const r = await runQuery<{ id: string; first_name: string | null; last_name: string | null; email: string | null; profile_image_url: string | null }>(
+    `SELECT id, first_name, last_name, email, profile_image_url FROM users
       WHERE COALESCE(is_active, true) = true
         AND deleted_at IS NULL
         AND role IN ('Admin', 'Staff', 'Ops', 'Marketing')
       ORDER BY COALESCE(NULLIF(TRIM(first_name), ''), email, id::text) ASC LIMIT 500`,
   );
-  return r.rows.map((u: { id: string; first_name: string | null; last_name: string | null; email: string | null }) => ({
+  return r.rows.map((u: { id: string; first_name: string | null; last_name: string | null; email: string | null; profile_image_url: string | null }) => ({
     id: u.id,
     name: [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || (u.email ?? "Staff"),
     email: u.email,
+    avatar_url: typeof u.profile_image_url === "string" && u.profile_image_url.trim() ? u.profile_image_url : null,
   }));
 }

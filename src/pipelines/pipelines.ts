@@ -23,7 +23,7 @@ export function cleanSilo(v: unknown): string {
   return SILOS.has(s) ? s : "BF";
 }
 
-export type Stage = { id: string; name: string; position: number; color: string; probability: number; outcome: Outcome; locked: boolean; deals?: number };
+export type Stage = { id: string; name: string; position: number; color: string; probability: number; outcome: Outcome; locked: boolean; deals?: number; key?: string; label?: string; hidden?: boolean };
 export type Pipeline = { id: string; name: string; system: boolean; silo?: string; position: number; stages: Stage[]; archived_at: string | null };
 
 // The lending pipeline's colours (as on the board) and default probabilities.
@@ -48,12 +48,38 @@ export function normalizeLendingProbabilities(raw: unknown): Record<string, numb
   return out;
 }
 
+// BF_SERVER_v909_LENDING_STAGE_DISPLAY - Admins can rename, hide and reorder the lending stages on the board. Only the
+// display changes: each stage keeps its internal key (id / name, e.g. "Off to Lender"), which reports, lender sending
+// and every rule still use. A hidden stage's column is left off the board while it is empty.
+export type LendingStageDisplay = { label: string | null; hidden: boolean; position: number };
+export function normalizeLendingDisplay(raw: unknown): Record<string, LendingStageDisplay> {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
+  const out: Record<string, LendingStageDisplay> = {};
+  PIPELINE_STATES.forEach((s, i) => {
+    const v = r[s] && typeof r[s] === "object" ? r[s] : {};
+    const label = typeof v.label === "string" ? v.label.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+    const pos = Math.round(Number(v.position));
+    out[s] = { label: label && label !== s ? label : null, hidden: v.hidden === true, position: Number.isFinite(pos) && pos >= 0 && pos < 100 ? pos : i };
+  });
+  return out;
+}
+
+export async function saveLendingDisplay(db: Q, raw: unknown, actor: string | null): Promise<Record<string, LendingStageDisplay>> {
+  const v = normalizeLendingDisplay(raw);
+  await writeSetting(db, "lending_pipeline_display", v, actor);
+  return v;
+}
+
 export async function lendingPipeline(db: Q): Promise<Pipeline> {
   const prob = await readSetting(db, "lending_pipeline_probabilities", normalizeLendingProbabilities);
-  return {
-    id: LENDING_ID, name: "Lending", system: true, position: 0, archived_at: null,
-    stages: PIPELINE_STATES.map((name, i) => ({ id: name, name, position: i, color: LENDING_COLORS[name] ?? "#4b5563", probability: prob[name] ?? 0, outcome: LENDING_OUTCOME[name] ?? "open", locked: true })),
-  };
+  const display = await readSetting(db, "lending_pipeline_display", normalizeLendingDisplay);
+  const stages = PIPELINE_STATES.map((name, i) => ({
+    id: name, name, key: name, label: display[name]?.label ?? name, hidden: display[name]?.hidden ?? false,
+    position: display[name]?.position ?? i, color: LENDING_COLORS[name] ?? "#4b5563", probability: prob[name] ?? 0,
+    outcome: LENDING_OUTCOME[name] ?? "open", locked: true,
+  }));
+  stages.sort((a, b) => a.position - b.position || PIPELINE_STATES.indexOf(a.name) - PIPELINE_STATES.indexOf(b.name));
+  return { id: LENDING_ID, name: "Lending", system: true, position: 0, archived_at: null, stages };
 }
 
 export async function saveLendingProbabilities(db: Q, raw: unknown, actor: string | null): Promise<Record<string, number>> {

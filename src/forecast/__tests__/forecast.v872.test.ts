@@ -72,6 +72,7 @@ function settingsDb(initial: Record<string, number> | null) {
   let value: unknown = initial;
   const query = vi.fn(async (sql: string, p: any[] = []) => {
     if (/SELECT value FROM boreal_settings WHERE key = \$1/.test(sql) && p[0] === "lending_pipeline_probabilities") return { rows: value ? [{ value }] : [] };
+    if (/SELECT value FROM boreal_settings WHERE key = \$1/.test(sql)) return { rows: [] }; // BF_SERVER_v909_LENDING_STAGE_DISPLAY - other settings unset
     if (/INSERT INTO boreal_settings/.test(sql)) { value = typeof p[1] === "string" ? JSON.parse(p[1]) : p[1]; return { rows: [] }; }
     if (/UPDATE applications SET/.test(sql)) return { rows: p[0] === "app-1" ? [{ id: "app-1", expected_close_date: p[1] ?? null, forecast_category: p[2] ?? null, pipeline_state: "Offer" }] : [] };
     throw new Error(`unexpected SQL: ${sql.slice(0, 80)}`);
