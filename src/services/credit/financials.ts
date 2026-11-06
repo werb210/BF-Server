@@ -73,11 +73,21 @@ export async function extractApplicationFinancials(applicationId: string): Promi
   let periods = 0;
   let cells = 0;
   for (const document of docs.rows) {
-    if (!document.text || document.text.replace(/\s/g, "").length < 200) {
-      skipped.push(`${document.name ?? document.id}: no readable text yet`);
-      continue;
+    let text = document.text;
+    if (!text || text.replace(/\s/g, "").length < 200) {
+      // BF_SERVER_v906_CREDIT_STEPS - read the file itself when OCR has not produced text yet.
+      const { queueOcr, readableTextFor } = await import("./docKinds.js");
+      text = await readableTextFor(document.id).catch((err: unknown) => {
+        console.warn("[credit-financials] direct_read_failed", { applicationId, documentId: document.id, message: (err as Error)?.message });
+        return null;
+      });
+      if (!text) {
+        await queueOcr(document.id);
+        skipped.push(`${document.name ?? document.id}: its text could not be read yet. OCR has been queued for it; press Read financials again in a few minutes`);
+        continue;
+      }
     }
-    const extracted = await extractFromText(document.text);
+    const extracted = await extractFromText(text);
     periods += extracted.length;
     for (const period of extracted) for (const [item, value] of Object.entries(period.items)) {
       const result = await pool.query(

@@ -96,6 +96,71 @@ router.post("/applications/:id/conditions/from-offer", ...conditions, appGuard, 
   res.json({ ...(await conditionsPayload(app.id)), added: r.added });
 }));
 
+// BF_SERVER_v906_OFFER_READER - read an uploaded offer / term sheet (multipart "file"), or the term sheet already on an
+// offer ({ offer_id }), and return what it says. Nothing is saved: the Lenders tab fills in the term sheet form and the
+// quote from it, and the Funding tab lists the conditions for the broker to confirm.
+router.post("/applications/:id/offer-document/read", ...staff, appGuard, upload.single("file"), safeHandler(async (req: Request, res: Response) => {
+  const app = res.locals.app;
+  const { OfferReadError, readOfferDocument } = await import("../brokerTools/offerReader.js");
+  const { resolveMimeType } = await import("../modules/ocr/mimeType.js");
+  let buffer: Buffer | null = null;
+  let name: string | null = null;
+  let mimeStored: string | null = null;
+  let offerId: string | null = null;
+  const file = (req as any).file as { buffer: Buffer; originalname?: string; mimetype?: string } | undefined;
+  if (file?.buffer?.length) {
+    buffer = file.buffer; name = file.originalname ?? null; mimeStored = file.mimetype && file.mimetype !== "application/octet-stream" ? file.mimetype : null;
+  } else {
+    offerId = str((req.body ?? {}).offer_id, 64);
+    const o = offerId ? await db().query(
+      `SELECT id::text AS id, term_sheet_blob_name, term_sheet_filename FROM offers WHERE id::text = $1 AND application_id::text = $2 LIMIT 1`,
+      [offerId, app.id]) : { rows: [] as any[] };
+    const offer = o.rows[0];
+    if (!offer) return void res.status(404).json({ ok: false, error: "not_found", message: "Choose an offer on this file, or upload the offer document." });
+    if (!offer.term_sheet_blob_name) return void res.status(409).json({ ok: false, error: "no_document", message: "That offer has no term sheet file to read." });
+    const { getStorage } = await import("../lib/storage/index.js");
+    const got = await getStorage().get(String(offer.term_sheet_blob_name));
+    if (!got) return void res.status(404).json({ ok: false, error: "file_missing", message: "The term sheet file could not be found in storage." });
+    buffer = got.buffer; name = offer.term_sheet_filename ?? null; mimeStored = got.contentType && got.contentType !== "application/octet-stream" ? got.contentType : null;
+  }
+  const mime = resolveMimeType({ stored: mimeStored, fileNames: [name], buffer }).mimeType ?? "application/octet-stream";
+  try {
+    const r = await readOfferDocument(buffer!, mime);
+    await audit(req, "offer_document.read", { application_id: app.id, offer_id: offerId, conditions: r.offer.conditions.length }, { type: "application", id: app.id });
+    res.json({ ok: true, offer_id: offerId, read: r.offer, text_chars: r.textChars });
+  } catch (err) {
+    if (err instanceof OfferReadError) return void res.status(err.code === "ai_not_set_up" ? 503 : 422).json({ ok: false, error: err.code, message: err.message });
+    console.error("[offer-reader] read_failed", { applicationId: app.id, offerId, message: (err as Error)?.message });
+    res.status(502).json({ ok: false, error: "read_failed", message: "The document could not be read right now. Try again, or type the terms in." });
+  }
+}));
+
+// BF_SERVER_v906_OFFER_READER - add the conditions the broker ticked from the offer reader. Titles already on the file
+// are skipped.
+router.post("/applications/:id/conditions/confirm", ...conditions, appGuard, safeHandler(async (req: Request, res: Response) => {
+  const app = res.locals.app;
+  const body = (req.body ?? {}) as { conditions?: unknown; offer_id?: unknown };
+  const list = Array.isArray(body.conditions) ? body.conditions.slice(0, 40) : [];
+  const offerId = str(body.offer_id, 64);
+  const offerOk = offerId ? (await db().query(`SELECT 1 FROM offers WHERE id::text = $1 AND application_id::text = $2`, [offerId, app.id])).rows.length > 0 : false;
+  const existing = new Set((await listConditions(db(), app.id)).map((c) => c.title.toLowerCase()));
+  let added = 0;
+  const skipped: string[] = [];
+  for (const raw of list) {
+    const p = parseConditionInput((raw ?? {}) as Record<string, unknown>);
+    if (!p.ok || !p.value.title) { skipped.push(String((raw as any)?.title ?? "(no title)")); continue; }
+    if (existing.has(p.value.title.toLowerCase())) { skipped.push(p.value.title); continue; }
+    await addCondition(db(), app.id, {
+      title: p.value.title, description: p.value.description ?? null, owner: p.value.owner ?? "client", assigned_user_id: null, due_date: null,
+      requires_document: p.value.requires_document === true, document_url: null, note: null, source: "offer", offer_id: offerOk ? offerId : null,
+    }, actorId(req));
+    existing.add(p.value.title.toLowerCase());
+    added += 1;
+  }
+  if (added) await audit(req, "funding_condition.offer_confirmed", { application_id: app.id, offer_id: offerOk ? offerId : null, added }, { type: "application", id: app.id });
+  res.json({ ...(await conditionsPayload(app.id)), added, skipped });
+}));
+
 router.patch("/applications/:id/conditions/:cid", ...conditions, appGuard, safeHandler(async (req: Request, res: Response) => {
   const appId = String(req.params.id);
   const before = await getCondition(db(), appId, String(req.params.cid));

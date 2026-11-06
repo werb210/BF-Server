@@ -16,7 +16,10 @@ router.get("/:applicationId", ...staff, safeHandler(async (req: any, res: any) =
 router.post("/:applicationId/extract", ...staff, safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.applicationId);
   try {
-    const result = await (await svc()).extractApplicationFinancials(applicationId);
+    // BF_SERVER_v906_CREDIT_STEPS - recorded so the tab shows not run / running / done / failed.
+    const { runStep } = await import("../services/credit/steps.js");
+    const result = await runStep("financials", applicationId, req.user?.id ? String(req.user.id) : null, async () => (await svc()).extractApplicationFinancials(applicationId),
+      (r) => `Read ${r.documents} financial document(s)${r.skipped.length ? `; skipped ${r.skipped.length}` : ""}.`);
     console.info("[credit-financials] extracted", { applicationId, ...result });
     res.json({ ...result, table: await (await svc()).loadFinancialTable(applicationId) });
   } catch (error) {

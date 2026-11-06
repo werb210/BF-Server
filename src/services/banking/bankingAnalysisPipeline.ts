@@ -174,8 +174,9 @@ export async function runBankingAnalysis(
        ON CONFLICT (application_id) DO UPDATE
          SET status = 'in_progress', updated_at = now()`, [applicationId]);
 
-  await pool.query(`DELETE FROM banking_transactions WHERE application_id::text = ($1)::text`, [applicationId]);
-  await pool.query(`DELETE FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]);
+  // BF_SERVER_v906_BANKING_INSIGHTS - the previous transactions and monthly rows stay in place while the statements are
+  // read again (minutes of OCR); they are replaced just before the new ones are written, below. Deleting them here left
+  // the tab with the old totals and "No monthly data yet" for the whole run, and for good if the run stopped part way.
 
   const allTransactions: Array<BankTransaction & { document_id: string; currency_code: CurrencyCode; account_key: string }> = [];
   const seenStatementBodies = new Set<string>();
@@ -347,6 +348,8 @@ export async function runBankingAnalysis(
   // portal so staff can see WHY the analysis didn't produce useful data
   // (statement is a summary letter / screenshot / photo, parser couldn't
   // identify tables, etc.).
+  await pool.query(`DELETE FROM banking_transactions WHERE application_id::text = ($1)::text`, [applicationId]);
+  await pool.query(`DELETE FROM banking_monthly_summaries WHERE application_id::text = ($1)::text`, [applicationId]);
   if (allTransactions.length > 0) await insertTransactions(applicationId, allTransactions);
   const adb = averageDailyBalance(allTransactions.flatMap((tx) => tx.date && tx.balance !== undefined ? [{ date: tx.date, balance: tx.balance, amount: tx.amount, accountKey: tx.account_key }] : []));
   const aggregates = await aggregateMonthlySummaries(applicationId, adb);

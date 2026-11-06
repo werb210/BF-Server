@@ -16,7 +16,9 @@ router.get("/:applicationId", ...staff, safeHandler(async (req: any, res: any) =
 router.post("/:applicationId/refresh", ...staff, safeHandler(async (req: any, res: any) => {
   const applicationId = String(req.params.applicationId);
   try {
-    const result = await (await svc()).refreshApplicationResearch(applicationId, req.query?.force === "1");
+    const { runStep } = await import("../services/credit/steps.js"); // BF_SERVER_v906_CREDIT_STEPS
+    const result = await runStep("research", applicationId, req.user?.id ? String(req.user.id) : null, async () => (await svc()).refreshApplicationResearch(applicationId, req.query?.force === "1"),
+      (r) => `Found ${r.facts} fact(s).`);
     console.info("[credit-research] refreshed", { applicationId, ...result });
     // BF_SERVER_CREDIT_DOC_KINDS_v783 - the list used to overwrite the count ("Found [object Object],..."); send both.
     const loaded = await (await svc()).loadResearch(applicationId);
