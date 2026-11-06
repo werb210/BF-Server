@@ -138,6 +138,16 @@ router.post("/conference/join", twilioWebhookValidation, safeHandler(async (req:
   // fall through to voicemail. An outbound callee must never enter that loop.
   const isCallerLeg = (legKind === "pstn" || legKind === "client_miniportal") && confDirection !== "outbound";
 
+  // BF_SERVER_v902_NO_DEAD_AIR_CALLEE - an outbound callee who answers after the staff member has already gone (the
+  // staff leg dropped while the phone was ringing) used to land alone in a fresh conference and sit in silence until
+  // they hung up. They now hear a short goodbye instead.
+  if (confDirection === "outbound" && legKind === "pstn" && legConferenceId && await (await import("../voice/outboundCallFlow.js")).staffGone(legConferenceId)) {
+    console.warn(JSON.stringify({ event: "outbound_callee_answered_after_staff_left", conf, pid: pid || null, callSid: callSid || null }));
+    vr.say({ voice: "Polly.Joanna" }, "Sorry, this call could not be connected. We will call you back. Goodbye.");
+    vr.hangup();
+    return res.send(vr.toString());
+  }
+
   const dial = vr.dial({ answerOnBridge: true });
   const confAttrs: Record<string, unknown> = {
     statusCallback: `${base}/api/webhooks/twilio/conference/status?conf=${encodeURIComponent(conf)}`,

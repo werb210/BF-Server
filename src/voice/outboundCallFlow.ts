@@ -108,6 +108,30 @@ export async function endStaffLegsWithMessage(conferenceId: string, message: str
  * a repeated join callback cannot dial twice. A dial that fails marks the row failed and ends the staff leg with a
  * reason. Never throws.
  */
+// BF_SERVER_v902_NO_DEAD_AIR_CALLEE - true when the call is over for staff: the conference ended, or every staff leg
+// has left. On a lookup error it answers false, so a working call is never hung up.
+export async function staffGone(conferenceId: string, db: Q = pool): Promise<boolean> {
+  try {
+    const r = await db.query(
+      `SELECT c.status AS conf_status,
+              COUNT(p.id) FILTER (WHERE p.kind = 'staff')::int AS staff_legs,
+              COUNT(p.id) FILTER (WHERE p.kind = 'staff' AND p.left_at IS NULL
+                                    AND COALESCE(p.status, '') NOT IN ('left', 'failed', 'canceled', 'completed', 'no-answer', 'busy'))::int AS staff_live
+         FROM conferences c LEFT JOIN conference_participants p ON p.conference_id = c.id
+        WHERE c.id = $1
+        GROUP BY c.status`,
+      [conferenceId],
+    );
+    const row = r.rows[0];
+    if (!row) return false;
+    if (row.conf_status === "ended") return true;
+    return Number(row.staff_legs) > 0 && Number(row.staff_live) === 0;
+  } catch (err: any) {
+    console.warn("[voice] staff-gone check failed", { conferenceId, message: err?.message });
+    return false;
+  }
+}
+
 export async function dialPendingCallees(conferenceId: string, deps: {
   db?: Q;
   dialPstn?: (args: Record<string, unknown>) => Promise<{ callSid: string }>;
@@ -125,6 +149,14 @@ export async function dialPendingCallees(conferenceId: string, deps: {
       [conferenceId],
     );
     for (const row of claimed.rows) {
+      // BF_SERVER_v902_NO_DEAD_AIR_CALLEE - the staff leg can drop between joining and this dial (it is not awaited by
+      // the join TwiML). Do not ring the customer for a call nobody is on.
+      if (await staffGone(conferenceId, db)) {
+        await db.query(`UPDATE conference_participants SET status = 'canceled', left_at = now() WHERE id = $1`, [row.id])
+          .catch((e: any) => console.warn("[outbound] could not mark the leg canceled", { participantId: row.id, message: e?.message }));
+        console.warn(JSON.stringify({ event: "outbound_dial_skipped_staff_left", conferenceId, participantId: row.id }));
+        continue;
+      }
       try {
         const callerId = deps.callerId
           ? await deps.callerId(row.created_by_user_id ?? null)
