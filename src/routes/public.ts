@@ -35,10 +35,12 @@ router.get("/email/logo.png", (_req, res) => {
 
 // BF_SERVER_v903_YE26_TEMPLATES - header images for the year-end 2026 email templates. Public (they are in sent
 // emails), filename-whitelisted so nothing else in assets/ can be read.
-router.get("/email/ye26/:file", (req, res) => {
+// BF_SERVER_v905_APP_LAUNCH - also the app launch campaign's images.
+router.get("/email/:campaign(ye26|applaunch)/:file", (req, res) => {
+  const campaign = String(req.params.campaign ?? "");
   const file = String(req.params.file ?? "");
-  if (!/^[a-z0-9-]+\.jpg$/.test(file)) { res.status(404).end(); return; }
-  const full = path.join(process.cwd(), "assets", "email", "ye26", file);
+  if (!["ye26", "applaunch"].includes(campaign) || !/^[a-z0-9-]+\.jpg$/.test(file)) { res.status(404).end(); return; }
+  const full = path.join(process.cwd(), "assets", "email", campaign, file);
   if (!fs.existsSync(full)) { res.status(404).end(); return; }
   res.setHeader("Content-Type", "image/jpeg");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

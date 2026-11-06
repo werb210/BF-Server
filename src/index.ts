@@ -116,6 +116,8 @@ export async function start(): Promise<void> {
     const { seedYearEndTemplates } = await import("./startup/seedYearEndTemplates.js");
     const out = await seedYearEndTemplates(pool);
     console.log(JSON.stringify({ event: "ye26_templates_seeded", ...out }));
+    const { seedAppLaunchTemplates } = await import("./startup/seedYearEndTemplates.js"); // BF_SERVER_v905_APP_LAUNCH
+    console.log(JSON.stringify({ event: "app_launch_templates_seeded", ...(await seedAppLaunchTemplates(pool)) }));
   } catch (err) {
     console.error(JSON.stringify({ event: "ye26_templates_seed_error", error: err instanceof Error ? err.message : String(err) }));
   }
