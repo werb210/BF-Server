@@ -663,6 +663,33 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  // BF_SERVER_v900_IMPORT_OWNER - an Owner column (staff email or full name) assigns each row to that staff member.
+  // A value that matches no active staff user falls back to the importer and is counted in owners_unmatched.
+  const ownerCache = new Map<string, string | null>();
+  const unmatchedOwners = new Set<string>();
+  const resolveOwner = async (rawOwner: unknown): Promise<string | null> => {
+    const key = String(rawOwner ?? "").trim().toLowerCase();
+    if (!key) return null;
+    if (ownerCache.has(key)) return ownerCache.get(key)!;
+    let id: string | null = null;
+    try {
+      const u = await pool.query(
+        `SELECT id FROM users
+          WHERE deleted_at IS NULL AND COALESCE(disabled, false) = false
+            AND (lower(email) = $1 OR lower(COALESCE(o365_user_email, '')) = $1
+                 OR lower(trim(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))) = $1)
+          ORDER BY (lower(email) = $1) DESC
+          LIMIT 1`,
+        [key],
+      );
+      id = u.rows[0]?.id ? String(u.rows[0].id) : null;
+    } catch (err) {
+      console.warn("[crm-import] owner lookup failed", { message: (err as Error)?.message });
+    }
+    if (!id) unmatchedOwners.add(String(rawOwner).trim());
+    ownerCache.set(key, id);
+    return id;
+  };
   // BF_SERVER_v786_WORKFLOW_GRAPH - automation events fire after COMMIT.
   const createdIds: string[] = [];
   const changed: Array<{ id: string; before: any; after: Record<string, unknown> }> = [];
@@ -687,6 +714,7 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
       const jobTitle = String(r.job_title ?? "").trim() || null;
       const leadStatus = String(r.lead_status ?? "").trim() || null;
       const displayName = `${fname} ${lname}`.trim();
+      const rowOwnerId = await resolveOwner(r.owner);
 
       let existingId: string | null = null;
       if (email) {
@@ -712,7 +740,8 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         overwrite("company_name", companyName);
         overwrite("job_title", jobTitle);
         overwrite("lead_status", leadStatus);
-        if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
+        if (has("owner_id") && rowOwnerId) { sets.push(`owner_id = $${i}`); vals.push(rowOwnerId); i++; }
+        else if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
         if (has("updated_at")) { sets.push("updated_at = now()"); }
         if (smsConsentExpress) {
           if (has("sms_consent")) { sets.push(`sms_consent = $${i}`); vals.push(true); i++; }
@@ -743,7 +772,7 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         add("job_title", jobTitle);
         add("lead_status", leadStatus || "New");
         add("silo", silo);
-        add("owner_id", ownerId);
+        add("owner_id", rowOwnerId ?? ownerId);
         if (smsConsentExpress) {
           add("sms_consent", true);
           add("consent_basis", "express");
@@ -777,7 +806,7 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
       emitFieldChanges(silo, c.id, c.before, after, Object.keys(c.after), "import");
     }
   })();
-  return res.json({ ok: true, created, updated, skipped, total: rows.length });
+  return res.json({ ok: true, created, updated, skipped, total: rows.length, owners_unmatched: [...unmatchedOwners].slice(0, 50) });
 }));
 
 // BF_SERVER_CRM_COMPANY_IMPORT_ENDPOINT — upsert companies by name within silo. Mirrors /contacts/import.
