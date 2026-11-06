@@ -1,0 +1,40 @@
+[
+ {
+  "campaign": "App launch",
+  "group": "Clients",
+  "n": 1,
+  "date": "At launch",
+  "image": "app-phones.jpg",
+  "name": "App Launch · Clients · Boreal is now on your phone (with draw)",
+  "subject": "Your application, now in your pocket (plus a chance to win)",
+  "preview": "Get the Boreal app and win $500",
+  "body": "Hi {{first_name}},\n\nThe Boreal Financial app is here. With it you can:\n\n• See your application status, right on your lock screen\n• Photograph a document and upload it in seconds\n• Message your advisor\n• Book a call and add it to your calendar\n• Sign documents in the app\n\nThe Boreal Financial team",
+  "ctaLabel": "Get the app",
+  "ctaUrl": "https://boreal.financial/app?utm_source=email&utm_medium=email&utm_campaign=app_launch",
+  "extra": {
+   "headline": "Boreal is now on your phone",
+   "headline2": "Win a $500 Visa gift card",
+   "body2": "Download the app and sign in by December 31, 2026 to be entered. First name drawn wins a $500 Visa gift card; second name drawn wins a $100 Visa gift card.\n\nNo purchase necessary: you can also enter by emailing info@boreal.financial with \"App draw\" in the subject. Open to residents of Canada (excluding Quebec) who are the age of majority. Winners must answer a skill-testing question.",
+   "rightImage": "app-prize.jpg",
+   "rightImageLink": "https://boreal.financial/app?utm_source=email&utm_medium=email&utm_campaign=app_launch",
+   "cta2Label": "Official rules",
+   "cta2Url": "https://boreal.financial/app-draw-rules"
+  }
+ },
+ {
+  "campaign": "App launch",
+  "group": "Lenders",
+  "n": 2,
+  "date": "At launch",
+  "image": "",
+  "name": "App Launch · Lenders · Who handles CSBFP / SBA loans? (from Todd)",
+  "subject": "Quick question: who handles CSBFP loans on your team?",
+  "preview": "Two quick questions and an update",
+  "body": "Hi {{first_name}},\n\nTwo quick questions:\n\n1. Who on your team handles CSBFP loans (or SBA loans, for US lenders)? A name, email and phone number is perfect.\n2. Has your appetite changed going into year-end? Deal size, industries, provinces, minimum time in business.\n\nAnd one update: Boreal clients can now upload documents and sign from their phones in our new app, so files reach you complete and sooner.\n\nJust reply to this email.\n\nTodd Werboweski\nDirector, Boreal Financial",
+  "ctaLabel": "",
+  "ctaUrl": "",
+  "extra": {
+   "headline": ""
+  }
+ }
+]
