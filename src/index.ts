@@ -109,6 +109,17 @@ export async function start(): Promise<void> {
     }, 120_000);
     (t as any).unref?.();
   }
+  // BF_SERVER_v903_YE26_TEMPLATES - year-end write-off email templates (insert-only, non-fatal). Runs before the
+  // landing-page backfill below, which mints their landing pages.
+  try {
+    const { pool } = await import("./db.js");
+    const { seedYearEndTemplates } = await import("./startup/seedYearEndTemplates.js");
+    const out = await seedYearEndTemplates(pool);
+    console.log(JSON.stringify({ event: "ye26_templates_seeded", ...out }));
+  } catch (err) {
+    console.error(JSON.stringify({ event: "ye26_templates_seed_error", error: err instanceof Error ? err.message : String(err) }));
+  }
+
   // BF_SERVER_TEMPLATE_LANDING_BACKFILL_v28 - repair marketing template landing
   // pages (bad host from a misconfigured LANDING_BASE_URL, or seeded rows that
   // never had html and so never had a page). Deliberately not fatal.
