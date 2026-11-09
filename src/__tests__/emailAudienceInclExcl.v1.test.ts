@@ -47,12 +47,13 @@ beforeEach(() => {
   sendOne.mockResolvedValue({ ok: true, status: 202 });
 });
 
+// BF_SERVER_v923_SKIP_TEXTED - the 5th parameter is "skip contacts texted in the last N days" (null = off).
 describe("email audience include/exclude", () => {
   it("the count filters by array overlap for include and NOT-overlap for exclude", async () => {
     const pool = { query: vi.fn(answerBySql([[COUNT, { rows: [{ n: 4 }] }]])) };
     expect(await countEmailRecipients(pool as any, "BF", null, ["a", "b"], ["c"])).toBe(4);
     const [sql, params] = pool.query.mock.calls[0] as [string, unknown[]];
-    expect(params).toEqual(["BF", null, ["a", "b"], ["c"]]);
+    expect(params).toEqual(["BF", null, ["a", "b"], ["c"], null]);
     expect(sql).toContain("($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)");
     expect(sql).toContain("($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))");
   });
@@ -61,7 +62,7 @@ describe("email audience include/exclude", () => {
     const pool = { query: vi.fn(answerBySql([[RECIPIENTS, { rows: [{ id: "c1", email: "a@x.test", name: "A", company: null }] }]])) };
     await runEmailSend(pool as any, { silo: "BF", tag: null, subject: "S", html: "<p>x</p>", tags: ["a"], excludeTags: ["c"] });
     const [sql, params] = callsMatching(pool.query, RECIPIENTS)[0] as [string, unknown[]];
-    expect(params).toEqual(["BF", null, ["a"], ["c"]]);
+    expect(params).toEqual(["BF", null, ["a"], ["c"], null]);
     expect(sql).toContain("COALESCE(c.tags,'{}') && $3");
     expect(sql).toContain("NOT (COALESCE(c.tags,'{}') && $4)");
     expect(sendOne).toHaveBeenCalledTimes(1);
@@ -72,7 +73,7 @@ describe("email audience include/exclude", () => {
       .send({ subject: "Hi", headline: "x", body: "y", tags: [" vip ", "vip", "", "new"], excludeTags: "dnc, staff" });
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({ queued: true, total: 7 });
-    expect(callsMatching(queryMock, COUNT)[0][1]).toEqual(["BF", null, ["vip", "new"], ["dnc", "staff"]]);
+    expect(callsMatching(queryMock, COUNT)[0][1]).toEqual(["BF", null, ["vip", "new"], ["dnc", "staff"], null]);
     const payload = JSON.parse(String((callsMatching(queryMock, INSERT_JOB)[0][1] as unknown[])[2]));
     expect(payload.tags).toEqual(["vip", "new"]);
     expect(payload.excludeTags).toEqual(["dnc", "staff"]);
@@ -82,7 +83,7 @@ describe("email audience include/exclude", () => {
     const r = await auth(request(app).get("/api/marketing/email/audience-count?include=vip,new&exclude=dnc")).set("X-Silo", "BI");
     expect(r.status).toBe(200);
     expect(r.body.data).toEqual({ n: 7 });
-    expect(callsMatching(queryMock, COUNT)[0][1]).toEqual(["BI", null, ["vip", "new"], ["dnc"]]);
+    expect(callsMatching(queryMock, COUNT)[0][1]).toEqual(["BI", null, ["vip", "new"], ["dnc"], null]);
   });
 
   it("the queue worker passes the arrays back into the runner", async () => {
@@ -95,6 +96,6 @@ describe("email audience include/exclude", () => {
     const w = startSendQueueWorker(pool as any);
     await vi.waitFor(() => expect(callsMatching(pool.query, RECIPIENTS)).toHaveLength(1));
     w.stop();
-    expect(callsMatching(pool.query, RECIPIENTS)[0][1]).toEqual(["BF", null, ["vip"], ["dnc"]]);
+    expect(callsMatching(pool.query, RECIPIENTS)[0][1]).toEqual(["BF", null, ["vip"], ["dnc"], null]);
   });
 });

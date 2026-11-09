@@ -140,7 +140,7 @@ describe("email hardening v1", () => {
       expect(r.status).toBe(200);
       expect(r.body.data.queued).toBe(true);
       const [count] = callsMatching(h.query, /SELECT count\(\*\)::int AS n\s+FROM contacts c/);
-      expect(count[1]).toEqual(["BF", null, ["vip", "lead"], ["funded", "declined"]]);
+      expect(count[1]).toEqual(["BF", null, ["vip", "lead"], ["funded", "declined"], null]); // v923: skipTextedDays off
       const [job] = callsMatching(h.query, "INSERT INTO marketing_send_jobs");
       const payload = JSON.parse(String((job[1] as unknown[])[2]));
       expect(payload).toMatchObject({ tags: ["vip", "lead"], excludeTags: ["funded", "declined"] });
