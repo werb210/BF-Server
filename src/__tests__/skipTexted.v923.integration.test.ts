@@ -7,20 +7,23 @@ import { countEmailRecipients, emailRecipients, skipTextedDaysOf } from "../serv
 const tag = `v923-${randomUUID().slice(0, 8)}`;
 const texted = randomUUID(), oldText = randomUUID(), never = randomUUID(), failedText = randomUUID();
 const ids = [texted, oldText, never, failedText];
+const campaign = randomUUID();
 
 describe("v923 skip contacts texted recently", () => {
   beforeAll(async () => {
     for (const id of ids) {
       await pool.query(`INSERT INTO contacts (id, name, email, silo, tags) VALUES ($1, $2, $3, 'BF', ARRAY[$4])`, [id, `T ${id.slice(0, 4)}`, `${id}@example.com`, tag]);
     }
+    await pool.query(`INSERT INTO sms_campaigns (id, silo, sms_body) VALUES ($1, 'BF', 'v923 test')`, [campaign]); // the sends need a campaign
     const sms = `INSERT INTO sms_campaign_sends (campaign_id, contact_id, silo, phone, sent_at, message_sid) VALUES ($1, $2, 'BF', '+14035550100', now() - ($3::int * interval '1 day'), $4)`;
-    await pool.query(sms, [randomUUID(), texted, 2, "SM-test-1"]);
-    await pool.query(sms, [randomUUID(), oldText, 20, "SM-test-2"]);
-    await pool.query(sms, [randomUUID(), failedText, 1, null]); // never actually sent
+    await pool.query(sms, [campaign, texted, 2, "SM-test-1"]);
+    await pool.query(sms, [campaign, oldText, 20, "SM-test-2"]);
+    await pool.query(sms, [campaign, failedText, 1, null]); // never actually sent
   });
   afterAll(async () => {
     await pool.query(`DELETE FROM sms_campaign_sends WHERE contact_id = ANY($1::uuid[])`, [ids]).catch((e) => console.warn("cleanup", String(e)));
     await pool.query(`DELETE FROM contacts WHERE id = ANY($1::uuid[])`, [ids]).catch((e) => console.warn("cleanup", String(e)));
+    await pool.query(`DELETE FROM sms_campaigns WHERE id = $1`, [campaign]).catch((e) => console.warn("cleanup", String(e)));
   });
 
   it("counts everyone without the option, and leaves out the recently texted with it", async () => {
