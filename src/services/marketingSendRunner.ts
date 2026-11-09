@@ -15,7 +15,7 @@ import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILE
 // tag. A contact carrying ANY exclude tag is removed; exclude wins over include.
 // Single `tag` kept for back-compat (raw email panel, SMS, Maya tools, old jobs).
 // BF_SERVER_EMAIL_TWO_COLUMN_ONLY_v15 - `resend` bypasses the 24h dedupe.
-export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; resend?: boolean; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null; /** BF_SERVER_v874_MARKETING_TOOLS - the queued job, for the campaign ledger */ jobId?: string | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
+export type EmailJob = { silo: string; tag: string | null; subject: string; html: string; resend?: boolean; tags?: string[] | null; excludeTags?: string[] | null; templateId?: string | null; /** BF_SERVER_v874_MARKETING_TOOLS - the queued job, for the campaign ledger */ jobId?: string | null; /** BF_SERVER_v923_SKIP_TEXTED - leave out anyone sent a marketing text in the last N days */ skipTextedDays?: number | null }; // BF_SERVER_TEMPLATE_ANALYTICS_v1
 export type SendProgress = (sent: number, failed: number) => Promise<void>;
 // BF_SERVER_SEND_KILL_SWITCH_v1 - worker callback checked between recipient batches.
 export type ShouldAbort = () => Promise<boolean>;
@@ -33,15 +33,19 @@ export const EMAIL_CONSENT_SQL = `(c.email_consent_basis IN ('express', 'marketi
 export const EMAIL_BLAST_ELIGIBLE_SQL = `
       COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false`;
 
-export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
+export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null, skipTextedDays: number | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n
        FROM contacts c
       WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
-        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
-    [silo, tag, tags, excludeTags],
+        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))
+        AND ($5::int IS NULL OR NOT EXISTS (
+              SELECT 1 FROM sms_campaign_sends x
+               WHERE x.contact_id = c.id AND x.message_sid IS NOT NULL
+                 AND x.sent_at > now() - ($5::int * interval '1 day')))`,
+    [silo, tag, tags, excludeTags, skipTextedDays],
   );
   return r.rows[0]?.n ?? 0;
 }
@@ -57,8 +61,12 @@ export async function emailRecipients(pool: Pool, job: EmailJob): Promise<EmailR
       WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}
         AND ($2::text IS NULL OR $2 = ANY(c.tags))
         AND ($3::text[] IS NULL OR COALESCE(c.tags,'{}') && $3)
-        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))`,
-    [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null],
+        AND ($4::text[] IS NULL OR NOT (COALESCE(c.tags,'{}') && $4))
+        AND ($5::int IS NULL OR NOT EXISTS (
+              SELECT 1 FROM sms_campaign_sends x
+               WHERE x.contact_id = c.id AND x.message_sid IS NOT NULL
+                 AND x.sent_at > now() - ($5::int * interval '1 day')))`,
+    [job.silo, job.tag, job.tags ?? null, job.excludeTags ?? null, job.skipTextedDays ?? null],
   );
   return recips.rows;
 }

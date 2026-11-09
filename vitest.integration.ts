@@ -20,6 +20,7 @@
 export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/mayaReports.v930.integration.test.ts", // BF_SERVER_v930_MAYA_REPORTS - needs Postgres
   "src/__tests__/companyFromEmail.v925.integration.test.ts", // BF_SERVER_v925_COMPANY_FROM_EMAIL - needs Postgres
+  "src/__tests__/skipTexted.v923.integration.test.ts", // BF_SERVER_v923_SKIP_TEXTED - needs Postgres
   "src/__tests__/sharedPhone.v921.integration.test.ts", // BF_SERVER_v921_SHARED_PHONE - needs Postgres
   "src/__tests__/mayaLeadTask.v887.integration.test.ts", // BF_SERVER_v887_MAYA_LEAD_TASK - needs Postgres
   "src/__tests__/reviewDemoData.v880.integration.test.ts", // BF_SERVER_v880_REVIEW_DEMO - needs Postgres
