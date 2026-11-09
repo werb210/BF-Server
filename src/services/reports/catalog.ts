@@ -3,6 +3,8 @@ export type ReportGroup = "money" | "marketing" | "operations";
 export type ReportDef = { key: string; title: string; silo: "BF" | "BI" | "SLF"; group: ReportGroup; size: "half" | "full"; source: string; description: string };
 
 export const REPORTS: ReportDef[] = [
+  // BF_SERVER_v930_MAYA_REPORTS - a table Maya built from a question (its spec rides on the card). Never offered in the list.
+  { key: "maya_table", title: "Maya table", silo: "BF", group: "operations", size: "half", source: "maya", description: "A live table Maya built from your question." },
   // BF_SERVER_DASHBOARD_BOARD_v730 - the standard Dashboard sections, as cards a person can
   // move, resize, remove and add back. Drawn by the portal; only offered on the Dashboard.
   { key: "dash_kpis", title: "Key numbers", silo: "BF", group: "operations", size: "full", source: "dashboard", description: "Active applications, deals won, commission earned, new contacts." },
