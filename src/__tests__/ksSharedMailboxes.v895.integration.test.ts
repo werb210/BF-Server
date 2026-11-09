@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { pool } from "../db.js";
 
 const MIGRATION = "migrations/2026_11_20_v895_ks_shared_mailboxes.sql";
-const KS = ["accounting@keystonecrm.online", "info@keystonecrm.online", "sales@keystonecrm.online", "support@keystonecrm.online"];
+const KS = ["accounting@keystonecrm.online", "app@keystonecrm.online", "info@keystonecrm.online", "sales@keystonecrm.online", "support@keystonecrm.online"]; // BF_SERVER_v915_KS_APP_MAILBOX - app@ added
 
 describe("Keystone shared mailboxes", () => {
   it("are in silo KS, never in BF, and the migration is safe to run twice", async () => {
