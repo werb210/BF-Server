@@ -161,7 +161,7 @@ describe("parseExpressCaslConsent", () => {
     expect(parseExpressCaslConsent({ casl_consent: false }, now)).toBeNull();
     expect(parseExpressCaslConsent({ casl_consent: "true" }, now)).toBeNull();
     expect(parseExpressCaslConsent({ casl_consent: true, casl_consent_at: "2026-10-11T11:59:00Z", casl_consent_text: " ok " }, now))
-      .toEqual({ text: "ok", at: new Date("2026-10-11T11:59:00Z") });
+      .toEqual({ text: "ok", at: new Date("2026-10-11T11:59:00Z"), sms: true, email: true }); // v931: one old-style box = texts and email
     expect(parseExpressCaslConsent({ casl_consent: true, casl_consent_at: "2030-01-01T00:00:00Z" }, now)?.at).toEqual(now);
     expect(parseExpressCaslConsent({ casl_consent: true, casl_consent_at: "garbage" }, now)?.at).toEqual(now);
     expect(parseExpressCaslConsent({ casl_consent: true }, now)?.text).toBeNull();

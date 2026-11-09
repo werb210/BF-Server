@@ -103,7 +103,9 @@ export const RECORD_INQUIRY_CONSENT_SQL = `
 // consent work uses (sms_consent / consent_basis / consent_at / consent_source),
 // plus the exact wording the visitor agreed to (consent_text). Only an explicit
 // boolean true counts: absent, false, "true" or 1 record nothing.
-export type ExpressCaslConsent = { text: string | null; at: Date };
+// BF_SERVER_v931_SEPARATE_CONSENT - forms now have two boxes: texts/calls (sms_consent) and email (email_consent). Each
+// is recorded on its own. A payload with only casl_consent (older forms, kits, Maya) means both, as before.
+export type ExpressCaslConsent = { text: string | null; at: Date; sms?: boolean; email?: boolean };
 
 const CASL_TEXT_MAX = 2000;
 const CASL_CLOCK_SKEW_MS = 5 * 60 * 1000;
@@ -111,7 +113,10 @@ const CASL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function parseExpressCaslConsent(body: unknown, now: Date = new Date()): ExpressCaslConsent | null {
   const b = (body ?? {}) as Record<string, unknown>;
-  if (b.casl_consent !== true) return null;
+  const separate = "sms_consent" in b || "email_consent" in b; // BF_SERVER_v931_SEPARATE_CONSENT
+  const sms = separate ? b.sms_consent === true : b.casl_consent === true;
+  const email = separate ? b.email_consent === true : b.casl_consent === true;
+  if (!sms && !email) return null;
   const rawText = typeof b.casl_consent_text === "string" ? b.casl_consent_text.trim() : "";
   const text = rawText ? rawText.slice(0, CASL_TEXT_MAX) : null;
   // The browser's timestamp is kept when it is plausible (not in the future, not
@@ -122,8 +127,16 @@ export function parseExpressCaslConsent(body: unknown, now: Date = new Date()): 
     const t = d.getTime();
     if (Number.isFinite(t) && t <= now.getTime() + CASL_CLOCK_SKEW_MS && t >= now.getTime() - CASL_MAX_AGE_MS) at = d;
   }
-  return { text, at };
+  return { text, at, sms, email };
 }
+
+// BF_SERVER_v931_SEPARATE_CONSENT - email marketing consent ticked on a form.
+export const RECORD_EXPRESS_EMAIL_CONSENT_BY_ID_SQL = `
+  UPDATE contacts SET email_consent_basis = 'express', email_consent_at = $2::timestamptz, updated_at = now()
+   WHERE id::text = ($1)::text`;
+export const RECORD_EXPRESS_EMAIL_CONSENT_BY_EMAIL_SQL = `
+  UPDATE contacts SET email_consent_basis = 'express', email_consent_at = $2::timestamptz, updated_at = now()
+   WHERE silo = $3 AND lower(email) = lower($1)`;
 
 export const RECORD_EXPRESS_CASL_CONSENT_BY_ID_SQL = `
   UPDATE contacts
@@ -159,15 +172,21 @@ export async function recordExpressCaslConsent(
   if (!consent) return false;
   const at = consent.at.toISOString();
   const silo = String(target.silo ?? "BF").toUpperCase();
+  const sms = consent.sms !== false; // BF_SERVER_v931_SEPARATE_CONSENT - undefined (older callers) means texts too
+  const emailToo = consent.email === true;
   try {
     if (target.contactId) {
-      const r = await query(RECORD_EXPRESS_CASL_CONSENT_BY_ID_SQL, [target.contactId, at, source, consent.text]);
-      return Number(r.rowCount ?? 0) > 0;
+      let n = 0;
+      if (sms) n += Number((await query(RECORD_EXPRESS_CASL_CONSENT_BY_ID_SQL, [target.contactId, at, source, consent.text])).rowCount ?? 0);
+      if (emailToo) n += Number((await query(RECORD_EXPRESS_EMAIL_CONSENT_BY_ID_SQL, [target.contactId, at])).rowCount ?? 0);
+      return n > 0;
     }
     const email = String(target.email ?? "").trim();
     if (email) {
-      const r = await query(RECORD_EXPRESS_CASL_CONSENT_BY_EMAIL_SQL, [email, at, source, consent.text, silo]);
-      return Number(r.rowCount ?? 0) > 0;
+      let n = 0;
+      if (sms) n += Number((await query(RECORD_EXPRESS_CASL_CONSENT_BY_EMAIL_SQL, [email, at, source, consent.text, silo])).rowCount ?? 0);
+      if (emailToo) n += Number((await query(RECORD_EXPRESS_EMAIL_CONSENT_BY_EMAIL_SQL, [email, at, silo])).rowCount ?? 0);
+      return n > 0;
     }
     console.warn("[casl-consent] no contact to record express consent on", { source });
     return false;
