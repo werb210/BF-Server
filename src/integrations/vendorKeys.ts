@@ -17,12 +17,14 @@ export const VENDOR_KEYS: readonly VendorKeyDef[] = [
   { key: "ONFIDO_REGION", service: "id", label: "Entrust IDV (Onfido) region", secret: false, hint: "ca, us or eu (ca keeps applicant data in Canada)" },
   { key: "IPINFO_TOKEN", service: "ip", label: "ipinfo token", secret: true },
   { key: "CORPORATIONS_CANADA_API_KEY", service: "registry", label: "Corporations Canada API key", secret: true },
+  { key: "OPENAI_ADS_API_KEY", service: "chatgpt_ads", label: "ChatGPT Ads (OpenAI Ads Manager) API key", secret: true, hint: "Ads Manager > Settings > API keys. An OpenAI developer-platform key does not work here." }, // BF_SERVER_v913_CHATGPT_ADS
 ];
 export const VENDOR_KEY_NAMES: ReadonlySet<string> = new Set(VENDOR_KEYS.map((d) => d.key));
 
 export const VENDOR_SERVICES = [
   { id: "id", name: "ID checks (Entrust Identity Verification, formerly Onfido)", signup: "https://www.entrust.com/products/identity-verification", what: "Applicants photograph their ID and take a selfie; Entrust checks them. Without it, ID checks go to manual review." },
   { id: "ip", name: "IP location and VPN (ipinfo)", signup: "https://ipinfo.io/signup", what: "Adds VPN, proxy and Tor flags. Without it, the free check still gives the country and data-centre networks." },
+  { id: "chatgpt_ads", name: "ChatGPT Ads (OpenAI Ads Manager)", signup: "https://ads.openai.com", what: "Shows ChatGPT ad campaigns, spend, clicks and conversions on Marketing > Ads > ChatGPT, with pause and resume. Without it, the ChatGPT tab asks for the key." }, // BF_SERVER_v913_CHATGPT_ADS
   { id: "registry", name: "Corporations Canada (federal business registry)", signup: "https://api.ised-isde.canada.ca/", what: "Confirms a federally registered business exists and is active. Without it, the registry check is skipped." },
 ];
 

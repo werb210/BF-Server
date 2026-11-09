@@ -181,6 +181,7 @@ import ksCrmRoutes from "./ksCrm.js"; // BF_SERVER_v850_KS_CRM
 import ksMarketingRoutes from "./ksMarketing.js"; // BF_SERVER_v865_KS_MARKETING
 import quickbooksRoutes from "./quickbooks.js"; // BF_SERVER_v852_CALC_QBO
 import vendorKeysRoutes from "./vendorKeys.js"; // BF_SERVER_v898_YOUR_SERVICES
+import chatgptAdsRoutes from "./chatgptAds.js"; // BF_SERVER_v913_CHATGPT_ADS
 import { requireAuth, requireAuthAllowClient } from "../middleware/auth.js";
 import watchAuthRoutes from "../watch/authRoutes.js";
 import watchDeviceRoutes from "../watch/deviceRoutes.js";
@@ -433,6 +434,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/active-contracts", router: activeContractsRoutes }, // BF_SERVER_v864_ACTIVE_CONTRACTS - contracts, renewals, compensation
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
   { path: "/ks/marketing", router: ksMarketingRoutes }, // BF_SERVER_v865_KS_MARKETING - KS-Ops prospect marketing: CRM contacts out, timeline events in (X-KS-Ops-Key)
+  { path: "/chatgpt-ads", router: chatgptAdsRoutes }, // BF_SERVER_v913_CHATGPT_ADS - Marketing > Ads > ChatGPT (Admin, Marketing)
   { path: "/vendor-keys", router: vendorKeysRoutes }, // BF_SERVER_v898_YOUR_SERVICES - Boreal's own verification-service keys (Admin)
   { path: "/quickbooks", router: quickbooksRoutes }, // BF_SERVER_v852_CALC_QBO - QuickBooks connection (Admin) + fee invoices
   // BF_SERVER_v870_CRM_DATA_MODEL
@@ -614,6 +616,9 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/crm/inbox", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
   { method: "GET", path: "/api/crm/voicemails", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] }, // BF_SERVER_BLOCK_v830_VOICEMAILS_LIST
   { method: "GET", path: "/api/crm/shared-mailboxes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
+  { method: "GET", path: "/api/chatgpt-ads/campaigns", roles: [ROLES.ADMIN, ROLES.MARKETING] }, // BF_SERVER_v913_CHATGPT_ADS
+  { method: "POST", path: "/api/chatgpt-ads/campaigns/:id/pause", roles: [ROLES.ADMIN, ROLES.MARKETING] }, // BF_SERVER_v913_CHATGPT_ADS
+  { method: "POST", path: "/api/chatgpt-ads/campaigns/:id/activate", roles: [ROLES.ADMIN, ROLES.MARKETING] }, // BF_SERVER_v913_CHATGPT_ADS
   { method: "GET", path: "/api/vendor-keys", roles: [ROLES.ADMIN] }, // BF_SERVER_v898_YOUR_SERVICES
   { method: "PUT", path: "/api/vendor-keys", roles: [ROLES.ADMIN] }, // BF_SERVER_v898_YOUR_SERVICES
   { method: "GET", path: "/api/crm/contacts/:id/notes", roles: [ROLES.ADMIN, ROLES.STAFF, ROLES.MARKETING] },
