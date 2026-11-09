@@ -33,11 +33,12 @@ describe("v860 SignNow subscription setup", () => {
       const u = new URL(String(input));
       const method = String(init.method ?? "GET");
       if (method === "GET" && u.pathname === "/user") return new Response(JSON.stringify({ id: "u1" }), { status: 200 });
-      if (method === "GET" && u.pathname === "/api/v2/events") return new Response("nope", { status: 403 });
+      if (method === "GET" && (u.pathname === "/api/v2/events" || u.pathname === "/v2/event-subscriptions")) return new Response("nope", { status: 403 }); // v926: both listings fail
       if (method === "POST") { posts.push(JSON.parse(init.body)); return new Response(JSON.stringify({ id: "n" }), { status: 200 }); }
       return new Response("{}", { status: 200 });
     }) as any;
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const { ensureSignnowWebhook } = await import("../signnow/ensureWebhookSubscription.js");
     await ensureSignnowWebhook();
     expect(err.mock.calls.some((c) => String(c[0]).includes("could not list subscriptions"))).toBe(true);

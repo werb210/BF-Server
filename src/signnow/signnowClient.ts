@@ -224,9 +224,17 @@ export async function getAuthenticatedUserId(): Promise<string | null> {
   const id = body?.id ?? body?.data?.id ?? null;
   return typeof id === "string" && id.trim() ? id.trim() : null;
 }
+// BF_SERVER_v926_SIGNNOW_EVENT_SUBSCRIPTIONS - GET /api/v2/events only accepts Basic (client credentials) auth, so with
+// the Bearer API key it answered invalid_token and the subscriptions were never found or updated. The Bearer-friendly
+// listing is GET /v2/event-subscriptions; the old path stays as a fallback.
 export async function listEventSubscriptions(): Promise<unknown[]> {
-  const body = (await signnowFetch(`/api/v2/events`, { method: "GET" })) as any;
-  return Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : [];
+  const pick = (body: any): unknown[] => (Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : []);
+  try {
+    return pick(await signnowFetch(`/v2/event-subscriptions`, { method: "GET" }));
+  } catch (e) {
+    console.warn(`[signnow-webhook] /v2/event-subscriptions failed, trying /api/v2/events: ${e instanceof Error ? e.message : String(e)}`);
+    return pick(await signnowFetch(`/api/v2/events`, { method: "GET" }));
+  }
 }
 // BF_SERVER_v784_WEBHOOK_SIGNATURES - subscriptions carry SIGNNOW_WEBHOOK_SECRET as
 // attributes.secret_key so SignNow signs each callback (x-signnow-signature, base64
@@ -255,7 +263,7 @@ export async function updateEventSubscription(
   callbackUrl: string,
   secretKey: string,
 ): Promise<void> {
-  await signnowFetch(`/api/v2/events/${encodeURIComponent(subscriptionId)}`, {
+  await signnowFetch(`/v2/event-subscriptions/${encodeURIComponent(subscriptionId)}`, { // BF_SERVER_v926_SIGNNOW_EVENT_SUBSCRIPTIONS
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

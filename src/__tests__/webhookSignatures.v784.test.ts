@@ -188,7 +188,7 @@ describe("ensureSignnowWebhook registers subscriptions with secret_key", () => {
       calls.push({ method, path: u.pathname, body });
       let out: unknown = {};
       if (method === "GET" && u.pathname === "/user") out = { id: "u1" };
-      else if (method === "GET" && u.pathname === "/api/v2/events") out = { data: existing };
+      else if (method === "GET" && u.pathname === "/v2/event-subscriptions") out = { data: existing }; // BF_SERVER_v926
       else if (method === "POST" && u.pathname === "/api/v2/events") out = { id: "new" };
       return new Response(JSON.stringify(out), { status: 200, headers: { "content-type": "application/json" } });
     }) as any;
@@ -220,7 +220,7 @@ describe("ensureSignnowWebhook registers subscriptions with secret_key", () => {
     await ensureSignnowWebhook();
     expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v2/events")).toHaveLength(0);
     const puts = calls.filter((c) => c.method === "PUT");
-    expect(puts.map((p) => p.path).sort()).toEqual(["/api/v2/events/s1", "/api/v2/events/s2"]);
+    expect(puts.map((p) => p.path).sort()).toEqual(["/v2/event-subscriptions/s1", "/v2/event-subscriptions/s2"]); // BF_SERVER_v926
     expect(puts[0].body).toMatchObject({ event: "user.document.fieldinvite.signed", entity_id: "u1", action: "callback", attributes: { callback: CBV, secret_key: SECRET } });
   });
 });
