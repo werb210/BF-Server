@@ -778,17 +778,20 @@ router.post("/email/consent-record", safeHandler(async (req: any, res: any) => {
 router.get("/email/segments", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const tags = await pool.query(
-    `SELECT tag, count(*)::int AS n FROM (
-       SELECT unnest(c.tags) AS tag FROM contacts c
-        WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL} -- BF_SERVER_v789_EMAIL_BLAST_CONSENT
-     ) t GROUP BY tag ORDER BY n DESC`,
+    // BF_SERVER_v910_SEGMENT_TOTALS - every tag with an email address, n = can be emailed, total = all with that tag,
+    // so a tag whose contacts lack email consent shows "1 of 60" instead of silently showing 1 (or vanishing).
+    `SELECT tag, count(*) FILTER (WHERE eligible)::int AS n, count(*)::int AS total FROM (
+       SELECT unnest(c.tags) AS tag, (${EMAIL_BLAST_ELIGIBLE_SQL}) AS eligible FROM contacts c
+        WHERE c.silo = $1 AND COALESCE(c.email,'') <> '' -- BF_SERVER_v789_EMAIL_BLAST_CONSENT
+     ) t GROUP BY tag ORDER BY total DESC, n DESC`,
     [silo],
   );
   const total = await pool.query(
     `SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND ${EMAIL_BLAST_ELIGIBLE_SQL}`,
     [silo],
   );
-  respondOk(res, { configured: sendgridConfigured(), all: total.rows[0]?.n ?? 0, segments: tags.rows });
+  const withEmail = await pool.query(`SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND COALESCE(c.email,'') <> ''`, [silo]);
+  respondOk(res, { configured: sendgridConfigured(), all: total.rows[0]?.n ?? 0, with_email: withEmail.rows[0]?.n ?? 0, segments: tags.rows });
 }));
 
 // BF_SERVER_TEST_SEND_REAL_CONTACT_v26 - test sends hardcoded
