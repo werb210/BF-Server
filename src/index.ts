@@ -246,6 +246,11 @@ export async function start(): Promise<void> {
 
     // BF_SERVER_v869_SETTINGS_PACK - post-funding surveys (when an Admin switched them on) and booking reminders
     // 24 h and 1 h before.
+    // BF_SERVER_v925_COMPANY_FROM_EMAIL - contacts with a work email and no company get one (matched or created) and are linked.
+    const { startCompanyFromEmailWorker } = await import("./crm/companyFromEmail.js");
+    await workerStagger();
+    try { const w = startCompanyFromEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] company-from-email worker started"); }
+    catch (err) { console.error("[startup] company-from-email worker failed to start:", err); }
     const { startNpsSurveyWorker } = await import("./workers/npsSurveyWorker.js");
     await workerStagger();
     try { const w = startNpsSurveyWorker(pool); workerStops.push(w.stop); console.log("[startup] nps-survey worker started"); }
