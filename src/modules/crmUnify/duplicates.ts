@@ -52,11 +52,19 @@ async function dismissedPairs(db: Q, silo: string, entity: "contact" | "company"
   return new Set(r.rows.map((x: any) => pairKey(String(x.a), String(x.b))));
 }
 
+// BF_SERVER_v921_SHARED_PHONE - a number on more than this many contacts in the silo is an office switchboard or main
+// line, not one person, so on its own it is not a reason to call two people duplicates.
+export const SHARED_PHONE_LIMIT = 3;
+const PHONE_SHARED_SQL = (p10: string, siloParam: string) =>
+  `(SELECT count(*) FROM contacts s WHERE s.silo = ${siloParam} AND s.merged_into_id IS NULL AND coalesce(s.status, 'active') <> 'archived'
+      AND right(regexp_replace(coalesce(s.phone, ''), '[^0-9]', '', 'g'), 10) = ${p10}) > ${SHARED_PHONE_LIMIT}`;
+
 const CONTACT_MATCH_SQL = `
   (c.email IS NOT NULL AND me.email IS NOT NULL AND btrim(c.email) <> ''
      AND lower(regexp_replace(c.email, '\\s', '', 'g')) = lower(regexp_replace(me.email, '\\s', '', 'g'))) AS m_email,
   (length(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g')) >= 10
-     AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)) AS m_phone,
+     AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)
+     AND NOT ${PHONE_SHARED_SQL("right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)", "$2")}) AS m_phone,
   ${SAME_NAME_SQL("c.name", "me.name")} AS m_same_name,
   (c.company_id IS NOT NULL AND c.company_id = me.company_id
      AND bf_same_person_name(c.name, me.name)
@@ -172,16 +180,18 @@ export async function duplicateGroups(db: Q, silo: string, entity: "contact" | "
                 CASE WHEN length(d) >= 10 THEN right(d, 10) END AS p10
            FROM (SELECT c.*, regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') AS d FROM contacts c
                   WHERE c.silo = $1 AND c.merged_into_id IS NULL AND coalesce(c.status, 'active') <> 'archived') s
+       ), shared AS (
+         SELECT p10 FROM base WHERE p10 IS NOT NULL GROUP BY p10 HAVING count(*) > ${SHARED_PHONE_LIMIT}
        ), pairs AS (
          SELECT a.id AS a, b.id AS b FROM base a JOIN base b ON b.em = a.em AND b.id > a.id WHERE a.em <> ''
-         UNION SELECT a.id, b.id FROM base a JOIN base b ON b.p10 = a.p10 AND b.id > a.id
+         UNION SELECT a.id, b.id FROM base a JOIN base b ON b.p10 = a.p10 AND b.id > a.id WHERE a.p10 NOT IN (SELECT p10 FROM shared)
          UNION SELECT a.id, b.id FROM base a JOIN base b ON b.company_id = a.company_id AND b.id > a.id
          UNION SELECT a.id, b.id FROM base a JOIN base b ON b.nm = a.nm AND b.id > a.id
        )
        SELECT * FROM (
          SELECT p.a::text AS a, p.b::text AS b,
                 (x.em <> '' AND x.em = y.em) AS m_email,
-                (x.p10 IS NOT NULL AND x.p10 = y.p10) AS m_phone,
+                (x.p10 IS NOT NULL AND x.p10 = y.p10 AND x.p10 NOT IN (SELECT p10 FROM shared)) AS m_phone,
                 (x.nm IS NOT NULL AND x.nm = y.nm) AS m_same_name,
                 (x.company_id IS NOT NULL AND x.company_id = y.company_id AND bf_same_person_name(x.name, y.name)
                   AND x.nm IS NOT NULL AND y.nm IS NOT NULL) AS m_name
