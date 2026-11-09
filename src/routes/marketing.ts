@@ -10,7 +10,7 @@ import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, sl
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL, CONSENT_SQL as CONSENT_SQL_FOR_EMAIL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
-import { countEmailRecipients, countSmsRecipients, EMAIL_BLAST_ELIGIBLE_SQL } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
+import { countEmailRecipients, countSmsRecipients, EMAIL_BLAST_ELIGIBLE_SQL, skipTextedDaysOf } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
 import { linkedInSuggestionsConfigured, buildLinkedInSuggestions, applyLinkedInSuggestion } from "../services/linkedInAdsSuggestions.js"; // BF_SERVER_LINKEDIN_SUGGESTIONS_v1
@@ -1164,13 +1164,7 @@ export function emailAudienceMissing(tag: string | null, includeTags: string[] |
   return !(tag && tag.trim()) && !(includeTags && includeTags.length > 0);
 }
 
-// BF_SERVER_v923_SKIP_TEXTED - "Skip contacts who got a marketing text in the last 7 days" on the Email tab.
-// true -> 7 days; a number of days (1-90) is also accepted.
-export function skipTextedDaysOf(v: unknown): number | null {
-  if (v === true || v === "true" || v === "1" || v === 1) return 7;
-  const n = Number(v);
-  return Number.isInteger(n) && n >= 1 && n <= 90 ? n : null;
-}
+export { skipTextedDaysOf } from "../services/marketingSendRunner.js"; // BF_SERVER_v923_SKIP_TEXTED
 
 function tagArr(v: unknown): string[] | null {
   const raw = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];

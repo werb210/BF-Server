@@ -33,6 +33,14 @@ export const EMAIL_CONSENT_SQL = `(c.email_consent_basis IN ('express', 'marketi
 export const EMAIL_BLAST_ELIGIBLE_SQL = `
       COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false`;
 
+// BF_SERVER_v923_SKIP_TEXTED - "Skip contacts who got a marketing text in the last 7 days" on the Email tab.
+// true -> 7 days; a number of days (1-90) is also accepted.
+export function skipTextedDaysOf(v: unknown): number | null {
+  if (v === true || v === "true" || v === "1" || v === 1) return 7;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= 90 ? n : null;
+}
+
 export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null, skipTextedDays: number | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n

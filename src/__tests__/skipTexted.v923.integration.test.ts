@@ -2,8 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
-import { countEmailRecipients, emailRecipients } from "../services/marketingSendRunner.js";
-import { skipTextedDaysOf } from "../routes/marketing.js";
+import { countEmailRecipients, emailRecipients, skipTextedDaysOf } from "../services/marketingSendRunner.js";
 
 const tag = `v923-${randomUUID().slice(0, 8)}`;
 const texted = randomUUID(), oldText = randomUUID(), never = randomUUID(), failedText = randomUUID();
