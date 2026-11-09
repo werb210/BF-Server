@@ -109,18 +109,8 @@ export async function start(): Promise<void> {
     }, 120_000);
     (t as any).unref?.();
   }
-  // BF_SERVER_v903_YE26_TEMPLATES - year-end write-off email templates (insert-only, non-fatal). Runs before the
-  // landing-page backfill below, which mints their landing pages.
-  try {
-    const { pool } = await import("./db.js");
-    const { seedYearEndTemplates } = await import("./startup/seedYearEndTemplates.js");
-    const out = await seedYearEndTemplates(pool);
-    console.log(JSON.stringify({ event: "ye26_templates_seeded", ...out }));
-    const { seedAppLaunchTemplates } = await import("./startup/seedYearEndTemplates.js"); // BF_SERVER_v905_APP_LAUNCH
-    console.log(JSON.stringify({ event: "app_launch_templates_seeded", ...(await seedAppLaunchTemplates(pool)) }));
-  } catch (err) {
-    console.error(JSON.stringify({ event: "ye26_templates_seed_error", error: err instanceof Error ? err.message : String(err) }));
-  }
+  // BF_SERVER_v918_REMOVE_SEEDED_TEMPLATES - the year-end (v903) and app-launch (v905) template seeders no longer run;
+  // Todd removed those templates (migration 2026_11_24_v918_remove_seeded_templates.sql).
 
   // BF_SERVER_TEMPLATE_LANDING_BACKFILL_v28 - repair marketing template landing
   // pages (bad host from a misconfigured LANDING_BASE_URL, or seeded rows that
