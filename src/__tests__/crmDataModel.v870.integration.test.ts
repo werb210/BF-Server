@@ -170,7 +170,13 @@ describe("v870 CRM data model (real Postgres)", () => {
     await runMigrationRetryingDeadlocks();
     await runMigrationRetryingDeadlocks();
     const after = (await pool.query(`SELECT id::text, role, record_visibility, custom_role_id, token_version FROM users ORDER BY id`)).rows;
-    expect(after).toEqual(before);
+    // BF_SERVER_v919_V870_USERS_RACE - other test files create and delete their own users in parallel, so compare
+    // only the users present in both snapshots: the migration must not change any of them.
+    const seen = new Set(after.map((r) => r.id));
+    const kept = before.filter((r) => seen.has(r.id));
+    const byId = new Map(after.map((r) => [r.id, r]));
+    expect(kept.map((r) => byId.get(r.id))).toEqual(kept);
+    expect(kept.length).toBeGreaterThan(0);
     const roles = (await pool.query(`SELECT role, visibility FROM role_record_visibility WHERE role IN ('Staff', 'Ops', 'Marketing') ORDER BY role`)).rows;
     expect(roles.map((r) => r.role)).toEqual(["Marketing", "Ops", "Staff"]);
     expect((await pool.query(`SELECT count(*)::int AS n FROM applications WHERE pipeline_id IS NOT NULL AND id = ANY($1::text[])`, [[a1, a2, a3]])).rows[0].n).toBe(0);
