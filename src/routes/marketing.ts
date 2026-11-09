@@ -9,7 +9,7 @@ import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, slugFromLandingUrl, landingUrlForSlug, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
 import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
-import { SMS_ELIGIBLE_SQL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
+import { SMS_ELIGIBLE_SQL, CONSENT_SQL as CONSENT_SQL_FOR_EMAIL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, countSmsRecipients, EMAIL_BLAST_ELIGIBLE_SQL } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
 import { suggestionsConfigured, buildSuggestions, applySuggestion, adsMutateAllowed, ADS_MUTATE_BLOCKED_REASON } from "../services/googleAdsSuggestions.js"; // BF_SERVER_ADS_WRITE_GATE_v56
@@ -740,6 +740,41 @@ router.post("/linkedin-ads/suggestions/apply", safeHandler(async (req: any, res:
 }));
 
 // BF_SERVER_MARKETING_EMAIL_v1 - SendGrid bulk marketing email (BF silo).
+// BF_SERVER_v910_EMAIL_CONSENT - record email marketing consent for contacts the brokerage confirms are marketing
+// contacts. Admin only. Never touches anyone who unsubscribed or has no email, never overwrites consent already on
+// file, and records who confirmed it, when, and the source they gave.
+const MISSING_EMAIL_CONSENT = `c.silo = $1 AND c.merged_into_id IS NULL AND COALESCE(c.email,'') <> ''
+  AND COALESCE(c.marketing_opt_out,false) = false AND c.email_consent_basis IS NULL AND NOT ${CONSENT_SQL_FOR_EMAIL}
+  AND ($2::text[] IS NULL OR COALESCE(c.tags,'{}') && $2)`;
+router.get("/email/consent-gap", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const tags = Array.isArray(req.query?.tags) ? req.query.tags.map(String) : req.query?.tags ? String(req.query.tags).split(",").filter(Boolean) : null;
+  const r = await pool.query(`SELECT count(*)::int AS n FROM contacts c WHERE ${MISSING_EMAIL_CONSENT}`, [silo, tags?.length ? tags : null]);
+  respondOk(res, { missing: r.rows[0]?.n ?? 0 });
+}));
+router.post("/email/consent-record", safeHandler(async (req: any, res: any) => {
+  if (String(req.user?.role ?? "").toLowerCase() !== "admin") return res.status(403).json({ ok: false, error: "admin_only", message: "Only an Admin can record consent." });
+  const silo = resolveSiloFromRequest(req);
+  const source = String(req.body?.source ?? "").trim().slice(0, 300);
+  if (req.body?.confirm !== true || source.length < 5) {
+    return res.status(400).json({ ok: false, error: "confirmation_required", message: "Say where these contacts' consent came from, and confirm." });
+  }
+  const tags = Array.isArray(req.body?.tags) && req.body.tags.length ? req.body.tags.map(String) : null;
+  const actor = String(req.user?.userId ?? req.user?.id ?? "");
+  const r = await pool.query(
+    `UPDATE contacts c SET email_consent_basis = 'marketing_list', email_consent_at = now(),
+            email_consent_source = $3, updated_at = now()
+      WHERE ${MISSING_EMAIL_CONSENT} RETURNING c.id`,
+    [silo, tags, `${source} (confirmed by user ${actor || "unknown"})`],
+  );
+  try {
+    const { recordAuditEvent } = await import("../modules/audit/audit.service.js");
+    await recordAuditEvent({ actorUserId: actor || null, targetUserId: null, targetType: "contacts", targetId: null, action: "email_consent_recorded",
+      success: true, metadata: { silo, count: r.rowCount ?? 0, source, tags } });
+  } catch (err) { logError("email_consent_audit_failed", { error: String((err as Error)?.message ?? err) }); }
+  respondOk(res, { recorded: r.rowCount ?? 0 });
+}));
+
 router.get("/email/segments", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const tags = await pool.query(

@@ -25,9 +25,12 @@ export type EmailSendResult = { total: number; sent: number; failed: number; rej
 // CASL consent (CONSENT_SQL: express, implied_transaction < 2 years, implied_inquiry
 // < 6 months - the same rule sequences apply via hasSmsConsent) who have not opted out
 // of marketing. The count and the send share this predicate.
+// BF_SERVER_v910_EMAIL_CONSENT - email marketing consent (email_consent_basis) counts on its own; texting consent
+// still counts too. An unsubscribe (marketing_opt_out) always wins.
+export const EMAIL_CONSENT_SQL = `(c.email_consent_basis IN ('express', 'marketing_list') OR ${CONSENT_SQL})`;
 export const EMAIL_BLAST_ELIGIBLE_SQL = `
       COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false
-  AND ${CONSENT_SQL}`;
+  AND ${EMAIL_CONSENT_SQL}`;
 
 export async function countEmailRecipients(pool: Pool, silo: string, tag: string | null, tags: string[] | null = null, excludeTags: string[] | null = null): Promise<number> {
   const r = await pool.query<{ n: number }>(

@@ -100,3 +100,12 @@ describe("v789 email blast recipients pass the sequence CASL consent check plus 
     for (const s of seen) expect(s).toContain(CONSENT_SQL);
   });
 });
+
+// BF_SERVER_v910_EMAIL_CONSENT - email consent is recorded on its own; texting consent still counts; unsubscribes win.
+describe("email consent separate from texting consent (v910)", () => {
+  it("lets recorded email consent reach a contact without text consent", () => {
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("c.email_consent_basis IN ('express', 'marketing_list')");
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain(CONSENT_SQL);
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("COALESCE(c.marketing_opt_out,false) = false");
+  });
+});
