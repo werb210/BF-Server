@@ -70,7 +70,7 @@ describe("v789 email blast audience is required", () => {
     expect(r.body.data.queued).toBe(true);
     expect(h.jobs).toHaveLength(1);
     const count = h.sql.find((s) => /SELECT count\(\*\)::int AS n\s+FROM contacts c/.test(s))!;
-    expect(count).toContain(CONSENT_SQL);
+    expect(count).not.toContain(CONSENT_SQL); // BF_SERVER_v917_EMAIL_ALL_CONTACTS
     expect(count).toContain("COALESCE(c.marketing_opt_out,false) = false");
   });
 
@@ -85,7 +85,7 @@ describe("v789 email blast audience is required", () => {
 
 describe("v789 email blast recipients pass the sequence CASL consent check plus opt-out", () => {
   it("the shared predicate is CONSENT_SQL (express, implied 2y / 6mo) and marketing opt-out", () => {
-    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain(CONSENT_SQL);
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).not.toContain(CONSENT_SQL); // BF_SERVER_v917_EMAIL_ALL_CONTACTS - every contact with an email, minus opt-outs
     expect(CONSENT_SQL).toContain("interval '2 years'");
     expect(CONSENT_SQL).toContain("interval '6 months'");
     expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("COALESCE(c.marketing_opt_out,false) = false");
@@ -97,15 +97,15 @@ describe("v789 email blast recipients pass the sequence CASL consent check plus 
     await countEmailRecipients(pool, "BF", "vip");
     await runEmailSend(pool, { silo: "BF", tag: "vip", subject: "s", html: "h" });
     expect(seen).toHaveLength(2);
-    for (const s of seen) expect(s).toContain(CONSENT_SQL);
+    for (const s of seen) expect(s).toContain("COALESCE(c.marketing_opt_out,false) = false"); // BF_SERVER_v917_EMAIL_ALL_CONTACTS
   });
 });
 
 // BF_SERVER_v910_EMAIL_CONSENT - email consent is recorded on its own; texting consent still counts; unsubscribes win.
 describe("email consent separate from texting consent (v910)", () => {
-  it("lets recorded email consent reach a contact without text consent", () => {
-    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("c.email_consent_basis IN ('express', 'marketing_list')");
-    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain(CONSENT_SQL);
+  it("every contact with an email gets campaign email unless they opted out (v917)", () => {
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).not.toContain("email_consent_basis");
+    expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("COALESCE(c.email,'') <> ''");
     expect(EMAIL_BLAST_ELIGIBLE_SQL).toContain("COALESCE(c.marketing_opt_out,false) = false");
   });
 });
