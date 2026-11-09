@@ -24,6 +24,11 @@ export async function consentHealth() {
             count(*) FILTER (WHERE COALESCE(marketing_opt_out,false))::int AS opted_out_marketing,
             count(*) FILTER (WHERE COALESCE(sms_opt_out,false))::int AS opted_out_sms,
             count(*) FILTER (WHERE COALESCE(sms_consent,false))::int AS express_sms,
+            -- BF_SERVER_v910_EMAIL_CONSENT
+            count(*) FILTER (WHERE COALESCE(email,'') <> '' AND NOT COALESCE(marketing_opt_out,false) AND (email_consent_basis IN ('express','marketing_list')
+              OR COALESCE(sms_consent,false) OR (consent_basis = 'implied_transaction' AND consent_at > now() - interval '2 years')
+              OR (consent_basis = 'implied_inquiry' AND consent_at > now() - interval '6 months')))::int AS can_email,
+            count(*) FILTER (WHERE email_consent_basis = 'marketing_list')::int AS email_marketing_list,
             count(*) FILTER (WHERE consent_basis = 'implied_transaction' AND consent_at > now() - interval '2 years')::int AS implied_client,
             count(*) FILTER (WHERE consent_basis = 'implied_inquiry' AND consent_at > now() - interval '6 months')::int AS implied_inquiry,
             count(*) FILTER (WHERE NOT COALESCE(sms_consent,false) AND (
