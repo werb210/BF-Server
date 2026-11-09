@@ -6,12 +6,13 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { scopedRequest } from "../visibility/scopedDb.js"; // BF_SERVER_v870_CRM_DATA_MODEL - only the records this user may see (and ?team_id=)
 import { catalogFor, reportByKey, canSee, normalizeRole } from "../services/reports/catalog.js";
 import { DATA } from "../services/reports/data.js";
+import { askReport, cleanSpec, runTable, type TableSpec } from "../services/reports/mayaReports.js"; // BF_SERVER_v930_MAYA_REPORTS
 
 const router = Router();
 const SILOS = new Set(["BF", "BI", "SLF"]);
 const siloOf = (v: unknown) => (SILOS.has(String(v ?? "").toUpperCase()) ? String(v).toUpperCase() : "BF");
 const uid = (req: any) => String(req.user?.userId ?? req.user?.id ?? "");
-type Card = { id: string; report: string; size: "third" | "half" | "full"; days?: number }; // BF_SERVER_DASHBOARD_BOARD_v730 third = Small
+type Card = { id: string; report: string; size: "third" | "half" | "full"; days?: number; spec?: TableSpec }; // BF_SERVER_DASHBOARD_BOARD_v730 third = Small
 export function cleanCards(role: unknown, raw: unknown): Card[] {
   if (!Array.isArray(raw)) return [];
   const out: Card[] = [];
@@ -21,7 +22,8 @@ export function cleanCards(role: unknown, raw: unknown): Card[] {
     const days = Number((c as any)?.days);
     out.push({ id: String((c as any)?.id ?? "").slice(0, 60) || Math.random().toString(36).slice(2, 10), report: def.key,
       size: (c as any)?.size === "third" ? "third" : (c as any)?.size === "half" ? "half" : (c as any)?.size === "full" ? "full" : def.size,
-      ...(Number.isFinite(days) && days > 0 ? { days: Math.min(Math.round(days), 365) } : {}) });
+      ...(Number.isFinite(days) && days > 0 ? { days: Math.min(Math.round(days), 365) } : {}),
+      ...(def.key === "maya_table" && cleanSpec((c as any)?.spec) ? { spec: cleanSpec((c as any)?.spec)! } : {}) }); // BF_SERVER_v930_MAYA_REPORTS
   }
   return out;
 }
@@ -30,7 +32,7 @@ router.get("/catalog", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = siloOf(req.query?.silo);
   // BF_SERVER_DASHBOARD_BOARD_v730 - the standard Dashboard sections are only offered on the Dashboard.
   const forDashboard = req.query?.for === "dashboard";
-  res.json({ role: normalizeRole(req.user?.role), reports: catalogFor(req.user?.role).filter((r) => r.silo === silo && (forDashboard || r.source !== "dashboard")) });
+  res.json({ role: normalizeRole(req.user?.role), reports: catalogFor(req.user?.role).filter((r) => r.silo === silo && r.source !== "maya" && (forDashboard || r.source !== "dashboard")) });
 }));
 router.get("/layouts", requireAuth, safeHandler(async (req: any, res: any) => {
   const silo = siloOf(req.query?.silo);
@@ -69,6 +71,19 @@ router.put("/team-tabs", requireAuth, safeHandler(async (req: any, res: any) => 
     await client.query("COMMIT");
   } catch (err) { await client.query("ROLLBACK"); throw err; } finally { client.release(); }
   res.json({ ok: true });
+}));
+// BF_SERVER_v930_MAYA_REPORTS - POST /api/reports/ask { question, silo } -> a card to add: an existing report, or a live
+// Maya table (its spec); GET /api/reports/maya-table?silo=&spec=<json> -> the table's rows, read fresh every time.
+router.post("/ask", requireAuth, safeHandler(async (req: any, res: any) => {
+  const out = await askReport(String(req.body?.question ?? ""), req.user?.role, siloOf(req.body?.silo));
+  res.json(out);
+}));
+router.get("/maya-table", requireAuth, safeHandler(async (req: any, res: any) => {
+  let raw: unknown = null;
+  try { raw = JSON.parse(String(req.query?.spec ?? "null")); } catch { raw = null; }
+  const spec = cleanSpec(raw);
+  if (!spec) { res.status(400).json({ error: "invalid_spec" }); return; }
+  res.json(await runTable(spec, siloOf(req.query?.silo)));
 }));
 router.get("/data/:key", requireAuth, scopedRequest, safeHandler(async (req: any, res: any) => {
   const def = reportByKey(String(req.params?.key ?? "")); const run = def ? DATA[def.key] : undefined;
