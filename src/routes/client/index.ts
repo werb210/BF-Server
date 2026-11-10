@@ -656,9 +656,16 @@ router.get(
     const applicationId = typeof req.query.applicationId === "string" ? req.query.applicationId.trim() : "";
     if (!applicationId) { res.status(400).json({ error: "applicationId_required" }); return; }
     const r = await dbQuery(
+      // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - signing_url when staff sent this offer's term sheet for signature,
+      // signed when it is signed; has_term_sheet so the app knows whether to offer "View term sheet".
       `SELECT o.id, o.application_id, o.lender_name, o.amount::text AS amount, o.rate_factor, o.term,
-              o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+              o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
+              (o.term_sheet_blob_name IS NOT NULL) AS has_term_sheet,
+              CASE WHEN a.metadata->'offer_signnow'->>'offer_id' = o.id::text THEN a.metadata->'offer_signnow'->>'signing_url' END AS signing_url,
+              (a.metadata->'offer_signnow'->>'offer_id' = o.id::text AND EXISTS (
+                 SELECT 1 FROM documents d WHERE d.application_id::text = o.application_id::text AND d.document_type = 'signed_term_sheet' AND d.uploaded_by = 'system')) AS signed
          FROM offers o
+         LEFT JOIN applications a ON a.id::text = o.application_id::text
         WHERE o.application_id::text = ($1)::text
         ORDER BY o.updated_at DESC`,
       [applicationId]

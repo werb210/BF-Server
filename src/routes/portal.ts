@@ -2220,6 +2220,8 @@ router.post(
     }
 
     eventBus.emit("term_sheet_uploaded", { applicationId: appId, offerId, blobName: put.blobName });
+    // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - the reader fills the offer's empty fields so the client sees real terms.
+    void import("../brokerTools/termSheetView.js").then((m) => m.fillOfferFromTermSheet(offerId)).catch((err) => console.warn("[term-sheet] fill not started", String(err)));
     // BF_SERVER_BLOCK_v552 - one notice below through notifyClient (app first, else SMS).
 
     try {

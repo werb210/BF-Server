@@ -31,6 +31,24 @@ router.post("/status", twilioWebhookValidation, safeHandler(async (req: any, res
   res.status(204).end();
 }));
 
+// BF_SERVER_v936_CLIENT_OFFER_CLEANUP - the client's term sheet, from a 15-minute link (PDF as is, Word as a page).
+router.get("/ts/:token", async (req: any, res: any) => {
+  try {
+    const { offerIdFromViewToken, termSheetForViewing } = await import("../brokerTools/termSheetView.js");
+    const offerId = offerIdFromViewToken(String(req.params.token ?? ""));
+    if (!offerId) return res.status(410).type("text/plain").send("This link has expired. Open the term sheet again from the app.");
+    const v = await termSheetForViewing(offerId);
+    if (!v.ok) return res.status(v.status).type("text/plain").send("The term sheet could not be opened. Please message your advisor.");
+    res.setHeader("Content-Type", v.contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${v.filename}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.end(v.body);
+  } catch (err) {
+    console.warn("[term-sheet] view failed", { message: (err as Error)?.message });
+    return res.status(500).type("text/plain").send("The term sheet could not be opened. Please message your advisor.");
+  }
+});
+
 router.get("/:token", async (req: any, res: any) => {
   const fallbackUrl = "https://www.boreal.financial"; // BF_SERVER_WWW_FALLBACK_v749
   try {
