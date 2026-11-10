@@ -246,6 +246,18 @@ export const EnvSchema = z
     QBO_REDIRECT_URI: z.string().optional(), // URL; read in services/quickbooks/qboConfig.ts
     QBO_RETURN_URL: z.string().optional(), // URL; read in services/quickbooks/qboConfig.ts
     QBO_TOKEN_ENCRYPTION_KEY: z.string().optional(), // credential (secret), 32+ characters; read in services/quickbooks/qboCrypto.ts
+    // BF_SERVER_v937_SOCIAL_POSTING - social posting (read in src/social/*.ts); each network is off until its pair is set.
+    SOCIAL_TOKEN_ENCRYPTION_KEY: z.string().optional(), // credential (secret), 32+ characters
+    META_APP_ID: z.string().optional(), // Facebook Pages + Instagram (Meta app)
+    META_APP_SECRET: z.string().optional(), // credential (secret)
+    THREADS_APP_ID: z.string().optional(),
+    THREADS_APP_SECRET: z.string().optional(), // credential (secret)
+    LINKEDIN_CLIENT_ID: z.string().optional(),
+    LINKEDIN_CLIENT_SECRET: z.string().optional(), // credential (secret)
+    X_CLIENT_ID: z.string().optional(),
+    X_CLIENT_SECRET: z.string().optional(), // credential (secret)
+    GOOGLE_BUSINESS_CLIENT_ID: z.string().optional(),
+    GOOGLE_BUSINESS_CLIENT_SECRET: z.string().optional(), // credential (secret)
     RECEPTION_ENABLED: z.string().optional(), // true/false switch; read in routes/webhooks.ts
     RECEPTION_NOVA_VOICE: z.string().optional(), // setting; read in routes/reception.ts
     RESEARCH_LLM_MODEL: z.string().optional(), // OpenAI model name; read in services/credit/research.ts

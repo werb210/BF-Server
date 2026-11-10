@@ -45,6 +45,7 @@ import internalProcessingRoutes from "./internal/processing.js";
 // (in portal.ts), which v331 silo-hardened. Removing this dead mount
 // closes a stub that silently swallowed any caller that ever hit it.
 import marketingRoutes from "./marketing.js";
+import socialRoutes from "./social.js"; // BF_SERVER_v937_SOCIAL_POSTING
 import offersRoutes from "./offers.js";
 import offerAcceptanceRoutes from "./offerAcceptance.js";
 // BF_MINI_PORTAL_NOTES_v47 - application-scoped notes
@@ -339,6 +340,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   // Mount removed: dead "/lender-submissions" stub route entry.
   // See Edit 4 above.
   { path: "/marketing", router: marketingRoutes },
+  { path: "/social", router: socialRoutes }, // BF_SERVER_v937_SOCIAL_POSTING
   { path: "/offers", router: combinedOffersRoutes },
   { path: "/messages", router: messagesRoutes },
   // BF_SERVER_BLOCK_53_v1

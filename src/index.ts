@@ -255,6 +255,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startNpsSurveyWorker(pool); workerStops.push(w.stop); console.log("[startup] nps-survey worker started"); }
     catch (err) { console.error("[startup] nps-survey worker failed to start:", err); }
+    // BF_SERVER_v937_SOCIAL_POSTING - scheduled social posts.
+    const { startSocialPostsWorker } = await import("./workers/socialPostsWorker.js");
+    await workerStagger();
+    try { const w = startSocialPostsWorker(pool); workerStops.push(w.stop); console.log("[startup] social-posts worker started"); }
+    catch (err) { console.error("[startup] social-posts worker failed to start:", err); }
     const { startBookingRemindersWorker } = await import("./workers/bookingRemindersWorker.js");
     await workerStagger();
     try { const w = startBookingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] booking-reminders worker started"); }
