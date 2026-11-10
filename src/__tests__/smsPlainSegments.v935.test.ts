@@ -19,6 +19,8 @@ describe("plain SMS text", () => {
     expect(t.match(/STOP/g)?.length).toBe(1);
     expect(t).toContain("Info: www.boreal.financial/sms");
     expect(renderMarketingSms({ body: "Hello.", vars: {} })).toContain("Reply STOP to opt out.");
+    // a merged company name containing STOP does not remove the opt-out line
+    expect(renderMarketingSms({ body: "Hi {{company}}, save on equipment.", vars: { company: "STOP Logistics" } })).toContain("Reply STOP to opt out.");
   });
   it("counts segments like Twilio", () => {
     expect(smsSegments("a".repeat(160)).segments).toBe(1);

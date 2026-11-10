@@ -68,9 +68,10 @@ export function mergeSmsFields(text: string, vars: Record<string, string>): stri
 /** Build the exact recipient-facing marketing SMS in one consistent order. */
 export function renderMarketingSms(opts: { body: string; vars: Record<string, string>; link?: string | null }): string {
   const mergedBody = plainSmsText(mergeSmsFields(opts.body, opts.vars)).trim();
-  // BF_SERVER_v935_SMS_PLAIN_SEGMENTS - the opt-out line is added once: a message that already says STOP keeps only
-  // the Info link.
-  const footer = /\bSTOP\b/.test(mergedBody) ? INFO_ONLY_FOOTER : CASL_FOOTER;
+  // BF_SERVER_v935_SMS_PLAIN_SEGMENTS - the opt-out line is added once: a message whose own wording (before merge
+  // fields, so a company called "STOP Logistics" does not count) already tells people to reply STOP keeps only the
+  // Info link.
+  const footer = /\b(reply|text|send)\s+STOP\b/i.test(plainSmsText(opts.body)) ? INFO_ONLY_FOOTER : CASL_FOOTER;
   return [mergedBody, opts.link?.trim(), footer].filter(Boolean).join(" ");
 }
 
