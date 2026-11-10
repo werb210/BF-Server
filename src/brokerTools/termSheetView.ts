@@ -19,6 +19,21 @@ function kindOf(buffer: Buffer, filename: string | null): "pdf" | "docx" | "othe
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Review fix: a Word file can carry javascript: or data: links. Keep only http(s), mailto and tel links, drop any
+ *  script/event-handler markup, and (in the route) serve the page with a CSP sandbox so nothing in it can run. */
+export function safeDocHtml(html: string): string {
+  return html
+    .replace(/<\s*(script|iframe|object|embed|style|link|meta|form)\b[\s\S]*?(<\s*\/\s*\1\s*>|\/?>)/gi, "")
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s(href|src)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi, (_m, attr: string, _v, d?: string, q?: string, b?: string) => {
+      const url = String(d ?? q ?? b ?? "").trim();
+      const okHref = attr.toLowerCase() === "href" && /^(https?:|mailto:|tel:|#)/i.test(url);
+      const okSrc = attr.toLowerCase() === "src" && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(url);
+      return okHref || okSrc ? ` ${attr}="${url.replace(/"/g, "&quot;")}"` : "";
+    });
+}
+export const TERM_SHEET_VIEW_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
 export async function termSheetForViewing(offerId: string): Promise<
   { ok: true; contentType: string; body: Buffer; filename: string } | { ok: false; status: number; error: string }
 > {
@@ -41,7 +56,7 @@ export async function termSheetForViewing(offerId: string): Promise<
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title><style>body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:820px;margin:0 auto;padding:20px 16px;line-height:1.5;color:#0f172a}
 table{border-collapse:collapse;width:100%;margin:12px 0}td,th{border:1px solid #cbd5e1;padding:6px 8px;vertical-align:top}h1{font-size:1.4rem}img{max-width:100%}</style></head>
-<body>${String(out?.value ?? "")}</body></html>`;
+<body>${safeDocHtml(String(out?.value ?? ""))}</body></html>`;
     return { ok: true, contentType: "text/html; charset=utf-8", body: Buffer.from(html, "utf8"), filename: `${base}.html` };
   }
   return { ok: false, status: 422, error: "unsupported_file" };

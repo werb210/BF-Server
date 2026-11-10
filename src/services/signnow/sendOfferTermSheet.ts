@@ -124,20 +124,6 @@ export async function attachSignedTermSheet(pool: Pool, applicationId: string): 
   if (!applicationId) return { attached: false, reason: "missing_application_id" };
   if (!isApiKeyConfigured()) return { attached: false, reason: "signnow_not_configured" };
   try {
-    // A signed term sheet has one system-owned identity per application. Check
-    // it before downloading because SignNow produces different bytes each time.
-    const existing = await pool
-      .query<{ id: string }>(
-        `SELECT id::text AS id FROM documents
-          WHERE application_id::text = $1
-            AND document_type = 'signed_term_sheet'
-            AND uploaded_by = 'system'
-          LIMIT 1`,
-        [applicationId],
-      )
-      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/signnow/sendOfferTermSheet.ts:128", ({ rows: [] as { id: string }[] })));
-    if (existing.rows.length > 0) return { attached: true, reason: "already_attached" };
-
     const r = await pool.query<{ group_id: string | null; doc_id: string | null }>(
       `SELECT metadata->'offer_signnow'->>'group_id' AS group_id,
               metadata->'offer_signnow'->>'doc_id'   AS doc_id
@@ -147,6 +133,22 @@ export async function attachSignedTermSheet(pool: Pool, applicationId: string): 
     const groupId = r.rows[0]?.group_id;
     const docId = r.rows[0]?.doc_id;
     if (!groupId || !docId) return { attached: false, reason: "no_offer_session" };
+
+    // BF_SERVER_v936 - one system-owned signed copy per SignNow document (was per application, so a replacement
+    // offer's signed copy was never attached). Checked before downloading: SignNow produces different bytes each time.
+    const existing = await pool
+      .query<{ id: string }>(
+        `SELECT d.id::text AS id FROM documents d
+           JOIN document_versions v ON v.document_id = d.id
+          WHERE d.application_id::text = $1
+            AND document_type = 'signed_term_sheet'
+            AND uploaded_by = 'system'
+            AND v.metadata->>'docId' = $2
+          LIMIT 1`,
+        [applicationId, docId],
+      )
+      .catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "services/signnow/sendOfferTermSheet.ts:existing", ({ rows: [] as { id: string }[] })));
+    if (existing.rows.length > 0) return { attached: true, reason: "already_attached" };
 
     const status = await getDocumentGroupStatus(groupId);
     if (!status.signed) return { attached: false, reason: "not_signed" };

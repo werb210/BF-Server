@@ -340,9 +340,15 @@ router.post("/:id/term-sheet-link", requireAuthAllowClient, safeHandler(async (r
 // confirm-acceptance this does not mark the file funded. The client app then shows "Review and sign".
 router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
   const offerId = String(req.params.id);
+  // Review fix: a staff user limited to one silo cannot send another silo's offer (same rule as confirm-acceptance).
+  const { getSilo } = await import("../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
   const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null }>(
-    `select application_id::text as application_id, term_sheet_blob_name as blob, term_sheet_filename as filename, lender_name as lender
-       from offers where id::text = $1 limit 1`, [offerId]);
+    `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender
+       from offers o
+       join applications a on a.id::text = o.application_id::text
+      where o.id::text = $1 and ($2::text is null or a.silo is null or a.silo = $2::text)
+      limit 1`, [offerId, callerSilo]);
   const offer = o.rows[0];
   if (!offer) return res.status(404).json({ error: "not_found" });
   if (!offer.blob) return res.status(409).json({ error: "no_term_sheet", message: "Upload the lender's term sheet first." });

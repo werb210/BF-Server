@@ -34,7 +34,7 @@ router.post("/status", twilioWebhookValidation, safeHandler(async (req: any, res
 // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - the client's term sheet, from a 15-minute link (PDF as is, Word as a page).
 router.get("/ts/:token", async (req: any, res: any) => {
   try {
-    const { offerIdFromViewToken, termSheetForViewing } = await import("../brokerTools/termSheetView.js");
+    const { offerIdFromViewToken, termSheetForViewing, TERM_SHEET_VIEW_CSP } = await import("../brokerTools/termSheetView.js");
     const offerId = offerIdFromViewToken(String(req.params.token ?? ""));
     if (!offerId) return res.status(410).type("text/plain").send("This link has expired. Open the term sheet again from the app.");
     const v = await termSheetForViewing(offerId);
@@ -42,6 +42,8 @@ router.get("/ts/:token", async (req: any, res: any) => {
     res.setHeader("Content-Type", v.contentType);
     res.setHeader("Content-Disposition", `inline; filename="${v.filename}"`);
     res.setHeader("Cache-Control", "private, no-store");
+    if (v.contentType.startsWith("text/html")) res.setHeader("Content-Security-Policy", TERM_SHEET_VIEW_CSP);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     return res.end(v.body);
   } catch (err) {
     console.warn("[term-sheet] view failed", { message: (err as Error)?.message });
@@ -49,12 +51,37 @@ router.get("/ts/:token", async (req: any, res: any) => {
   }
 });
 
+const fallbackUrl = "https://www.boreal.financial"; // BF_SERVER_WWW_FALLBACK_v749
+
+// BF_SERVER_v935_SMS_PLAIN_SEGMENTS - short tracked links: the code is looked up, then handled like a signed link.
+router.get("/s/:code", async (req: any, res: any) => {
+  try {
+    const code = String(req.params.code ?? "").slice(0, 32);
+    const r = await pool.query<{ send_id: string | null; url: string }>(`SELECT send_id::text AS send_id, url FROM sms_short_links WHERE code = $1 LIMIT 1`, [code]);
+    const row = r.rows[0];
+    if (!row) return res.redirect(302, fallbackUrl);
+    await recordClick(row.send_id, row.url);
+    res.redirect(302, /^https?:\/\//i.test(row.url) ? row.url : fallbackUrl);
+  } catch (err) {
+    console.warn("[sms-redirect] short link failed", { message: (err as Error)?.message });
+    res.redirect(302, fallbackUrl);
+  }
+});
+
 router.get("/:token", async (req: any, res: any) => {
-  const fallbackUrl = "https://www.boreal.financial"; // BF_SERVER_WWW_FALLBACK_v749
   try {
     const payload = jwt.verify(String(req.params.token), String(process.env.JWT_SECRET), { algorithms: ["HS256"] }) as { sid?: string; u?: string };
     const url = payload?.u && /^https?:\/\//i.test(payload.u) ? payload.u : fallbackUrl;
-    if (payload?.sid) {
+    await recordClick(payload?.sid ?? null, url);
+    res.redirect(302, url);
+  } catch {
+    res.redirect(302, fallbackUrl);
+  }
+});
+
+async function recordClick(sid: string | null, url: string): Promise<void> {
+    if (sid) {
+      const payload = { sid };
       await pool.query(`UPDATE sms_campaign_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]);
       // BF_SERVER_BLOCK_v786_SEQ_CLICKS - sequence sends are tracked separately.
       await pool.query(`UPDATE sequence_sends SET clicked_at = COALESCE(clicked_at, now()) WHERE id = $1`, [payload.sid]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "routes/smsRedirect.ts:40");});
@@ -64,10 +91,6 @@ router.get("/:token", async (req: any, res: any) => {
       // BF_SERVER_v786_WORKFLOW_GRAPH - automation trigger.
       if (cid) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent("link.clicked", { contactId: String(cid), data: { url } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
     }
-    res.redirect(302, url);
-  } catch {
-    res.redirect(302, fallbackUrl);
-  }
-});
+}
 
 export default router;

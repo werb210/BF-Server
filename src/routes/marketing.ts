@@ -8,7 +8,7 @@ import { pool } from "../db.js";
 import { resolveSiloFromRequest } from "../middleware/silo.js";
 import { createLandingPage, createLandingPageFromHtml, updateLandingPageHtml, slugFromLandingUrl, landingUrlForSlug, withViewInBrowser } from "../services/landingPage.service.js"; // BF_SERVER_BLOCK_v780_PUBLIC_LANDING
 import { sendgridConfigured, sendOne, mergeFields } from "../services/sendgridService.js";
-import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms } from "../services/marketingSms.js";
+import { smsMarketingConfigured, sendMarketingSms, renderMarketingSms, smsSegments, smsSegmentPrice, SHORT_LINK_SAMPLE } from "../services/marketingSms.js";
 import { SMS_ELIGIBLE_SQL, CONSENT_SQL as CONSENT_SQL_FOR_EMAIL } from "../services/smsConsent.js"; // BF_SERVER_SMS_CONSENT_v1
 import { countEmailRecipients, countSmsRecipients, EMAIL_BLAST_ELIGIBLE_SQL, skipTextedDaysOf } from "../services/marketingSendRunner.js"; // BF_SERVER_SEND_QUEUE_v1 BF_SERVER_SEND_QUEUE_SMS_v1
 import { enrollContactsDetailed, enrollSequence } from "../services/sequenceEngine.js"; // BF_SERVER_BLOCK_v785_SEQUENCES
@@ -1051,6 +1051,25 @@ router.post("/sms/send", safeHandler(async (req: any, res: any) => {
     [silo, tag, JSON.stringify({ body, linkUrl, fbSubject, fbHtml, templateId, tags: includeTags, excludeTags }), total, req.user?.userId ?? null, schedule.at.toISOString()],
   );
   respondOk(res, { configured: true, queued: true, jobId: job.rows[0].id, total, notBefore: job.rows[0].not_before, holdMinutes: SEND_HOLD_MINUTES, scheduled: schedule.scheduled });
+}));
+
+// BF_SERVER_v935_SMS_PLAIN_SEGMENTS - what a text will cost before it is sent: the exact text a recipient gets (plain
+// quotes, short link, opt-out line), its segments and an estimate for the audience.
+//   POST /api/marketing/sms/preview { body, linkUrl?, recipients? }
+router.post("/sms/preview", safeHandler(async (req: any, res: any) => {
+  const b = req.body || {};
+  const body = String(b.body || "");
+  const text = renderMarketingSms({ body, vars: { first_name: "Alexandra", name: "Alexandra Smith", company: "Northern Lights Trucking" }, link: b.linkUrl ? SHORT_LINK_SAMPLE() : null });
+  const raw = smsSegments(body);
+  const seg = smsSegments(text);
+  const recipients = Math.max(0, Math.floor(Number(b.recipients) || 0));
+  const price = smsSegmentPrice();
+  respondOk(res, {
+    text, encoding: seg.encoding, characters: seg.characters, segments: seg.segments,
+    replaced: raw.nonGsm.filter((c) => !seg.nonGsm.includes(c)), nonGsm: seg.nonGsm,
+    pricePerSegmentUsd: price, perTextUsd: +(seg.segments * price).toFixed(4), recipients,
+    estimatedUsd: +(seg.segments * price * recipients).toFixed(2),
+  });
 }));
 
 router.get("/sms/audience-count", safeHandler(async (req: any, res: any) => {

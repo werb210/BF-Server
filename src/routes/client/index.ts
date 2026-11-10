@@ -662,16 +662,35 @@ router.get(
               o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
               (o.term_sheet_blob_name IS NOT NULL) AS has_term_sheet,
               CASE WHEN a.metadata->'offer_signnow'->>'offer_id' = o.id::text THEN a.metadata->'offer_signnow'->>'signing_url' END AS signing_url,
+              CASE WHEN a.metadata->'offer_signnow'->>'offer_id' = o.id::text THEN a.metadata->'offer_signnow' END AS signnow_session,
+              -- review fix: signed only when the signed copy is of THIS offer's SignNow document
               (a.metadata->'offer_signnow'->>'offer_id' = o.id::text AND EXISTS (
-                 SELECT 1 FROM documents d WHERE d.application_id::text = o.application_id::text AND d.document_type = 'signed_term_sheet' AND d.uploaded_by = 'system')) AS signed
+                 SELECT 1 FROM documents d JOIN document_versions v ON v.document_id = d.id
+                  WHERE d.application_id::text = o.application_id::text AND d.document_type = 'signed_term_sheet'
+                    AND d.uploaded_by = 'system' AND v.metadata->>'docId' = a.metadata->'offer_signnow'->>'doc_id')) AS signed
          FROM offers o
          LEFT JOIN applications a ON a.id::text = o.application_id::text
         WHERE o.application_id::text = ($1)::text
         ORDER BY o.updated_at DESC`,
       [applicationId]
     );
+    // Review fix: SignNow embedded links last 45 minutes, so the stored one goes stale. Make a fresh one for the
+    // unsigned offer each time the client loads its offers; keep the stored link if SignNow does not answer.
+    const rows = await Promise.all(r.rows.map(async (row: any) => {
+      const { signnow_session: sess, ...rest } = row;
+      if (rest.signing_url && !rest.signed && sess?.group_id && sess?.invite_id && sess?.signer_email) {
+        try {
+          const { createEmbeddedGroupLink } = await import("../../signnow/signnowClient.js");
+          const fresh = await createEmbeddedGroupLink(String(sess.group_id), String(sess.invite_id), String(sess.signer_email));
+          if (fresh?.url) rest.signing_url = fresh.url;
+        } catch (err) {
+          console.warn("[client-offers] fresh signing link failed; using the stored one", { offerId: rest.id, message: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      return rest;
+    }));
     const { attachTermSheetUrls } = await import("../offers.js");
-    res.status(200).json({ items: await attachTermSheetUrls(r.rows) });
+    res.status(200).json({ items: await attachTermSheetUrls(rows) });
   })
 );
 
