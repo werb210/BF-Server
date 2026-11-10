@@ -6,7 +6,7 @@ import type { Pool } from "pg";
 import { contactHasFraudApplication } from "./fraud/fraudGuard.js";
 import { randomUUID } from "crypto";
 import { sendOne, mergeFields } from "./sendgridService.js";
-import { renderMarketingSms, sendMarketingSms, trackedLink, lookupLineType } from "./marketingSms.js";
+import { renderMarketingSms, sendMarketingSms, shortTrackedLink, lookupLineType } from "./marketingSms.js";
 import { renderBrandedEmail } from "./emailTemplateRender.js";
 import { isCanadianMobile } from "./smsConsent.js";
 import { scheduleAfter } from "./sequenceSchedule.js";
@@ -319,7 +319,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
         const text = renderMarketingSms({
           body: String(effBody || ""),
           vars,
-          link: effLink ? trackedLink(sendId, String(effLink)) : null,
+          link: effLink ? await shortTrackedLink(sendId, String(effLink)) : null, // BF_SERVER_v935_SMS_PLAIN_SEGMENTS
         });
         const r = await sendMarketingSms(String(c.phone), text);
         if (r.ok) { await logStep(pool, c.id, en.sequence_id, idx, "sms"); await pool.query(`UPDATE sequence_sends SET message_sid=$2 WHERE id=$1`, [sendId, r.sid ?? null]).catch((swallowedErr: unknown) => { logWarnSwallowed(swallowedErr, "services/sequenceEngine.ts:324");}); }
