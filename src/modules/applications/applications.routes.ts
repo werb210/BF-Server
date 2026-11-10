@@ -1854,6 +1854,8 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     [offerId, appId, resolvedLenderId, lenderName, amount, rateFactor, term, paymentFrequency,
      expiryDate, put.url, notes, put.blobName, file.originalname, put.sizeBytes],
   );
+  // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - the reader fills the offer's empty fields so the client sees real terms.
+  void import("../../brokerTools/termSheetView.js").then((m) => m.fillOfferFromTermSheet(offerId)).catch((err) => console.warn("[term-sheet] fill not started", String(err)));
 
   let stage = app.pipeline_state ?? null;
   // A term sheet IS the lender's offer, so issuing one moves the app to the

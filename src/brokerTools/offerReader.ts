@@ -34,6 +34,9 @@ const PROMPT = [
   '"conditions": [{"title": short imperative line, e.g. "Signed personal guarantee from each owner",',
   '"description": string or null, "owner": "client" | "staff" | "lender", "requires_document": boolean}]}',
   "Conditions are the things that must happen before funding (documents to provide, guarantees, insurance, site visits, verifications).",
+  // BF_SERVER_v936_CLIENT_OFFER_CLEANUP
+  "Leave out ongoing covenants that apply after funding (regular reporting, keeping insurance in force, financial ratios): they are not conditions to clear before funding.",
+  'Use owner "lender" for things only the lender decides or checks (no material adverse change, lender due diligence, credit or legal approval); "client" only for what the borrower must do or provide.',
   "Use only what the document says. Do not invent figures. Amounts are plain numbers without $ or commas.",
 ].join("\n");
 

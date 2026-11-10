@@ -324,6 +324,65 @@ router.get("/:id/term-sheet", requireAuthAllowClient, safeHandler(async (req: an
   return res.end(got.buffer);
 }));
 
+// BF_SERVER_v936_CLIENT_OFFER_CLEANUP - a 15-minute link the client app opens in the phone's browser (a PDF shows as a
+// PDF, a Word term sheet as a readable page). Handing the system browser a blob URL showed an empty page on iPhone.
+router.post("/:id/term-sheet-link", requireAuthAllowClient, safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  if (!(await requireOfferAccess(req, res, offerId))) return;
+  const has = await runQuery<{ blob: string | null }>(`select term_sheet_blob_name as blob from offers where id::text = $1 limit 1`, [offerId]);
+  if (!has.rows[0]?.blob) return res.status(404).json({ error: "no_term_sheet", message: "There is no term sheet on this offer yet." });
+  const { termSheetViewToken } = await import("../brokerTools/termSheetView.js");
+  const base = (process.env.PUBLIC_BASE_URL || process.env.SERVER_URL || "https://server.boreal.financial").replace(/\/+$/, "");
+  return res.json({ ok: true, url: `${base}/api/r/ts/${termSheetViewToken(offerId)}` });
+}));
+
+// BF_SERVER_v936_CLIENT_OFFER_CLEANUP - staff send the lender's term sheet to the client to sign (SignNow). Unlike
+// confirm-acceptance this does not mark the file funded. The client app then shows "Review and sign".
+router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  // Review fix: a staff user limited to one silo cannot send another silo's offer (same rule as confirm-acceptance).
+  const { getSilo } = await import("../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null }>(
+    `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender
+       from offers o
+       join applications a on a.id::text = o.application_id::text
+      where o.id::text = $1 and ($2::text is null or a.silo is null or a.silo = $2::text)
+      limit 1`, [offerId, callerSilo]);
+  const offer = o.rows[0];
+  if (!offer) return res.status(404).json({ error: "not_found" });
+  if (!offer.blob) return res.status(409).json({ error: "no_term_sheet", message: "Upload the lender's term sheet first." });
+  const got = await getStorage().get(offer.blob).catch(() => null);
+  if (!got?.buffer?.length) return res.status(404).json({ error: "blob_missing", message: "The term sheet file could not be found." });
+  if (got.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+    return res.status(422).json({ error: "pdf_required", message: "To send it for signature, upload the term sheet as a PDF (in Word: File > Save As > PDF). A Word file can be read and viewed, but not signed." });
+  }
+  const { sendOfferTermSheet } = await import("../services/signnow/sendOfferTermSheet.js");
+  const r = await sendOfferTermSheet({ pool, offerId });
+  if (!r.url) {
+    const why: Record<string, string> = {
+      signnow_not_configured: "SignNow is not set up on the server.",
+      no_signer: "The client has no email on file, which SignNow needs. Add it to the contact first.",
+      term_sheet_download_failed: "The term sheet file could not be read.",
+    };
+    return res.status(409).json({ error: r.reason ?? "not_sent", message: why[r.reason ?? ""] ?? "The term sheet could not be sent for signature." });
+  }
+  try {
+    const p = await runQuery<{ phone: string | null }>(
+      `select c.phone from applications a left join contacts c on c.id::text = a.contact_id::text where a.id::text = $1 limit 1`, [offer.application_id]);
+    const phone = p.rows[0]?.phone ?? null;
+    if (phone && offer.application_id) {
+      const portalBase = process.env.CLIENT_PORTAL_URL || "https://client.boreal.financial";
+      const { notifyClient } = await import("../services/notifications/notifyClient.js");
+      await notifyClient({ phone, applicationId: offer.application_id, kind: "term_sheet", categoryId: "OFFER_READY",
+        sms: `Your term sheet${offer.lender ? ` from ${offer.lender}` : ""} is ready to sign: ${portalBase}/application/${offer.application_id}`,
+        title: "Your term sheet is ready to sign",
+        body: offer.lender ? `Review and sign the term sheet from ${offer.lender}.` : "Review and sign your term sheet." });
+    }
+  } catch (err) { console.warn("[offer] sign notice failed", { offerId, message: String(err) }); }
+  return res.json({ ok: true, sent: true });
+}));
+
 // BF_SERVER_TERM_SHEET_STREAM_v1 - why a term sheet will not render. Reports whether the
 // blob exists, its stored content type, size, and whether the bytes start with %PDF-.
 router.get("/:id/term-sheet/diagnostics", requireAuth, safeHandler(async (req: any, res: any) => {

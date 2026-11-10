@@ -16,7 +16,7 @@ describe("signed document identity dedupe", () => {
     expect(pnw).not.toContain("AND hash = $2");
   });
 
-  it("dedupes system-generated signed term sheets by application and document type before download", () => {
+  it("dedupes system-generated signed term sheets by document identity before download", () => {
     const identityCheck = termSheet.indexOf("AND document_type = 'signed_term_sheet'");
     expect(identityCheck).toBeGreaterThan(-1);
     expect(termSheet).toContain("AND uploaded_by = 'system'");
