@@ -18,7 +18,7 @@ import type { Pool } from "pg";
 import { brokerageTimeZone, zonedParts } from "../settingsPack/boreal.js";
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js";
 import {
-  EMAIL_BLAST_ELIGIBLE_SQL, emailAudienceGiven, emailRecipients, sendCampaignEmailTo,
+  EMAIL_BLAST_ELIGIBLE_SQL, emailRecipients, sendCampaignEmailTo,
   type EmailJob, type EmailRecipient, type SendProgress, type ShouldAbort,
 } from "../services/marketingSendRunner.js";
 
@@ -202,7 +202,7 @@ export async function runCampaignEmailJob(
   pool: Pool, row: CampaignJobRow, onProgress?: SendProgress, shouldAbort?: ShouldAbort, now: Date = new Date(),
 ): Promise<CampaignStep> {
   const job = jobOf(row);
-  if (!emailAudienceGiven(job)) return { status: "done", total: 0, sent: 0, failed: 0, error: "audience_required" };
+  // BF_SERVER_v932_EMAIL_NO_TAG_ALL - no include tag = every contact; no longer refused.
   const p = row.payload ?? {};
   const ab = p.ab as AbPlan | undefined;
   const best = p.sendTime === "best";

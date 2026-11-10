@@ -163,13 +163,8 @@ export async function sendCampaignEmailTo(
 }
 
 export async function runEmailSend(pool: Pool, job: EmailJob, onProgress?: SendProgress, shouldAbort?: ShouldAbort): Promise<EmailSendResult> { // BF_SERVER_EMAIL_FAIL_VISIBILITY_v1 BF_SERVER_SEND_KILL_SWITCH_v1
-  // BF_SERVER_v789_EMAIL_BLAST_CONSENT - a job with no tag and no include tags would
-  // reach the whole silo; refuse it here too so a queued or Maya job cannot bypass the
-  // route-level audience_required check.
-  if (!emailAudienceGiven(job)) {
-    console.warn("marketing_email_send_refused_no_audience", { silo: job.silo });
-    return { total: 0, sent: 0, failed: 0, rejectStatus: 400, rejectError: "audience_required" };
-  }
+  // BF_SERVER_v932_EMAIL_NO_TAG_ALL - a job with no include tag goes to every contact ("ALL CRM CONTACTS GET EMAILS");
+  // excluded tags and opt-outs still apply. Maya's own email action still has to name a tag.
   const rows = await emailRecipients(pool, job);
   let sent = 0, failed = 0, skipped = 0, i = 0;
   let aborted = false; // BF_SERVER_SEND_KILL_SWITCH_v1

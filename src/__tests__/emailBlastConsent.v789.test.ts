@@ -42,20 +42,17 @@ app.use("/api/marketing", marketing);
 
 beforeEach(() => { h.sql.length = 0; h.jobs.length = 0; });
 
-describe("v789 email blast audience is required", () => {
-  it("/email/send with no tag and no include tags is 400 audience_required and queues nothing", async () => {
+describe("BF_SERVER_v932_EMAIL_NO_TAG_ALL - no include tag sends to every contact", () => {
+  it("/email/send with no include tags is queued for everyone (excluded tags still left out)", async () => {
     const r = await request(app).post("/api/marketing/email/send").send({ subject: "Hi", html: "<p>x</p>", tags: [], excludeTags: ["vip"] });
-    expect(r.status).toBe(400);
-    expect(r.body.error).toBe("audience_required");
-    expect(h.jobs).toEqual([]);
-    expect(h.sql.some((s) => /FROM contacts/.test(s))).toBe(false);
+    expect(r.status).toBe(200);
+    expect(r.body.data.queued).toBe(true);
+    expect(h.jobs).toHaveLength(1);
   });
 
-  it("/email/send-template with an empty audience is 400 audience_required", async () => {
+  it("/email/send-template with no tag is not refused", async () => {
     const r = await request(app).post("/api/marketing/email/send-template").send({ subject: "Hi", headline: "x", body: "y", tag: "  " });
-    expect(r.status).toBe(400);
-    expect(r.body.error).toBe("audience_required");
-    expect(h.jobs).toEqual([]);
+    expect(r.body.error).not.toBe("audience_required");
   });
 
   it("a test send still needs no audience", async () => {
