@@ -1,6 +1,6 @@
 // BF_SERVER_LANDING_MERGE_STRIP_v27
 import { describe, expect, it } from "vitest";
-import { stripMergeFields } from "../services/landingPage.service.js";
+import { stripMergeFields, tidyRemovedMerge } from "../services/landingPage.service.js";
 
 describe("landing page merge token handling", () => {
   it("drops a leading salutation and recapitalises", () => {
@@ -25,5 +25,12 @@ describe("landing page merge token handling", () => {
 
   it("never renders a placeholder name on a public page", () => {
     expect(stripMergeFields("<h1>{{first_name}}, hello</h1>")).not.toContain("there");
+  });
+
+  // BF_SERVER_v933_LANDING_MERGE_DEFAULTS
+  it("does not leave a space before the comma after a greeting", () => {
+    expect(stripMergeFields("<p>Hi {{first_name}},</p>")).toBe("<p>Hi,</p>");
+    expect(tidyRemovedMerge("<p>Hi ,</p><p>Thanks !</p>")).toBe("<p>Hi,</p><p>Thanks!</p>");
+    expect(tidyRemovedMerge("<p>Rates from 8.99% , terms</p>")).toBe("<p>Rates from 8.99% , terms</p>");
   });
 });

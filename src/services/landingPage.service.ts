@@ -59,7 +59,7 @@ export async function createLandingPage(args: {
 export async function getLandingBySlug(slug: string): Promise<{ title: string | null; html: string } | null> {
   const r = await pool.query("SELECT title, html FROM marketing_landing_pages WHERE slug=$1 LIMIT 1", [slug]);
   if (r.rowCount === 0) return null;
-  return { title: r.rows[0].title ?? null, html: String(r.rows[0].html) };
+  return { title: r.rows[0].title ?? null, html: tidyRemovedMerge(String(r.rows[0].html)) }; // BF_SERVER_v933_LANDING_MERGE_DEFAULTS
 }
 
 // BF_SERVER_BLOCK_v782_VIEW_IN_BROWSER — host an already-rendered email body as
@@ -77,7 +77,14 @@ export function stripMergeFields(html: string): string {
   out = out.replace(/>(\s*),\s*/g, ">$1");
   // Mid-sentence removal leaves a double space ("Hi  and welcome").
   out = out.replace(/([^\s>])[ \t]{2,}(?=\S)/g, "$1 ");
-  return out;
+  return tidyRemovedMerge(out);
+}
+
+// BF_SERVER_v933_LANDING_MERGE_DEFAULTS - "Hi {{first_name}}," left "Hi ," on the public page (the space before the
+// comma stayed). Close the gap before punctuation. Also applied when a page is served, so pages saved before this
+// fix read "Hi," too.
+export function tidyRemovedMerge(html: string): string {
+  return html.replace(/([A-Za-z])[ \t]+([,.!?;:])/g, "$1$2");
 }
 
 export async function createLandingPageFromHtml(
