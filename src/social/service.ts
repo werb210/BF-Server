@@ -49,6 +49,18 @@ export async function cancelPost(q: Q, silo: string, id: string): Promise<boolea
   return ((await q.query(`UPDATE social_posts SET status = 'cancelled' WHERE id::text = $1 AND silo = $2 AND status = 'scheduled' RETURNING id`, [id, silo])).rows.length) > 0;
 }
 
+/** A stored picture ("blob:<type>:<name>") as a link the networks can fetch for the next hour; other links as they are. */
+export async function imageLink(ref: string | null): Promise<string | null> {
+  if (!ref) return null;
+  const m = /^blob:(image\/[a-z]+):(.+)$/.exec(ref);
+  if (!m) return ref;
+  const { getStorage } = await import("../lib/storage/index.js");
+  const store = getStorage();
+  const link = await store.getSignedUrl?.(m[2], 3600, m[1]);
+  if (!link) throw new Error("The picture could not be read from storage.");
+  return link;
+}
+
 /** Publishes one post to each of its accounts; one account failing never stops the others. */
 export async function publishPost(q: Q, postId: string, http: Http = defaultHttp): Promise<PostRow> {
   const post = (await q.query(`SELECT ${POST_COLS}, silo FROM social_posts WHERE id::text = $1`, [postId])).rows[0];
@@ -58,6 +70,9 @@ export async function publishPost(q: Q, postId: string, http: Http = defaultHttp
     [post.silo, post.account_ids],
   )).rows;
   const results: Record<string, any> = {};
+  let image: string | null = null;
+  try { image = await imageLink(post.image_url); }
+  catch (err) { console.warn("[social] picture link failed", { postId, message: err instanceof Error ? err.message : String(err) }); }
   for (const accId of post.account_ids as string[]) {
     const a = accounts.find((x) => x.id === accId);
     if (!a) { results[accId] = { ok: false, error: "That account was disconnected." }; continue; }
@@ -69,7 +84,8 @@ export async function publishPost(q: Q, postId: string, http: Http = defaultHttp
         await q.query(`UPDATE social_accounts SET access_token_enc = $2, refresh_token_enc = COALESCE($3, refresh_token_enc), expires_at = $4, updated_at = now() WHERE id::text = $1`,
           [a.id, seal(fresh.access_token), seal(fresh.refresh_token ?? null), fresh.expires_at ?? null]);
       }
-      const r = await publish(live, { text: post.body, link: post.link_url, image: post.image_url }, http);
+      if (post.image_url && !image) throw new Error("The picture could not be read from storage.");
+      const r = await publish(live, { text: post.body, link: post.link_url, image }, http);
       results[accId] = { ok: true, network: a.network, name: a.name, external_id: r.external_id, url: r.url };
       await q.query(`UPDATE social_accounts SET status = 'connected', last_error = NULL WHERE id::text = $1`, [a.id]);
     } catch (err) {
@@ -87,13 +103,25 @@ export async function publishPost(q: Q, postId: string, http: Http = defaultHttp
   return (await q.query(`UPDATE social_posts SET status = $2, results = $3::jsonb, published_at = now() WHERE id::text = $1 RETURNING ${POST_COLS}`, [postId, status, JSON.stringify(results)])).rows[0];
 }
 
-/** Claims the scheduled posts that are due (one worker at a time) and publishes them. */
+/** Publishes the scheduled posts that are due, claiming one at a time (review fix: a crash part-way through leaves the
+ *  rest scheduled, not stuck). A post claimed but never finished (the server stopped mid-post) goes back to scheduled
+ *  after 15 minutes when no account has a result yet, so nothing is posted twice. */
 export async function publishDue(q: Q, http: Http = defaultHttp): Promise<number> {
-  const due = (await q.query(
-    `UPDATE social_posts SET status = 'publishing' WHERE id IN (
-       SELECT id FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= now() ORDER BY scheduled_at LIMIT 10 FOR UPDATE SKIP LOCKED)
-     RETURNING id::text AS id`,
-  )).rows;
-  for (const d of due) await publishPost(q, d.id, http);
-  return due.length;
+  await q.query(`UPDATE social_posts SET status = 'scheduled' WHERE status = 'publishing' AND results = '{}'::jsonb AND scheduled_at IS NOT NULL AND scheduled_at < now() - interval '15 minutes'`);
+  let n = 0;
+  for (; n < 10; n++) {
+    const claimed = (await q.query(
+      `UPDATE social_posts SET status = 'publishing' WHERE id = (
+         SELECT id FROM social_posts WHERE status = 'scheduled' AND scheduled_at <= now() ORDER BY scheduled_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+       RETURNING id::text AS id`,
+    )).rows[0];
+    if (!claimed) break;
+    try { await publishPost(q, claimed.id, http); }
+    catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[social] scheduled post failed", { postId: claimed.id, message });
+      await q.query(`UPDATE social_posts SET status = 'failed', results = $2::jsonb WHERE id::text = $1`, [claimed.id, JSON.stringify({ _error: { ok: false, error: message.slice(0, 300) } })]);
+    }
+  }
+  return n;
 }

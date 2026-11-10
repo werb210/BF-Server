@@ -10,7 +10,7 @@ vi.mock("../db.js", async (orig) => ({ ...(await orig() as any), pool: { query: 
 
 import { authorizeUrl, publish, exchange, type Http, type Live } from "../social/networks.js";
 import { open, seal } from "../social/crypto.js";
-import { publishPost } from "../social/service.js";
+import { publishDue, publishPost } from "../social/service.js";
 import socialRouter from "../routes/social.js";
 
 process.env.SOCIAL_TOKEN_ENCRYPTION_KEY = "test-social-key-0123456789-abcdefghij";
@@ -64,6 +64,28 @@ describe("publishing to each network", () => {
   });
 });
 
+describe("pictures", () => {
+  it("X uploads the picture and attaches it", async () => {
+    const { http, calls } = fakeHttp([
+      [/img\.test/, () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "image/png" } })],
+      [/media\/upload$/, () => ok({ data: { id: "m9" } })],
+      [/\/2\/tweets$/, () => ok({ data: { id: "7" } })],
+    ]);
+    await publish(live("x"), { text: "Pic", link: null, image: "https://img.test/a.png" }, http);
+    expect(JSON.parse(String(calls[2].init?.body)).media).toEqual({ media_ids: ["m9"] });
+  });
+  it("Bluesky attaches the picture as an image embed", async () => {
+    const { http, calls } = fakeHttp([
+      [/img\.test/, () => new Response(new Uint8Array([1, 2]), { status: 200, headers: { "content-type": "image/jpeg" } })],
+      [/createSession$/, () => ok({ accessJwt: "j", did: "did:plc:1", handle: "b.bsky.social" })],
+      [/uploadBlob$/, () => ok({ blob: { ref: "bafy" } })],
+      [/createRecord$/, () => ok({ uri: "at://did:plc:1/app.bsky.feed.post/3k" })],
+    ]);
+    await publish(live("bluesky", { meta: { handle: "b.bsky.social" } }), { text: "Pic", link: null, image: "https://img.test/a.jpg" }, http);
+    expect(JSON.parse(String(calls[3].init?.body)).record.embed.images[0].image).toEqual({ ref: "bafy" });
+  });
+});
+
 describe("connecting", () => {
   it("X sign-in uses PKCE", () => {
     process.env.X_CLIENT_ID = "xid"; process.env.X_CLIENT_SECRET = "xs";
@@ -100,6 +122,24 @@ describe("one post to several accounts", () => {
     expect(post.status).toBe("partial");
     expect(post.results.a1).toMatchObject({ ok: true, url: "https://x.com/i/web/status/5" });
     expect(post.results.a2).toMatchObject({ ok: false, error: expect.stringMatching(/needs a picture/) });
+  });
+});
+
+describe("scheduled posts", () => {
+  it("are claimed one at a time; one that fails is marked failed and the next still goes", async () => {
+    let claims = 0;
+    h.query.mockReset();
+    h.query.mockImplementation(answerBySql([
+      [/SET status = 'scheduled' WHERE status = 'publishing'/, { rows: [] }],
+      [/SET status = 'publishing' WHERE id = \(/, () => ({ rows: claims++ < 2 ? [{ id: `p${claims}` }] : [] })],
+      [/FROM social_posts WHERE id::text = \$1/, (_s: string, p?: unknown[]) => { if (p?.[0] === "p1") throw new Error("db hiccup"); return { rows: [{ id: "p2", silo: "BF", body: "Hi", link_url: null, image_url: null, account_ids: [] }] }; }],
+      [/FROM social_accounts WHERE silo/, { rows: [] }],
+      [/UPDATE social_posts SET status = \$2/, { rows: [{ id: "p2", status: "published" }] }],
+      [/UPDATE social_posts SET status = 'failed'/, { rows: [] }],
+    ]));
+    expect(await publishDue(h as any, fakeHttp([]).http)).toBe(2);
+    expect(callsMatching(h.query, /UPDATE social_posts SET status = 'failed'/)[0]![1]![0]).toBe("p1");
+    expect(callsMatching(h.query, /UPDATE social_posts SET status = \$2/)).toHaveLength(1);
   });
 });
 

@@ -57,7 +57,7 @@ export function authorizeUrl(p: Exclude<Provider, "bluesky">, redirectUri: strin
     case "meta": return q(`https://www.facebook.com/${META_V}/dialog/oauth`, { client_id: id(p), redirect_uri: redirectUri, state, scope: META_SCOPES, response_type: "code" });
     case "threads": return q("https://threads.net/oauth/authorize", { client_id: id(p), redirect_uri: redirectUri, state, scope: "threads_basic,threads_content_publish", response_type: "code" });
     case "linkedin": return q("https://www.linkedin.com/oauth/v2/authorization", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: "openid profile w_member_social w_organization_social r_organization_social" });
-    case "x": return q("https://x.com/i/oauth2/authorize", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: "tweet.read tweet.write users.read offline.access", code_challenge: challenge ?? "", code_challenge_method: "S256" });
+    case "x": return q("https://x.com/i/oauth2/authorize", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: "tweet.read tweet.write users.read media.write offline.access", code_challenge: challenge ?? "", code_challenge_method: "S256" });
     case "google": return q("https://accounts.google.com/o/oauth2/v2/auth", { client_id: id(p), redirect_uri: redirectUri, state, scope: "https://www.googleapis.com/auth/business.manage", response_type: "code", access_type: "offline", prompt: "consent" });
   }
 }
@@ -164,6 +164,13 @@ export async function refreshIfNeeded(a: Live, http: Http = defaultHttp): Promis
 export type PostInput = { text: string; link: string | null; image: string | null };
 export type Published = { external_id: string; url: string | null };
 
+async function fetchImage(http: Http, url: string): Promise<{ bytes: Buffer; type: string }> {
+  const res = await http(url);
+  if (!res.ok) throw new Error("The picture could not be downloaded to attach it.");
+  const type = (res.headers.get("content-type") ?? "image/jpeg").split(";")[0];
+  return { bytes: Buffer.from(await res.arrayBuffer()), type };
+}
+
 /** The text as one line for networks without a separate link field. */
 const withLink = (p: PostInput) => (p.link && !p.text.includes(p.link) ? `${p.text}\n\n${p.link}` : p.text);
 
@@ -190,13 +197,23 @@ export async function publish(a: Live, post: PostInput, http: Http = defaultHttp
       return { external_id: String(r.id), url: null };
     }
     case "linkedin": {
+      const liHeaders = { Authorization: `Bearer ${t}`, "Content-Type": "application/json", "LinkedIn-Version": "202405", "X-Restli-Protocol-Version": "2.0.0" };
+      let imageUrn: string | null = null;
+      if (post.image) {
+        const img = await fetchImage(http, post.image);
+        const init = await json(http, "https://api.linkedin.com/rest/images?action=initializeUpload", { method: "POST", headers: liHeaders, body: JSON.stringify({ initializeUploadRequest: { owner: a.external_id } }) });
+        const put = await http(String(init.value?.uploadUrl), { method: "PUT", headers: { Authorization: `Bearer ${t}`, "Content-Type": img.type }, body: new Uint8Array(img.bytes) });
+        if (!put.ok) throw new Error(`LinkedIn did not take the picture (${put.status}).`);
+        imageUrn = String(init.value?.image);
+      }
       const res = await http("https://api.linkedin.com/rest/posts", {
         method: "POST",
         headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json", "LinkedIn-Version": "202405", "X-Restli-Protocol-Version": "2.0.0" },
         body: JSON.stringify({
-          author: a.external_id, commentary: post.text, visibility: "PUBLIC", lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: false,
+          author: a.external_id, commentary: imageUrn && post.link ? withLink(post) : post.text, visibility: "PUBLIC", lifecycleState: "PUBLISHED", isReshareDisabledByAuthor: false,
           distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
-          ...(post.link ? { content: { article: { source: post.link, title: post.text.split("\n")[0].slice(0, 200) } } } : {}),
+          ...(imageUrn ? { content: { media: { id: imageUrn, title: post.text.split("\n")[0].slice(0, 200) } } }
+            : post.link ? { content: { article: { source: post.link, title: post.text.split("\n")[0].slice(0, 200) } } } : {}),
         }),
       });
       if (!res.ok) { const b: any = await res.json().catch(() => ({})); throw new Error(String(b?.message ?? `LinkedIn refused the post (${res.status})`).slice(0, 300)); }
@@ -204,7 +221,17 @@ export async function publish(a: Live, post: PostInput, http: Http = defaultHttp
       return { external_id: urn, url: urn ? `https://www.linkedin.com/feed/update/${urn}` : null };
     }
     case "x": {
-      const r = await json(http, "https://api.x.com/2/tweets", { method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: withLink(post).slice(0, 280) }) });
+      let mediaId: string | null = null;
+      if (post.image) {
+        const img = await fetchImage(http, post.image);
+        const fd = new FormData();
+        fd.append("media", new Blob([new Uint8Array(img.bytes)], { type: img.type }), "picture");
+        fd.append("media_category", "tweet_image");
+        const up = await json(http, "https://api.x.com/2/media/upload", { method: "POST", headers: { Authorization: `Bearer ${t}` }, body: fd });
+        mediaId = String(up.data?.id ?? up.media_id_string ?? "");
+        if (!mediaId) throw new Error("X did not take the picture.");
+      }
+      const r = await json(http, "https://api.x.com/2/tweets", { method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" }, body: JSON.stringify({ text: withLink(post).slice(0, 280), ...(mediaId ? { media: { media_ids: [mediaId] } } : {}) }) });
       return { external_id: String(r.data?.id), url: r.data?.id ? `https://x.com/i/web/status/${r.data.id}` : null };
     }
     case "google_business": {
@@ -222,9 +249,16 @@ export async function publish(a: Live, post: PostInput, http: Http = defaultHttp
         const start = Buffer.byteLength(text.slice(0, text.indexOf(post.link)), "utf8");
         facets.push({ index: { byteStart: start, byteEnd: start + Buffer.byteLength(post.link, "utf8") }, features: [{ $type: "app.bsky.richtext.facet#link", uri: post.link }] });
       }
+      let embed: Record<string, unknown> | null = null;
+      if (post.image) {
+        const img = await fetchImage(http, post.image);
+        if (img.bytes.length > 1_000_000) throw new Error("Bluesky takes pictures up to 1 MB. Use a smaller picture.");
+        const up = await json(http, "https://bsky.social/xrpc/com.atproto.repo.uploadBlob", { method: "POST", headers: { Authorization: `Bearer ${s.accessJwt}`, "Content-Type": img.type }, body: new Uint8Array(img.bytes) });
+        embed = { $type: "app.bsky.embed.images", images: [{ alt: "", image: up.blob }] };
+      }
       const r = await json(http, "https://bsky.social/xrpc/com.atproto.repo.createRecord", {
         method: "POST", headers: { Authorization: `Bearer ${s.accessJwt}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ repo: s.did, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text, createdAt: new Date().toISOString(), ...(facets.length ? { facets } : {}) } }),
+        body: JSON.stringify({ repo: s.did, collection: "app.bsky.feed.post", record: { $type: "app.bsky.feed.post", text, createdAt: new Date().toISOString(), ...(facets.length ? { facets } : {}), ...(embed ? { embed } : {}) } }),
       });
       const rkey = String(r.uri ?? "").split("/").pop();
       return { external_id: String(r.uri ?? ""), url: rkey ? `https://bsky.app/profile/${s.handle ?? s.did}/post/${rkey}` : null };

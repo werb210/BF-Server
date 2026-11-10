@@ -31,14 +31,15 @@ export class AzureBlobBackend implements StorageBackend {
     return { buffer: buf, contentType: props.contentType ?? "application/octet-stream" };
   }
 
-  async getSignedUrl(blobName: string, expiresInSeconds = 86400): Promise<string | null> {
+  // BF_SERVER_v937_SOCIAL_POSTING - contentType: what the link serves the file as (PDF unless told otherwise).
+  async getSignedUrl(blobName: string, expiresInSeconds = 86400, contentType = "application/pdf"): Promise<string | null> {
     try {
       const { BlobSASPermissions } = await import("@azure/storage-blob");
       const blob = this.client.getBlockBlobClient(blobName);
       return await blob.generateSasUrl({
         permissions: BlobSASPermissions.parse("r"),
         expiresOn: new Date(Date.now() + expiresInSeconds * 1000),
-        contentType: "application/pdf",
+        contentType,
         contentDisposition: "inline",
       });
     } catch { return null; }

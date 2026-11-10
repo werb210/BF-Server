@@ -20,7 +20,7 @@ export class LocalBackend implements StorageBackend {
     return { blobName, url: `local://${blobName}`, hash, sizeBytes: p.buffer.length };
   }
 
-  async getSignedUrl(_blobName: string, _expiresInSeconds?: number): Promise<string | null> { return null; }
+  async getSignedUrl(_blobName: string, _expiresInSeconds?: number, _contentType?: string): Promise<string | null> { return null; }
 
   async get(blobName: string) {
     try {

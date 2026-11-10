@@ -101,6 +101,7 @@ router.post("/posts", canPost, needCrypto, safeHandler(async (req: any, res: any
   if (!body) return res.status(400).json({ ok: false, error: "validation_error", message: "Write the post." });
   if (body.length > 5000) return res.status(400).json({ ok: false, error: "validation_error", message: "That post is too long." });
   const url = (v: unknown) => { const s = String(v ?? "").trim(); return /^https:\/\/\S+$/i.test(s) ? s : null; };
+  const image = (v: unknown) => { const s = String(v ?? "").trim(); return /^blob:image\/(jpeg|png|gif|webp):\S+$/.test(s) ? s : url(s); };
   const ids = Array.isArray(b.account_ids) ? b.account_ids.map(String).filter((x: string) => UUID.test(x)) : [];
   let when: Date | null = null;
   if (b.scheduled_at) {
@@ -110,7 +111,7 @@ router.post("/posts", canPost, needCrypto, safeHandler(async (req: any, res: any
   }
   const silo = resolveSiloFromRequest(req);
   try {
-    const post = await createPost(pool as any, silo, { body, link_url: url(b.link_url), image_url: url(b.image_url), account_ids: ids, scheduled_at: when }, userIdOf(req));
+    const post = await createPost(pool as any, silo, { body, link_url: url(b.link_url), image_url: image(b.image_url), account_ids: ids, scheduled_at: when }, userIdOf(req));
     if (when) return res.status(201).json({ ok: true, post });
     return res.status(201).json({ ok: true, post: await publishPost(pool as any, post.id) });
   } catch (err: any) {
@@ -132,9 +133,10 @@ router.post("/media", canPost, imageUpload.single("file"), safeHandler(async (re
   const { getStorage } = await import("../lib/storage/index.js");
   const store = getStorage();
   const put = await store.put({ buffer: f.buffer, filename: f.originalname, contentType: f.mimetype, pathPrefix: `social/${resolveSiloFromRequest(req)}` });
-  // The networks fetch the picture themselves, so it needs a link that works without signing in (7 days).
-  const link = (await store.getSignedUrl?.(put.blobName, 7 * 86400)) ?? put.url;
-  res.status(201).json({ ok: true, url: link });
+  // Review fix: the post keeps a reference to the stored picture ("blob:<type>:<name>"), and a fresh link (served as
+  // the picture's own type) is made when the post goes out, so a post scheduled weeks ahead still has a working picture.
+  const preview = (await store.getSignedUrl?.(put.blobName, 3600, f.mimetype)) ?? put.url;
+  res.status(201).json({ ok: true, url: `blob:${f.mimetype}:${put.blobName}`, preview });
 }));
 
 export default router;

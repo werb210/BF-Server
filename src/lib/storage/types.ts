@@ -16,7 +16,7 @@ export interface StorageBackend {
   get(blobName: string): Promise<{ buffer: Buffer; contentType: string } | null>;
   // Short-lived read URL for in-browser viewing (Azure SAS). Optional: the local
   // backend returns null and callers fall back to streaming through the server.
-  getSignedUrl?(blobName: string, expiresInSeconds?: number): Promise<string | null>;
+  getSignedUrl?(blobName: string, expiresInSeconds?: number, contentType?: string): Promise<string | null>;
   delete(blobName: string): Promise<void>;
   ping(): Promise<boolean>;
   describe(): { kind: "azure" | "local"; container?: string };
