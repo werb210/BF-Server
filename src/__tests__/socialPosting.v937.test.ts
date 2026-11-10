@@ -23,6 +23,14 @@ const fakeHttp = (routes: Array<[RegExp, (url: string, init?: RequestInit) => Re
 const live = (network: Live["network"], extra: Partial<Live> = {}): Live => ({ network, external_id: "acct-1", access_token: "tok", refresh_token: null, expires_at: null, meta: {}, ...extra });
 
 describe("tokens", () => {
+  it("need no extra setting: the key comes from JWT_SECRET when SOCIAL_TOKEN_ENCRYPTION_KEY is not set", () => {
+    const saved = process.env.SOCIAL_TOKEN_ENCRYPTION_KEY;
+    delete process.env.SOCIAL_TOKEN_ENCRYPTION_KEY;
+    try {
+      const s = seal("tok")!;
+      expect(open(s)).toBe("tok");
+    } finally { process.env.SOCIAL_TOKEN_ENCRYPTION_KEY = saved; }
+  });
   it("are sealed and opened, never stored as written", () => {
     const s = seal("secret-token")!;
     expect(s).not.toContain("secret-token");

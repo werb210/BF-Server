@@ -52,7 +52,7 @@ router.get("/callback/:provider", safeHandler(async (req: any, res: any) => {
 router.use(requireAuth);
 router.use(requireCapability([CAPABILITIES.MARKETING_VIEW]));
 const canPost = (req: any, res: any, next: any) => (["Admin", "Marketing"].includes(String(req.user?.role)) ? next() : res.status(403).json({ ok: false, error: "forbidden", message: "Only Admin and Marketing can do this." }));
-const needCrypto = (_req: any, res: any, next: any) => (socialCryptoReady() ? next() : res.status(409).json({ ok: false, error: "not_configured", message: "Social posting is not set up on the server yet (SOCIAL_TOKEN_ENCRYPTION_KEY)." }));
+const needCrypto = (_req: any, res: any, next: any) => (socialCryptoReady() ? next() : res.status(409).json({ ok: false, error: "not_configured", message: "Social posting cannot store connections on this server yet (JWT_SECRET is missing)." }));
 
 router.get("/accounts", safeHandler(async (req: any, res: any) => {
   res.json({
