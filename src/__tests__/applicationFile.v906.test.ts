@@ -169,6 +169,23 @@ describe("offer reader (v906)", () => {
     expect(r.offer.amount).toBe(1000);
     expect(ask).toHaveBeenCalledOnce();
     await expect(readOfferDocument(Buffer.from("x"), "application/pdf", { text: async () => "  ", ask })).rejects.toThrow(/No text could be read/);
-    await expect(readOfferDocument(Buffer.from("x"), "application/zip", { text: async () => "", ask })).rejects.toThrow(/PDF or a photo/);
+    await expect(readOfferDocument(Buffer.from("x"), "application/zip", { text: async () => "", ask })).rejects.toThrow(/PDF, a Word file \(\.docx\) or a photo/);
+  });
+  // BF_SERVER_v934_OFFER_READER_WORD
+  it("reads a Word (.docx) term sheet", async () => {
+    const ask = vi.fn(async () => ({ amount: 1040000, conditions: [{ title: "Executed loan agreement" }] }));
+    const r = await readOfferDocument(Buffer.from("x"), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", { text: async () => "Term sheet commitment amount ".repeat(5), ask });
+    expect(r.offer.amount).toBe(1040000);
+    expect(r.offer.conditions[0].title).toBe("Executed loan agreement");
+  });
+  it("pulls the text out of a real .docx", async () => {
+    const { defaultOfferReaderDeps, DOCX_MIME } = await import("../brokerTools/offerReader.js");
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    zip.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    zip.file("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    zip.file("word/document.xml", '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Commitment Amount 1,040,000 conditions precedent</w:t></w:r></w:p></w:body></w:document>');
+    const buf = await zip.generateAsync({ type: "nodebuffer" });
+    expect(await defaultOfferReaderDeps().text(buf, DOCX_MIME)).toContain("Commitment Amount 1,040,000");
   });
 });
