@@ -20,7 +20,7 @@ vi.mock("../db.js", async (orig) => {
       created_at: "2026-10-07T15:00:00Z", submitted_at: "2026-10-07T16:00:00Z", business_md: null, applicant_md: null,
       metadata_full: OTHER_SHAPE, signnow_app_signed_at: null, funded_at: null,
     }] };
-    if (sql.includes("FROM offers")) return { rows: [{ lender_name: "Bank A", amount: "750000", term: "10y", rate_factor: "Prime+2.75", status: "pending", expiry_date: "2026-11-01" }] };
+    if (sql.includes("FROM offers") && !sql.includes("FROM applications a WHERE")) return { rows: [{ lender_name: "Bank A", amount: "750000", term: "10y", rate_factor: "Prime+2.75", status: "pending", expiry_date: "2026-11-01" }] };
     // The staff portal's Application tab (GET /api/applications/:id/details).
     if (sql.includes("FROM applications a WHERE a.id::text = ($1)::text")) {
       return { rows: h.detailsMetadata ? [{ id: "A1", name: "Todd's Grocery", silo: "BF", metadata: h.detailsMetadata, finalized_lenders: 0 }] : [] };
