@@ -47,6 +47,7 @@ import internalProcessingRoutes from "./internal/processing.js";
 import marketingRoutes from "./marketing.js";
 import socialRoutes from "./social.js"; // BF_SERVER_v937_SOCIAL_POSTING
 import offersRoutes from "./offers.js";
+import dealsRoutes from "./deals.js"; // BF_SERVER_v942_DEAL_CLOSE_REVENUE - Close tab, Revenue tab, broker pay
 import licenseeDocumentsRoutes from "./licenseeDocuments.js"; // BF_SERVER_v938_OUR_TERM_SHEET - Settings > Your documents (term sheet template)
 import offerAcceptanceRoutes from "./offerAcceptance.js";
 // BF_MINI_PORTAL_NOTES_v47 - application-scoped notes
@@ -341,6 +342,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/marketing", router: marketingRoutes },
   { path: "/social", router: socialRoutes }, // BF_SERVER_v937_SOCIAL_POSTING
   { path: "/offers", router: combinedOffersRoutes },
+  { path: "/deals", router: dealsRoutes }, // BF_SERVER_v942_DEAL_CLOSE_REVENUE
   { path: "/licensee-documents", router: licenseeDocumentsRoutes }, // BF_SERVER_v938_OUR_TERM_SHEET
   { path: "/messages", router: messagesRoutes },
   // BF_SERVER_BLOCK_53_v1
