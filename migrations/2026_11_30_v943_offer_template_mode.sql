@@ -4,3 +4,5 @@
 --   ours     - we buy the deal: our term sheet, our rate, no lender name
 ALTER TABLE offers DROP CONSTRAINT IF EXISTS offers_term_sheet_mode_check;
 ALTER TABLE offers ADD CONSTRAINT offers_term_sheet_mode_check CHECK (term_sheet_mode IN ('lender', 'template', 'ours'));
+-- Set when our term sheet is made for an offer, so sending knows the client gets ours (an offer we created has no lender file to keep).
+ALTER TABLE offers ADD COLUMN IF NOT EXISTS our_term_sheet_at timestamptz;
