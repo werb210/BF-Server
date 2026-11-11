@@ -1,6 +1,7 @@
 // BF_SERVER_BLOCK_v198_LENDER_MATCH_GATE_AND_CACHE_v1
 import { pool } from "../db.js";
-import { matchLenders, MATCH_VERSION, type LenderMatch } from "../ai/lenderMatchEngine.js";
+import { matchLendersDetailed, MATCH_VERSION, type LenderMatch } from "../ai/lenderMatchEngine.js";
+import { loadFileFigures } from "../lenderRules/fileFigures.js"; // BF_SERVER_v940_LENDER_PRODUCT_RULES
 import { amountFromBand } from "./biHandoff.js"; // BF_SERVER_v887_LENDER_MATCH_FIX - the dropdown-band reader BI already uses
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
@@ -193,7 +194,13 @@ export async function computeAndCacheLenderMatches(applicationId: string): Promi
 
   let matches: LenderMatch[] = [];
   try {
-    matches = await matchLenders(inputs);
+    // BF_SERVER_v940_LENDER_PRODUCT_RULES - check each product's knock-out rules against the file's figures; the
+    // products the file was hidden from (and why) are kept with the inputs so the Lenders tab can list them.
+    const figures = await loadFileFigures(applicationId, { requestedAmount: inputs.requestedAmount ?? null, revenue: inputs.revenue ?? null, timeInBusiness: inputs.timeInBusiness ?? null, metadata: app.metadata ?? null });
+    const r = await matchLendersDetailed(inputs, figures);
+    matches = r.matches;
+    (inputs as any).figures = figures;
+    (inputs as any).excluded = r.excluded;
   } catch (err: any) {
     console.warn("lender_match_compute_failed", { applicationId, message: err?.message });
     matches = [];

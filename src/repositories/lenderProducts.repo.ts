@@ -130,6 +130,9 @@ function buildSelectColumns(existing: Set<string>, alias?: string): string {
     { name: "category_label", fallback: "null::text" },
     { name: "documents_required", fallback: "null::text" },
     { name: "silo", fallback: "null::text" },
+    // BF_SERVER_v940_LENDER_PRODUCT_RULES
+    { name: "match_rules", fallback: "'{}'::jsonb" },
+    { name: "commission_terms", fallback: "'{}'::jsonb" },
   ];
 
   return columns

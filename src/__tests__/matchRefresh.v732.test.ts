@@ -8,6 +8,8 @@ vi.mock("../db.js", async () => ({ ...(await vi.importActual<any>("../db.js")), 
 vi.mock("../ai/lenderMatchEngine.js", async () => ({
   ...(await vi.importActual<any>("../ai/lenderMatchEngine.js")),
   matchLenders: h.matchLenders,
+  // BF_SERVER_v940_LENDER_PRODUCT_RULES - the cache now asks for the matches and the products the file was hidden from.
+  matchLendersDetailed: async (...a: unknown[]) => ({ matches: await h.matchLenders(...a), excluded: [] }),
 }));
 
 // Every column createLenderProduct asks information_schema about.

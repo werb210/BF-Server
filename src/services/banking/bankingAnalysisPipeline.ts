@@ -437,7 +437,9 @@ export async function runBankingAnalysis(
   }
 
   await pool.query(`UPDATE banking_analyses SET status = 'analysis_complete', completed_at = now(), updated_at = now() WHERE application_id::text = ($1)::text`, [applicationId]);
-  await pool.query(`UPDATE applications SET banking_completed_at = now(), updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
+  // BF_SERVER_v940_LENDER_PRODUCT_RULES - NSFs, balances and other lenders are now known, so the lender list is
+  // worked out again (lender knock-out rules) on its next view.
+  await pool.query(`UPDATE applications SET banking_completed_at = now(), lender_matches_stale = true, updated_at = now() WHERE id::text = ($1)::text`, [applicationId]);
   logInfo("banking_pipeline_complete", { applicationId, transactions: allTransactions.length, months: aggregates.months });
   return {
     application_id: applicationId,
