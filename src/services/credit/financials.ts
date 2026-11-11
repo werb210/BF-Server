@@ -72,6 +72,7 @@ export async function extractApplicationFinancials(applicationId: string): Promi
   const skipped: string[] = [];
   let periods = 0;
   let cells = 0;
+  const read: Array<{ documentId: string; periods: ExtractedPeriod[] }> = [];
   for (const document of docs.rows) {
     let text = document.text;
     if (!text || text.replace(/\s/g, "").length < 200) {
@@ -89,7 +90,27 @@ export async function extractApplicationFinancials(applicationId: string): Promi
     }
     const extracted = await extractFromText(text);
     periods += extracted.length;
-    for (const period of extracted) for (const [item, value] of Object.entries(period.items)) {
+    read.push({ documentId: document.id, periods: extracted });
+  }
+  // BF_SERVER_v941_FINANCIAL_COMPARATIVES (Todd's screenshot review, Nov 11 2026): each year's statements also print the
+  // year before as a comparative column, and the figures written last won - so FY2024 showed FY2023's numbers. A
+  // period's figures now come from the document where it is the main (latest) year; a comparative column only fills
+  // a period no document reports as its main year.
+  const yearOf = (p: ExtractedPeriod) => Number((p.periodEnd ?? "").slice(0, 4)) || Number((p.label.match(/(19|20)\d{2}/) ?? [""])[0]) || 0;
+  // A balance sheet and an income statement for the same year are both "main" for that year.
+  const latestOf = new Map<string, string>(); // document -> its main (latest) period label, normalised
+  for (const r of read) {
+    const latest = r.periods.filter((p) => p.kind !== "forecast").reduce<ExtractedPeriod | null>((a, p) => (!a || yearOf(p) > yearOf(a) ? p : a), null);
+    if (latest) latestOf.set(r.documentId, normalizePeriodLabel(latest.label));
+  }
+  const mainYears = new Set(latestOf.values());
+  const ordered = read.flatMap((r) => r.periods.map((period) => ({ documentId: r.documentId, period, main: latestOf.get(r.documentId) === normalizePeriodLabel(period.label) })))
+    // comparatives first, main-year columns last, so the main-year figures are the ones kept
+    .sort((a, b) => Number(a.main) - Number(b.main));
+  for (const { documentId, period, main } of ordered) {
+    if (!main && mainYears.has(normalizePeriodLabel(period.label))) continue; // another document reports this year as its main year
+    const document = { id: documentId };
+    for (const [item, value] of Object.entries(period.items)) {
       const result = await pool.query(
         `INSERT INTO application_financials (application_id, period, period_end, kind, line_item, value, source_document_id, extracted_by, updated_at)
          VALUES ($1, $2, $3::date, $4, $5, $6, $7, 'ai', now())
