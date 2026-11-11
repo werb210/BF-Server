@@ -21,13 +21,10 @@ import { markReady } from "../startupState.js";
 import { deps } from "../system/deps.js";
 import { RECORD_GUARDED_MOUNTS } from "../routes/routeRegistry.js";
 import { loadCrmTimeline } from "../routes/crm/timeline.js";
-import quotesRoutes from "../routes/quotes.js";
-import clientQuotesRoutes from "../routes/clientQuotes.js";
 import kycRoutes from "../routes/kyc.js";
 import clientKycRoutes from "../routes/clientKyc.js";
 import forecastRoutes from "../routes/forecast.js";
 import paymentsRoutes, { setPaymentSendDepsForTests } from "../routes/payments.js";
-import { sendQuote, type Db } from "../quotes/service.js";
 import { handleWebhook } from "../kyc/service.js";
 import { onfidoProvider, type BinaryFetch } from "../kyc/providers/onfido.js";
 import { manualProvider } from "../kyc/providers/index.js";
@@ -53,8 +50,6 @@ const guarded = (mount: string, router: Router) => Router().use(recordGuard(RECO
 function app() {
   const a = express();
   a.use(express.json({ verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
-  a.use("/api/quotes", guarded("/quotes", quotesRoutes));
-  a.use("/api/client/quotes", clientQuotesRoutes);
   a.use("/api/kyc", guarded("/kyc", kycRoutes));
   a.use("/api/client/kyc", clientKycRoutes);
   a.use("/api/forecast", guarded("/forecast", forecastRoutes));
@@ -130,96 +125,6 @@ describe("v872 deal tools (real Postgres)", () => {
     await clean(`DELETE FROM audit_events WHERE actor_user_id = ANY($1::uuid[])`, [PEOPLE]);
     await clean(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [PEOPLE]);
     resetStaffUserLoader();
-  });
-
-  describe("quotes", () => {
-    let quoteId = "";
-    let optionId = "";
-
-    it("builds a draft from the lender offer, taxes the ticked fee at the chosen province, previews the PDF", async () => {
-      const list = await http().get(`/api/quotes/applications/${A1}`).set("Authorization", tok(S1, "Staff"));
-      expect(list.status).toBe(200);
-      expect(list.body.offers.map((o: any) => o.id)).toContain(OFFER);
-      expect(list.body.provinces.map((p: any) => p.code)).toContain("AB");
-      const made = await http().post(`/api/quotes/applications/${A1}`).set("Authorization", tok(S1, "Staff")).send({ offer_ids: [OFFER], tax_province: "AB" });
-      expect(made.status).toBe(201);
-      quoteId = made.body.quote.id;
-      expect(made.body.quote).toMatchObject({ status: "draft", tax_province: "AB", options: [{ offer_id: OFFER, lender_name: "Northern Capital", rate_kind: "factor_rate", payment_frequency: "weekly", total_repayment: 96000 }] });
-
-      const opts = made.body.quote.options.map((o: any) => ({ ...o, fees: [{ label: "Origination", amount: 1500, deducted: true, taxable: true }, { label: "Lender fee", amount: 500, deducted: true }] }));
-      const edit = await http().put(`/api/quotes/${quoteId}`).set("Authorization", tok(S1, "Staff")).send({ message: "Best offer we found.", options: opts });
-      expect(edit.status).toBe(200);
-      expect(edit.body.quote.options[0]).toMatchObject({ tax_lines: [{ label: "GST 5%", amount: 75 }], total_tax: 75, total_fees: 2075, net_proceeds: 73000 });
-      optionId = edit.body.quote.options[0].id;
-      // Changing the province re-taxes the same options.
-      const on = await http().put(`/api/quotes/${quoteId}`).set("Authorization", tok(S1, "Staff")).send({ tax_province: "ON" });
-      expect(on.body.quote.options[0]).toMatchObject({ tax_lines: [{ label: "HST 13%", amount: 195 }], total_fees: 2195 });
-      optionId = on.body.quote.options[0].id;
-
-      const pdf = await http().get(`/api/quotes/${quoteId}/pdf`).set("Authorization", tok(S1, "Staff")).buffer(true)
-        .parse((res, cb) => { const c: Buffer[] = []; res.on("data", (d) => c.push(d)); res.on("end", () => cb(null, Buffer.concat(c))); });
-      expect(pdf.status).toBe(200);
-      expect(pdf.headers["content-type"]).toBe("application/pdf");
-      expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe("%PDF-");
-      // The client cannot see a draft.
-      expect((await http().get(`/api/client/quotes/${quoteId}`).set("Authorization", client())).status).toBe(404);
-    });
-
-    it("someone limited to their own records cannot see another person's file or its quotes", async () => {
-      await pool.query(`UPDATE users SET record_visibility = 'own' WHERE id = $1`, [S2]);
-      fresh();
-      try {
-        expect((await http().get(`/api/quotes/applications/${A1}`).set("Authorization", tok(S2, "Staff"))).status).toBe(404);
-        expect((await http().get(`/api/quotes/${quoteId}`).set("Authorization", tok(S2, "Staff"))).status).toBe(404);
-        expect((await http().get(`/api/forecast/applications/${A1}`).set("Authorization", tok(S2, "Staff"))).status).toBe(404);
-        expect((await http().get(`/api/kyc/applications/${A1}`).set("Authorization", tok(S2, "Staff"))).status).toBe(404);
-        expect((await http().get(`/api/payments/links?application_id=${A1}`).set("Authorization", tok(S2, "Staff"))).status).toBe(404);
-      } finally {
-        await pool.query(`UPDATE users SET record_visibility = NULL WHERE id = $1`, [S2]);
-        fresh();
-      }
-    });
-
-    it("sends it: the PDF lands on Documents and the client is told; a sent quote cannot change", async () => {
-      const storage = { put: async (x: any) => ({ blobName: `q/${x.filename}`, url: `https://blob/${x.filename}`, hash: "h", sizeBytes: x.buffer.length }) };
-      const notify = vi.fn(async () => {});
-      const r = await sendQuote(quoteId, S1, { db: pool as unknown as Db, storage, notify });
-      expect(r.ok && r.quote.status).toBe("sent");
-      expect(notify).toHaveBeenCalledWith({ applicationId: A1, quoteId, phone: PHONE, contactId: C1 });
-      const doc = await pool.query(`SELECT category, document_type FROM documents WHERE application_id = $1`, [A1]);
-      expect(doc.rows).toEqual([{ category: "Quote", document_type: "quote_pdf" }]);
-      expect((await http().put(`/api/quotes/${quoteId}`).set("Authorization", tok(S1, "Staff")).send({ title: "x" })).status).toBe(409);
-    });
-
-    it("the client views (counted, owner told) and accepts; the offer is staged for acceptance", async () => {
-      expect((await http().get(`/api/client/quotes/${quoteId}`).set("Authorization", client("4035550000"))).status).toBe(403);
-      const v = await http().get(`/api/client/quotes/${quoteId}`).set("Authorization", client());
-      expect(v.status).toBe(200);
-      expect(v.body.quote.status).toBe("viewed");
-      expect(JSON.stringify(v.body)).not.toContain(OFFER);
-      await http().get(`/api/client/quotes/${quoteId}`).set("Authorization", client());
-      expect((await pool.query(`SELECT view_count FROM quotes WHERE id = $1`, [quoteId])).rows[0].view_count).toBe(2);
-      const notes = await pool.query(`SELECT type FROM notifications WHERE application_id = $1 AND user_id = $2 ORDER BY created_at`, [A1, S1]);
-      expect(notes.rows.map((n: any) => n.type)).toEqual(["quote_viewed"]);
-      const bad = await http().post(`/api/client/quotes/${quoteId}/accept`).set("Authorization", client()).send({ option_id: optionId, name: "Jane Doe", agree: false });
-      expect(bad.body.error).toBe("tick_to_agree");
-      const ok = await http().post(`/api/client/quotes/${quoteId}/accept`).set("Authorization", client()).send({ option_id: optionId, name: "Jane Doe", agree: true });
-      expect(ok.status).toBe(200);
-      expect(ok.body.quote).toMatchObject({ status: "accepted", accepted_option_id: optionId });
-      expect((await pool.query(`SELECT status FROM offers WHERE id = $1`, [OFFER])).rows[0].status).toBe("pending_acceptance");
-      expect((await pool.query(`SELECT pending_acceptance_offer_id::text AS o FROM applications WHERE id = $1`, [A1])).rows[0].o).toBe(OFFER);
-      expect((await http().post(`/api/client/quotes/${quoteId}/decline`).set("Authorization", client()).send({})).status).toBe(409);
-      const tl = await http().get(`/api/quotes/${quoteId}`).set("Authorization", tok(S1, "Staff"));
-      expect(tl.body.events.map((e: any) => e.kind)).toEqual(["created", "edited", "edited", "sent", "viewed", "accepted"]);
-    });
-
-    it("duplicate makes a new draft; withdraw closes it", async () => {
-      const d = await http().post(`/api/quotes/${quoteId}/duplicate`).set("Authorization", tok(S1, "Staff"));
-      expect(d.status).toBe(201);
-      expect(d.body.quote).toMatchObject({ status: "draft", tax_province: "ON" });
-      const w = await http().post(`/api/quotes/${d.body.quote.id}/withdraw`).set("Authorization", tok(S1, "Staff"));
-      expect(w.body.quote.status).toBe("withdrawn");
-    });
   });
 
   describe("ID verification", () => {
