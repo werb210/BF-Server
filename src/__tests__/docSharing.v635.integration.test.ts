@@ -43,9 +43,15 @@ describe("v635 documents follow the client", () => {
     await addApp(equipment, "TEST TODDS GYM", reqMeta);
     await addApp(otherBiz, "Todd's Other Co", reqMeta);
     for (const [cat, type] of [["Government ID", "general"], [BANK, "bank_statement"]]) {
+      const docId = randomUUID();
       await pool.query(
         "INSERT INTO documents (id, application_id, category, document_type, status, filename, storage_key, created_at) VALUES ($1, $2, $3, $4, 'accepted', 'f.pdf', 'blob/key', now())",
-        [randomUUID(), capital, cat, type],
+        [docId, capital, cat, type],
+      );
+      // BF_SERVER_v939_SHARED_DOC_VERSIONS - the file itself, which a shared copy must carry over
+      await pool.query(
+        "INSERT INTO document_versions (id, document_id, version, blob_name, hash, metadata, content, created_at) VALUES ($1, $2, 1, 'blob/key', 'h', '{\"fileName\":\"f.pdf\"}'::jsonb, 'blob/key', now())",
+        [randomUUID(), docId],
       );
     }
   });
@@ -55,6 +61,7 @@ describe("v635 documents follow the client", () => {
     await pool.query("DELETE FROM document_shares WHERE target_application_id = ANY($1::text[])", [ids]).catch(() => undefined);
     await pool.query("DELETE FROM communications_messages WHERE application_id::text = ANY($1::text[])", [ids]).catch(() => undefined);
     await pool.query("DELETE FROM application_document_requests WHERE application_id::text = ANY($1::text[])", [ids]).catch(() => undefined);
+    await pool.query("DELETE FROM document_versions WHERE document_id IN (SELECT id FROM documents WHERE application_id::text = ANY($1::text[]))", [ids]).catch(() => undefined);
     await pool.query("DELETE FROM documents WHERE application_id::text = ANY($1::text[])", [ids]).catch(() => undefined);
     await pool.query("DELETE FROM applications WHERE id::text = ANY($1::text[])", [ids]).catch(() => undefined);
     await pool.query("DELETE FROM contacts WHERE id::text = $1", [contactId]).catch(() => undefined);
@@ -76,6 +83,14 @@ describe("v635 documents follow the client", () => {
       { document_kind: "bank_statements", source_application_id: capital },
       { document_kind: "government_id", source_application_id: capital },
     ]);
+    // BF_SERVER_v939_SHARED_DOC_VERSIONS - each copy has its own version, so OCR can read it
+    const v = await pool.query("SELECT d.id, count(dv.id)::int AS n FROM documents d LEFT JOIN document_versions dv ON dv.document_id = d.id WHERE d.application_id = $1 GROUP BY d.id", [equipment]);
+    expect(v.rows.length).toBe(2);
+    expect(v.rows.every((r: any) => r.n === 1)).toBe(true);
+    // the backfill is a no-op on copies that already have one
+    await rerunMigration(pool, readFileSync("migrations/2026_11_29_v939_shared_doc_versions.sql", "utf8"));
+    const again = await pool.query("SELECT count(*)::int AS n FROM document_versions WHERE document_id IN (SELECT id FROM documents WHERE application_id = $1)", [equipment]);
+    expect(again.rows[0].n).toBe(2);
   });
 
   it("staff Request Items shows them as uploaded, with where they came from", async () => {
