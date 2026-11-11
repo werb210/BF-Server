@@ -25,8 +25,20 @@ export function checkStatementArithmetic(rows: StatementRow[]): CheckResult {
   for (const r of rows) {
     const d = String(r.description ?? "").trim();
     if (OPENING.test(d)) { const v = isNum(r.balance) ? r.balance : isNum(r.amount) ? r.amount : null; if (v != null && opening == null) opening = v; continue; }
+    // v941: "Closing balance INTEREST PAID YEAR TO DATE" is a summary line, not the closing balance.
+    if (CLOSING.test(d) && /interest|year\s*to\s*date|\bytd\b|limit|available/i.test(d)) continue;
     if (CLOSING.test(d)) { const v = isNum(r.balance) ? r.balance : isNum(r.amount) ? r.amount : null; if (v != null) closing = v; continue; }
     if (isNum(r.amount)) tx.push(r);
+  }
+  // BF_SERVER_v941_STATEMENT_MATH_FIXES (Todd's screenshot review, Nov 11 2026): every statement on one file showed
+  // "Opening balance $0.00 ..." and a fraud score of 100. An opening balance of exactly $0.00 is usually the scanner
+  // reading an empty cell; trust it only when the first printed running balance agrees with starting from zero.
+  if (opening === 0) {
+    const firstWithBal = tx.findIndex((r) => isNum(r.balance));
+    if (firstWithBal >= 0) {
+      const upTo = tx.slice(0, firstWithBal + 1).reduce((a, r) => a + (r.amount as number), 0);
+      if (Math.abs(Math.round(upTo * 100) / 100 - (tx[firstWithBal]!.balance as number)) > TOLERANCE) opening = null;
+    }
   }
   const withBalance = tx.filter((r) => isNum(r.balance)).length;
   if (tx.length === 0) return notApplicable("No transactions could be read from this statement, so the math could not be checked.");
@@ -41,6 +53,7 @@ export function checkStatementArithmetic(rows: StatementRow[]): CheckResult {
   for (const r of tx) {
     pending += r.amount as number;
     if (!isNum(r.balance)) continue;
+    let carry: number = r.balance; // the balance the next row continues from
     if (prev != null) {
       checked++;
       const expected = Math.round((prev + pending) * 100) / 100;
@@ -48,14 +61,18 @@ export function checkStatementArithmetic(rows: StatementRow[]): CheckResult {
         // A withdrawal read as a deposit (or the reverse) is a reading problem, not an edit: try the other sign.
         const flipped = Math.round((prev - pending) * 100) / 100;
         const singleFlip = Math.round((prev + pending - 2 * (r.amount as number)) * 100) / 100;
-        if (Math.abs(flipped - r.balance) <= TOLERANCE || Math.abs(singleFlip - r.balance) <= TOLERANCE) signAmbiguous++;
+        // v941: an overdrawn balance printed without its minus sign ("2,942.03 OD" read as 2,942.03) is also a reading
+        // problem: the same figure with the other sign is not an edit.
+        const balanceSignLost = Math.abs(Math.abs(expected) - Math.abs(r.balance)) <= TOLERANCE;
+        if (balanceSignLost) carry = expected; // carry on from the real (signed) balance
+        if (balanceSignLost || Math.abs(flipped - r.balance) <= TOLERANCE || Math.abs(singleFlip - r.balance) <= TOLERANCE) signAmbiguous++;
         else {
           breaks++;
           if (firstBreaks.length < 5) firstBreaks.push({ date: r.date, expected, shown: r.balance });
         }
       }
     }
-    prev = r.balance;
+    prev = carry;
     pending = 0;
   }
 
@@ -66,7 +83,12 @@ export function checkStatementArithmetic(rows: StatementRow[]): CheckResult {
     const expectedClose = Math.round((opening + sum) * 100) / 100;
     if (Math.abs(expectedClose - closing) > TOLERANCE) {
       totalMismatch = Math.round((closing - expectedClose) * 100) / 100;
-      reasons.push({ code: "totals_mismatch", severity: "red", text: `Opening balance ${money(opening)} plus the listed transactions comes to ${money(expectedClose)}, but the statement's closing balance is ${money(closing)} (off by ${money(totalMismatch)}).` });
+      // v941: a gap bigger than every transaction on the statement put together cannot come from an edited amount;
+      // the opening or closing figure was misread (e.g. a credit limit read as the closing balance).
+      const turnover = tx.reduce((a, r) => a + Math.abs(r.amount as number), 0);
+      if (Math.abs(totalMismatch) > turnover && turnover > 0) {
+        reasons.push({ code: "totals_unreadable", severity: "info", text: `The opening or closing balance could not be read reliably (the gap of ${money(totalMismatch)} is larger than all the transactions on the statement), so the totals were not checked.` });
+      } else reasons.push({ code: "totals_mismatch", severity: "red", text: `Opening balance ${money(opening)} plus the listed transactions comes to ${money(expectedClose)}, but the statement's closing balance is ${money(closing)} (off by ${money(totalMismatch)}).` });
     }
   }
   if (breaks > 0) {

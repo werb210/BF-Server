@@ -90,3 +90,24 @@ describe("v885 credit summary periods", () => {
     expect(table.periods.map((p) => p.label)).toEqual(["FY2025", "Jan-Jul 2025"]);
   });
 });
+
+describe("v941 comparative columns", () => {
+  it("a year's figures come from the document where it is the main year, not the next year's comparative", async () => {
+    docsMock.mockResolvedValue([
+      { id: "d2023", name: "2023 FS.pdf", category: "financial_statements", kind: "financial_statements", ocr_text: "x".repeat(300) },
+      { id: "d2024", name: "2024 FS.pdf", category: "financial_statements", kind: "financial_statements", ocr_text: "y".repeat(300) },
+    ]);
+    createMock.mockReset();
+    createMock
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ periods: [{ label: "FY2023", period_end: "2023-12-31", items: { revenue: 8230052 } }, { label: "FY2022", period_end: "2022-12-31", items: { revenue: 7225554 } }] }) } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ periods: [{ label: "FY2024", period_end: "2024-12-31", items: { revenue: 9337526 } }, { label: "FY2023", period_end: "2023-12-31", items: { revenue: 8100000 } }] }) } }] });
+    await extractApplicationFinancials("a1");
+    const writes = callsMatching(queryMock, /INSERT INTO application_financials/).map((c) => (c[1] as unknown[]).slice(1, 7));
+    // FY2023 is written once, from the 2023 statements (8,230,052), not the 2024 comparative (8,100,000)
+    expect(writes.filter((w) => w[0] === "FY2023")).toEqual([["FY2023", "2023-12-31", "annual", "revenue", 8230052, "d2023"]]);
+    expect(writes.find((w) => w[0] === "FY2024")).toEqual(["FY2024", "2024-12-31", "annual", "revenue", 9337526, "d2024"]);
+    // FY2022 has no statements of its own, so the comparative fills it
+    expect(writes.find((w) => w[0] === "FY2022")?.[4]).toBe(7225554);
+  });
+});
+
