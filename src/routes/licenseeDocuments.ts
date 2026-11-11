@@ -129,7 +129,7 @@ router.post("/offers/:offerId/term-sheet", ...staff, safeHandler(async (req: Req
       `UPDATE offers SET
           lender_term_sheet_blob_name = COALESCE(lender_term_sheet_blob_name, term_sheet_blob_name),
           term_sheet_blob_name = $2, term_sheet_filename = $3, term_sheet_size_bytes = $4, document_url = $5,
-          term_sheet_mode = 'ours', updated_at = now()
+          term_sheet_mode = CASE WHEN term_sheet_mode = 'template' THEN 'template' ELSE 'ours' END, updated_at = now()
         WHERE id::text = $1`,
       [offerId, put.blobName, `${name}.pdf`, put.sizeBytes, put.url],
     );

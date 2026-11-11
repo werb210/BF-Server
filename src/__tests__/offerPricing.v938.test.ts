@@ -95,3 +95,15 @@ describe("our term sheet hides the lender", () => {
     expect(res.body.error).toBe("no_our_term_sheet");
   });
 });
+
+describe("template mode (v943)", () => {
+  it("accepts the lender's terms on our template, which still needs our term sheet before sending", async () => {
+    queryMock.mockImplementation(answerBySql([[/update offers set/i, { rows: [{ id: OFFER, amount: "100000", rate_factor: "6%", term: "36", term_sheet_mode: "template", client_rate: null }] }]]));
+    const ok = await request(await buildApp()).patch(`/api/offers/${OFFER}/pricing`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({ term_sheet_mode: "template" });
+    expect(ok.status).toBe(200);
+    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "template", lender_blob: null }] }]]));
+    const send = await request(await buildApp()).post(`/api/offers/${OFFER}/send-for-signature`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({});
+    expect(send.body.error).toBe("no_our_term_sheet");
+  });
+});
+
