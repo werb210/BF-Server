@@ -146,8 +146,6 @@ import callScriptsRoutes from "./callScripts.js";
 import callQueuesRoutes from "./callQueues.js";
 import callQueueWebhooksRoutes from "./callQueueWebhooks.js";
 // BF_SERVER_v872_DEAL_TOOLS - quotes, forecast, ID verification and payment links.
-import quotesRoutes from "./quotes.js";
-import clientQuotesRoutes from "./clientQuotes.js";
 import forecastRoutes from "./forecast.js";
 import kycRoutes from "./kyc.js";
 import clientKycRoutes from "./clientKyc.js";
@@ -448,8 +446,6 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/call-scripts", router: callScriptsRoutes }, // Settings > Call scripts (Admin builds), runs on contacts, applications and calls (staff)
   { path: "/call-queues", router: callQueuesRoutes }, // Settings > Call queues: set-up and live panel (Admin), my availability (staff)
   // BF_SERVER_v872_DEAL_TOOLS
-  { path: "/quotes", router: quotesRoutes }, // staff: quotes from the lender offers on a file (Quotes tab)
-  { path: "/client/quotes", router: clientQuotesRoutes }, // the client's own sent quotes (OTP phone)
   { path: "/forecast", router: forecastRoutes }, // weighted commission forecast; a file's expected close date and category
   { path: "/kyc", router: kycRoutes }, // staff ID verification, Admin settings, public signed vendor webhook
   { path: "/client/kyc", router: clientKycRoutes }, // the applicant's own verifications (OTP phone)
@@ -483,7 +479,6 @@ export const RECORD_GUARDED_MOUNTS: Record<string, GuardRule[]> = {
   "/banking": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
   "/fraud": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
   "/retention": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }],
-  "/quotes": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_QUOTES
   "/kyc": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_KYC
   "/forecast": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v872_FORECAST
   "/lender-connections": [{ pattern: /^\/applications\/([^/]+)(?:\/|$)/, kind: "application" }], // BF_SERVER_v873_LENDER_API
@@ -580,11 +575,6 @@ export const ROUTES: ApiRoute[] = [
   { method: "GET", path: "/api/auth/sso/:provider/callback", roles: [] },
   { method: "POST", path: "/api/auth/sso/exchange", roles: [] },
   { method: "GET", path: "/api/open/v1/openapi.json", roles: [] },
-  { method: "GET", path: "/api/client/quotes/applications/:id", roles: [] },
-  { method: "GET", path: "/api/client/quotes/:qid", roles: [] },
-  { method: "GET", path: "/api/client/quotes/:qid/pdf", roles: [] },
-  { method: "POST", path: "/api/client/quotes/:qid/accept", roles: [] },
-  { method: "POST", path: "/api/client/quotes/:qid/decline", roles: [] },
   { method: "GET", path: "/api/client/kyc/applications/:id", roles: [] },
   { method: "POST", path: "/api/client/kyc/verifications/:vid/start", roles: [] },
   { method: "POST", path: "/api/client/kyc/verifications/:vid/upload", roles: [] },
