@@ -80,6 +80,15 @@ export async function shareFromOtherApplications(applicationId: string, needed: 
       );
       const newId = ins.rows[0]?.id;
       if (!newId) continue;
+      // BF_SERVER_v939_SHARED_DOC_VERSIONS - the copy needs its own file version, or OCR, the credit summary and the
+      // lender package cannot read it ("document_version_missing", seen on a shared photo ID, Nov 11 2026).
+      await pool.query(
+        `INSERT INTO document_versions (id, document_id, version, blob_name, hash, metadata, content, created_at)
+         SELECT gen_random_uuid()::text, ($2)::text, 1, v.blob_name, v.hash, v.metadata, v.content, now()
+           FROM document_versions v WHERE v.document_id = ($1)::text
+          ORDER BY v.version DESC LIMIT 1`,
+        [p.source.id, newId],
+      );
       await pool.query(
         `INSERT INTO document_shares (target_document_id, target_application_id, source_document_id, source_application_id, document_kind)
          VALUES ($1, $2, $3, $4, $5) ON CONFLICT (target_application_id, document_kind) DO NOTHING`,
