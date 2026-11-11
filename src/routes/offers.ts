@@ -65,7 +65,9 @@ router.get(
     const callerSilo = getSilo(res) ?? null;
     const query = applicationId
       ? {
-          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
+                        o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
+                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where o.application_id = $1
@@ -74,7 +76,9 @@ router.get(
           values: [applicationId, callerSilo],
         }
       : {
-          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at
+          text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
+                        o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
+                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where ($1::text is null or a.silo is null or a.silo = $1::text)
@@ -83,7 +87,11 @@ router.get(
           values: [callerSilo],
         };
     const rows = await runQuery(query.text, query.values);
-    const items = await attachTermSheetUrls(rows.rows);
+    // OFFER_PRICING_v1 - each offer carries what it earns us (rate difference, fees, fee from proceeds, lender commission).
+    const { revenueFor } = await import("../offers/pricing.js");
+    const priced = rows.rows.map((o: any) => ({ ...o, revenue: revenueFor({ amount: o.amount, lender_rate: o.rate_factor, client_rate: o.client_rate, term: o.term,
+      term_months: o.term_months, broker_fee: o.broker_fee, setup_fee: o.setup_fee, proceeds_fee: o.proceeds_fee, lender_commission: o.lender_commission }) }));
+    const items = await attachTermSheetUrls(priced);
     res.status(200).json({ items });
   })
 );
@@ -238,6 +246,51 @@ router.patch(
   })
 );
 
+// OFFER_PRICING_v1 - PATCH /api/offers/:id/pricing  Staff: how we are paid on this offer (Todd, Nov 11 2026: "each deal can
+// be different"). Any mix of: our rate to the client (the lender's stays in rate_factor), a broker fee, a set-up fee, a fee
+// paid from the proceeds and the lender's commission. term_sheet_mode: lender = the client signs the lender's term sheet
+// (the lender is named); ours = we buy the deal and the client signs our term sheet (no lender name anywhere the client sees).
+const PRICING_NUM = ["client_rate", "broker_fee", "setup_fee", "proceeds_fee", "lender_commission"] as const;
+router.patch("/:id/pricing", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id ?? "").trim();
+  const b = req.body ?? {};
+  const sets: string[] = []; const vals: unknown[] = [id];
+  const put = (col: string, v: unknown) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
+  if (b.term_sheet_mode !== undefined) {
+    if (b.term_sheet_mode !== "lender" && b.term_sheet_mode !== "ours") throw new AppError("validation_error", "Choose whose term sheet the client signs.", 400);
+    put("term_sheet_mode", b.term_sheet_mode);
+  }
+  for (const k of PRICING_NUM) {
+    if (b[k] === undefined) continue;
+    if (b[k] === null || b[k] === "") { put(k, null); continue; }
+    const n = Number(String(b[k]).replace(/[$,%\s]/g, ""));
+    if (!Number.isFinite(n) || n < 0 || n > 100_000_000) throw new AppError("validation_error", `Enter a number for ${k.replace(/_/g, " ")}.`, 400);
+    put(k, n);
+  }
+  if (b.term_months !== undefined) {
+    const n = b.term_months === null || b.term_months === "" ? null : Math.round(Number(b.term_months));
+    if (n !== null && (!Number.isFinite(n) || n <= 0 || n > 600)) throw new AppError("validation_error", "Enter the term in months.", 400);
+    put("term_months", n);
+  }
+  if (!sets.length) throw new AppError("validation_error", "Nothing to save.", 400);
+  const { getSilo } = await import("../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  vals.push(callerSilo);
+  const r = await runQuery(
+    `update offers set ${sets.join(", ")}, pricing_updated_at = now(), updated_at = now()
+      where id::text = $1
+        and exists (select 1 from applications a where a.id::text = offers.application_id::text
+                     and ($${vals.length}::text is null or a.silo is null or a.silo = $${vals.length}::text))
+      returning id, amount::text as amount, rate_factor, term, term_sheet_mode, client_rate::text as client_rate, term_months,
+                broker_fee::text as broker_fee, setup_fee::text as setup_fee, proceeds_fee::text as proceeds_fee, lender_commission::text as lender_commission`,
+    vals);
+  const o: any = r.rows[0];
+  if (!o) throw new AppError("not_found", "Offer not found.", 404);
+  const { revenueFor } = await import("../offers/pricing.js");
+  res.json({ ok: true, offer: { ...o, revenue: revenueFor({ amount: o.amount, lender_rate: o.rate_factor, client_rate: o.client_rate, term: o.term,
+    term_months: o.term_months, broker_fee: o.broker_fee, setup_fee: o.setup_fee, proceeds_fee: o.proceeds_fee, lender_commission: o.lender_commission }) } });
+}));
+
 // BF_SERVER_v784_CLIENT_OWNERSHIP - a client token reaches an offer only
 // through an application it owns; staff and service pass.
 async function requireOfferAccess(req: any, res: any, offerId: string): Promise<boolean> {
@@ -343,8 +396,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
   // Review fix: a staff user limited to one silo cannot send another silo's offer (same rule as confirm-acceptance).
   const { getSilo } = await import("../middleware/silo.js");
   const callerSilo = getSilo(res) ?? null;
-  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null }>(
-    `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender
+  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null; mode: string | null; lender_blob: string | null }>(
+    `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender,
+            o.term_sheet_mode as mode, o.lender_term_sheet_blob_name as lender_blob
        from offers o
        join applications a on a.id::text = o.application_id::text
       where o.id::text = $1 and ($2::text is null or a.silo is null or a.silo = $2::text)
@@ -352,6 +406,11 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
   const offer = o.rows[0];
   if (!offer) return res.status(404).json({ error: "not_found" });
   if (!offer.blob) return res.status(409).json({ error: "no_term_sheet", message: "Upload the lender's term sheet first." });
+  // OFFER_PRICING_v1 - when we buy the deal the client signs OUR term sheet and never sees the lender's name.
+  if (offer.mode === "ours") {
+    if (!offer.lender_blob) return res.status(409).json({ error: "no_our_term_sheet", message: "Make our term sheet for this offer first (Offer tab: Make our term sheet), so the client does not receive the lender's." });
+    offer.lender = null;
+  }
   const got = await getStorage().get(offer.blob).catch(() => null);
   if (!got?.buffer?.length) return res.status(404).json({ error: "blob_missing", message: "The term sheet file could not be found." });
   if (got.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {

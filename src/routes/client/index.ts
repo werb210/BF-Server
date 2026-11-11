@@ -660,7 +660,8 @@ router.get(
       // signed when it is signed; has_term_sheet so the app knows whether to offer "View term sheet".
       `SELECT o.id, o.application_id, o.lender_name, o.amount::text AS amount, o.rate_factor, o.term,
               o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
-              (o.term_sheet_blob_name IS NOT NULL) AS has_term_sheet,
+              (o.term_sheet_blob_name IS NOT NULL) AS has_term_sheet, o.term_sheet_mode, o.client_rate::text AS client_rate,
+              o.term_months, o.setup_fee::text AS setup_fee, o.proceeds_fee::text AS proceeds_fee, o.broker_fee::text AS broker_fee,
               CASE WHEN a.metadata->'offer_signnow'->>'offer_id' = o.id::text THEN a.metadata->'offer_signnow'->>'signing_url' END AS signing_url,
               CASE WHEN a.metadata->'offer_signnow'->>'offer_id' = o.id::text THEN a.metadata->'offer_signnow' END AS signnow_session,
               -- review fix: signed only when the signed copy is of THIS offer's SignNow document
@@ -676,8 +677,18 @@ router.get(
     );
     // Review fix: SignNow embedded links last 45 minutes, so the stored one goes stale. Make a fresh one for the
     // unsigned offer each time the client loads its offers; keep the stored link if SignNow does not answer.
+    // OFFER_PRICING_v1 - on our term sheet (we bought the deal) the client sees us, our rate and our fees - never the lender.
+    const { clientRateText, revenueFor } = await import("../../offers/pricing.js");
+    const ourName = "Boreal Financial";
     const rows = await Promise.all(r.rows.map(async (row: any) => {
-      const { signnow_session: sess, ...rest } = row;
+      const { signnow_session: sess, term_sheet_mode: mode, client_rate, term_months, setup_fee, proceeds_fee, broker_fee, ...rest } = row;
+      if (mode === "ours") {
+        const rev = revenueFor({ amount: rest.amount, lender_rate: rest.rate_factor, client_rate, term: rest.term, term_months, setup_fee, proceeds_fee, broker_fee });
+        rest.lender_name = ourName;
+        rest.rate_factor = clientRateText(rest.rate_factor, client_rate);
+        if (!rest.term && rev.term_months) rest.term = `${rev.term_months} months`;
+        rest.fees = { setup_fee: rev.setup_fee || null, broker_fee: rev.broker_fee || null, proceeds_fee: rev.proceeds_fee || null, funds_to_client: rev.funds_to_client };
+      }
       if (rest.signing_url && !rest.signed && sess?.group_id && sess?.invite_id && sess?.signer_email) {
         try {
           const { createEmbeddedGroupLink } = await import("../../signnow/signnowClient.js");
