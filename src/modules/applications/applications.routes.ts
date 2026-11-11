@@ -1035,7 +1035,11 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
             a.signnow_app_signed_at,
             (SELECT count(*) FROM application_lender_selections s
               WHERE s.application_id::text = a.id::text AND s.finalized_at IS NOT NULL) AS finalized_lenders,
-            (SELECT c.phone FROM contacts c WHERE c.id = a.contact_id) AS contact_phone
+            (SELECT c.phone FROM contacts c WHERE c.id = a.contact_id) AS contact_phone,
+            -- BF_SERVER_v938_CARD_HEADER - the card header's key numbers: the assigned broker and offers received.
+            a.owner_user_id,
+            (SELECT NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), '') FROM users u WHERE u.id = a.owner_user_id) AS owner_name,
+            (SELECT count(*) FROM offers o WHERE o.application_id::text = a.id::text AND COALESCE(o.is_archived, false) = false) AS offer_count
        FROM applications a WHERE a.id::text = ($1)::text`,
     [id]
   );
@@ -1136,6 +1140,9 @@ router.get('/:id/details', safeHandler(async (req: any, res: any) => {
     // BF_SERVER_CALL_PHONE_v765 - the number the portal's Call client button dials: the CRM contact's phone (staff
     // correct numbers there) first, then the applicant's phone from the application.
     callPhone: firstPhone(app.contact_phone, md?.applicant?.phone, md?.applicant?.mobile, md?.borrower?.phone, fd?.applicant?.phone, md?.readiness_phone, readinessSrc?.phone),
+    // BF_SERVER_v938_CARD_HEADER - shown in the card header.
+    assignedTo: app.owner_user_id ? { id: String(app.owner_user_id), name: app.owner_name ?? null } : null,
+    offerCount: Number(app.offer_count ?? 0),
     rawPayload: md,
   };
 
