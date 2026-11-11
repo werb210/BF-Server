@@ -672,6 +672,16 @@ export async function processOcrJob(
       });
     }
 
+    // BF_SERVER_v939_AUTO_VENDOR_INVOICE - a vendor invoice / equipment quote / purchase order is read into the deal's
+    // equipment fields as soon as its OCR is done. Fire-and-forget; it logs its own failures.
+    void (async () => {
+      const { autoReadVendorInvoice } = await import("../../brokerTools/autoInvoice.js");
+      const { pool } = await import("../../db.js");
+      await autoReadVendorInvoice(pool as any, job.application_id, job.document_id);
+    })().catch((err) => {
+      logError("ocr_auto_vendor_invoice_failed", { code: "ocr_auto_vendor_invoice_failed", applicationId: job.application_id, error: err instanceof Error ? err.message : "unknown_error" });
+    });
+
     // BF_SERVER_BLOCK_v204_OCR_SUCCESS_MARK_LENDER_MATCHES_STALE_v1 — flip the cached lender_matches stale so the
     // next /lenders/envelope read returns status=stale and staff get a
     // Recalculate prompt. Mirrors the reject-path call in v198. Fire-
