@@ -251,6 +251,26 @@ function normalizeProductCategory(value: unknown): string | null {
   };
   return map[raw] ?? raw;
 }
+// BF_SERVER_v940_LENDER_PRODUCT_RULES - the product form also sends matchRules (knock-outs) and commissionTerms
+// (how the lender pays us); saved after the product itself. Returns the saved values, or null when neither was sent.
+async function saveProductRules(id: string, body: any): Promise<{ match_rules?: unknown; commission_terms?: unknown } | null> {
+  const { parseMatchRules, parseCommissionTerms } = await import("../lenderRules/rules.js");
+  const rules = parseMatchRules(body?.matchRules ?? body?.match_rules);
+  const terms = parseCommissionTerms(body?.commissionTerms ?? body?.commission_terms);
+  if (!rules && !terms) return null;
+  const r = await pool.query(
+    `UPDATE lender_products SET match_rules = COALESCE($2::jsonb, match_rules), commission_terms = COALESCE($3::jsonb, commission_terms), updated_at = now()
+      WHERE id::text = $1 RETURNING match_rules, commission_terms`,
+    [id, rules ? JSON.stringify(rules) : null, terms ? JSON.stringify(terms) : null],
+  );
+  if (rules) {
+    // Every open file's lender list is worked out again on its next view.
+    await pool.query(`UPDATE applications SET lender_matches_stale = true WHERE lender_matches_computed_at IS NOT NULL AND COALESCE(lender_matches_stale, false) = false`)
+      .catch((err: any) => console.warn("[lender-rules] mark stale failed", { message: err?.message }));
+  }
+  return r.rows[0] ?? null;
+}
+
 function decorateProductResponse(product: any): any {
   if (!product || typeof product !== "object") return product;
   const row = product;
@@ -286,6 +306,9 @@ function decorateProductResponse(product: any): any {
     commissionPercent: row.commission != null ? Number(row.commission) : null,
     minCreditScore: row.min_credit_score != null ? Number(row.min_credit_score) : null,
     min_credit_score: row.min_credit_score != null ? Number(row.min_credit_score) : null,
+    // BF_SERVER_v940_LENDER_PRODUCT_RULES
+    matchRules: row.match_rules ?? {},
+    commissionTerms: row.commission_terms ?? {},
   };
 }
 
@@ -389,7 +412,8 @@ router.post(
       documentsRequired: asString(pickFirst(body.documentsRequired, body.documents_required)),
       silo,
     });
-    res.status(201).json(decorateProductResponse(product));
+    const saved = product?.id ? await saveProductRules(String(product.id), body) : null; // BF_SERVER_v940_LENDER_PRODUCT_RULES
+    res.status(201).json(decorateProductResponse(saved ? { ...product, ...saved } : product));
   })
 );
 
@@ -488,7 +512,8 @@ router.put(
       throw err;
     }
     if (!product) throw new AppError("not_found", "Lender product not found.", 404);
-    res.status(200).json(decorateProductResponse(product));
+    const saved = await saveProductRules(id, body); // BF_SERVER_v940_LENDER_PRODUCT_RULES
+    res.status(200).json(decorateProductResponse(saved ? { ...product, ...saved } : product));
   })
 );
 

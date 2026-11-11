@@ -13,10 +13,11 @@
 import { runQuery } from "../db.js";
 import { normalizeToPercent, scoreAmountFit, type PrequalInput } from "./scoringEngine.js";
 import { productCategoryLabel, toBucketId } from "../modules/applications/productCategoryChange.js"; // BF_SERVER_v887_PRODUCT_LABELS
+import { fundsUpTo, knockouts, type FileFigures, type MatchRules } from "../lenderRules/rules.js"; // BF_SERVER_v940_LENDER_PRODUCT_RULES
 
 // BF_SERVER_v887_LENDER_MATCH_FIX - bumped when the match row shape or scoring changes, so lists cached in an older
 // shape are recalculated when the Lenders tab opens instead of showing old numbers.
-export const MATCH_VERSION = 887;
+export const MATCH_VERSION = 940; // v940: lender product knock-out rules
 
 type ProductRow = {
   product_id: string;
@@ -29,6 +30,7 @@ type ProductRow = {
   min_amount: number | null;
   max_amount: number | null;
   submission_method: string | null;
+  match_rules: MatchRules | null; // BF_SERVER_v940_LENDER_PRODUCT_RULES
 };
 
 export type LenderMatch = {
@@ -47,7 +49,11 @@ export type LenderMatch = {
   amountMin: number | null;
   amountMax: number | null;
   matchVersion: number; // BF_SERVER_v887_LENDER_MATCH_FIX
+  fundsUpTo: number | null; // BF_SERVER_v940_LENDER_PRODUCT_RULES - lender funds up to N x monthly revenue
 };
+
+/** A product the file was hidden from, and why (BF_SERVER_v940_LENDER_PRODUCT_RULES). */
+export type ExcludedProduct = { id: string; lenderName: string; productName: string; reasons: string[] };
 
 function geographyAllows(productCountry: string | null, applicantCountry: PrequalInput["country"]): boolean {
   if (!productCountry || productCountry === "BOTH") return true;
@@ -55,7 +61,11 @@ function geographyAllows(productCountry: string | null, applicantCountry: Prequa
   return productCountry === applicantCountry;
 }
 
-export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> {
+export async function matchLenders(input: PrequalInput, figures?: FileFigures | null): Promise<LenderMatch[]> {
+  return (await matchLendersDetailed(input, figures)).matches;
+}
+
+export async function matchLendersDetailed(input: PrequalInput, figures?: FileFigures | null): Promise<{ matches: LenderMatch[]; excluded: ExcludedProduct[] }> {
   const requestedAmount = input.requestedAmount ?? null;
   const { rows: productRows } = await runQuery<ProductRow>(
     `select lp.id                       as product_id,
@@ -69,13 +79,14 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
             -- min_amount/max_amount are the older columns and only fill a gap.
             coalesce(lp.amount_min, lp.min_amount)  as min_amount,
             coalesce(lp.amount_max, lp.max_amount)  as max_amount,
-            l.submission_method         as submission_method
+            l.submission_method         as submission_method,
+            lp.match_rules              as match_rules
        from lender_products lp
        join lenders          l   on l.id = lp.lender_id
   left join lender_product_requirements lpr on lpr.lender_product_id = lp.id
       where lp.active = true
         and coalesce(l.active, true) = true
-   group by lp.id, lp.lender_id, l.name, lp.name, lp.category, lp.country, lp.active, l.submission_method
+   group by lp.id, lp.lender_id, l.name, lp.name, lp.category, lp.country, lp.active, l.submission_method, lp.match_rules
    order by lp.updated_at desc`
   );
 
@@ -102,7 +113,16 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
     return true;
   });
 
-  return filtered
+  // BF_SERVER_v940_LENDER_PRODUCT_RULES - a product whose rules the file breaks is not shown to that lender.
+  const excluded: ExcludedProduct[] = [];
+  const allowed = figures ? filtered.filter((row) => {
+    const reasons = knockouts(row.match_rules, figures);
+    if (!reasons.length) return true;
+    excluded.push({ id: row.product_id, lenderName: row.lender_name, productName: row.product_name, reasons });
+    return false;
+  }) : filtered;
+
+  const matches = allowed
     .map((row): LenderMatch => {
       const minN = row.min_amount === null || row.min_amount === undefined ? null : Number(row.min_amount);
       // A maximum of 0 is how an empty box was sometimes saved: treat it as "no maximum on file".
@@ -110,12 +130,16 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
       const amountScore   = scoreAmountFit(requestedAmount, minN, maxN);
       const maturityScore = input.timeInBusiness && input.timeInBusiness >= 24 ? 0.9 : 0.65;
       const revenueScore  = input.revenue && input.revenue >= 120000 ? 0.9 : 0.6;
-      const aggregate     = amountScore * 0.5 + maturityScore * 0.25 + revenueScore * 0.25;
+      // A request above what the lender funds on this revenue is a weaker fit (the lender may fund less).
+      const capFit        = figures && requestedAmount ? (() => { const u = fundsUpTo(row.match_rules, figures); return u !== null && requestedAmount > u ? 0.5 : 1; })() : 1;
+      const aggregate     = (amountScore * 0.5 + maturityScore * 0.25 + revenueScore * 0.25) * capFit;
       const minText       = minN ? `$${minN.toLocaleString("en-CA")}` : "no minimum";
       const maxText       = maxN ? `$${maxN.toLocaleString("en-CA")}` : "no maximum";
       // BF_SERVER_v887_LENDER_MATCH_FIX - say what the score is built from, in plain words.
+      const upTo = figures ? fundsUpTo(row.match_rules, figures) : null;
       const reasoning = [
         minN === null && maxN === null ? "No amount range on file for this product" : `Amount range ${minText} to ${maxText}`,
+        ...(upTo !== null ? [`funds up to $${upTo.toLocaleString("en-CA")} on this file's revenue`] : []),
         input.timeInBusiness == null ? "time in business not given" : `${Math.round(input.timeInBusiness)} months in business`,
         input.revenue == null ? "annual revenue not given" : `annual revenue about $${Math.round(input.revenue).toLocaleString("en-CA")}`,
       ].join("; ") + ".";
@@ -133,7 +157,9 @@ export async function matchLenders(input: PrequalInput): Promise<LenderMatch[]> 
         amountMin:        minN,
         amountMax:        maxN,
         matchVersion:     MATCH_VERSION,
+        fundsUpTo:        upTo,
       };
     })
     .sort((a: LenderMatch, b: LenderMatch) => b.matchPercent - a.matchPercent);
+  return { matches, excluded };
 }
