@@ -58,7 +58,7 @@ export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promis
   if (!doc) throw Object.assign(new Error("Upload your term sheet template in Settings > Your documents first."), { status: 409 });
   const r = await q.query(
     `SELECT application_id::text AS application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date,
-            client_rate, term_months, broker_fee, setup_fee, proceeds_fee, lender_commission FROM offers WHERE id::text = $1 LIMIT 1`, [offerId]);
+            client_rate, term_months, broker_fee, setup_fee, proceeds_fee, lender_commission, term_sheet_mode FROM offers WHERE id::text = $1 LIMIT 1`, [offerId]);
   const o = r.rows[0];
   if (!o?.application_id) throw Object.assign(new Error("Offer not found."), { status: 404 });
   const { loadApplicationForPdf } = await import("../signnow/sendApplicationForSignature.js");
@@ -67,7 +67,8 @@ export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promis
   const { revenueFor, clientRateText } = await import("../offers/pricing.js");
   const rev = revenueFor({ amount: o.amount, lender_rate: o.rate_factor, client_rate: o.client_rate, term: o.term, term_months: o.term_months,
     broker_fee: o.broker_fee, setup_fee: o.setup_fee, proceeds_fee: o.proceeds_fee, lender_commission: o.lender_commission });
-  const offer: OfferValues = { lender: "", amount: o.amount, rate: clientRateText(o.rate_factor, o.client_rate), term: o.term || (rev.term_months ? `${rev.term_months} months` : null),
+  // BF_SERVER_v943_OFFER_TEMPLATE_MODE - on a template (the lender's terms on our sheet) the lender stays named.
+  const offer: OfferValues = { lender: o.term_sheet_mode === "template" ? o.lender_name : "", amount: o.amount, rate: clientRateText(o.rate_factor, o.client_rate), term: o.term || (rev.term_months ? `${rev.term_months} months` : null),
     payment_frequency: o.payment_frequency, payment: rev.client_payment, expiry: o.expiry_date ? new Date(o.expiry_date).toISOString() : null,
     setup_fee: o.setup_fee, proceeds_fee: o.proceeds_fee, funds_to_client: rev.funds_to_client, total_repaid: rev.client_total_repaid };
   const fee = o.broker_fee === null || o.broker_fee === undefined ? null : { amount: o.broker_fee };

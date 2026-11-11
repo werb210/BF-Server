@@ -257,7 +257,8 @@ router.patch("/:id/pricing", requireAuth, requireAuthorization({ roles: [ROLES.A
   const sets: string[] = []; const vals: unknown[] = [id];
   const put = (col: string, v: unknown) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
   if (b.term_sheet_mode !== undefined) {
-    if (b.term_sheet_mode !== "lender" && b.term_sheet_mode !== "ours") throw new AppError("validation_error", "Choose whose term sheet the client signs.", 400);
+    // BF_SERVER_v943_OFFER_TEMPLATE_MODE - template = the lender's terms on our term sheet (lender named)
+    if (b.term_sheet_mode !== "lender" && b.term_sheet_mode !== "template" && b.term_sheet_mode !== "ours") throw new AppError("validation_error", "Choose whose term sheet the client signs.", 400);
     put("term_sheet_mode", b.term_sheet_mode);
   }
   for (const k of PRICING_NUM) {
@@ -396,9 +397,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
   // Review fix: a staff user limited to one silo cannot send another silo's offer (same rule as confirm-acceptance).
   const { getSilo } = await import("../middleware/silo.js");
   const callerSilo = getSilo(res) ?? null;
-  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null; mode: string | null; lender_blob: string | null }>(
+  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null; mode: string | null; lender_blob: string | null; ours_made?: boolean }>(
     `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender,
-            o.term_sheet_mode as mode, o.lender_term_sheet_blob_name as lender_blob
+            o.term_sheet_mode as mode, o.lender_term_sheet_blob_name as lender_blob, (o.our_term_sheet_at is not null) as ours_made
        from offers o
        join applications a on a.id::text = o.application_id::text
       where o.id::text = $1 and ($2::text is null or a.silo is null or a.silo = $2::text)
@@ -407,9 +408,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
   if (!offer) return res.status(404).json({ error: "not_found" });
   if (!offer.blob) return res.status(409).json({ error: "no_term_sheet", message: "Upload the lender's term sheet first." });
   // OFFER_PRICING_v1 - when we buy the deal the client signs OUR term sheet and never sees the lender's name.
-  if (offer.mode === "ours") {
-    if (!offer.lender_blob) return res.status(409).json({ error: "no_our_term_sheet", message: "Make our term sheet for this offer first (Offer tab: Make our term sheet), so the client does not receive the lender's." });
-    offer.lender = null;
+  if (offer.mode === "ours" || offer.mode === "template") {
+    if (!offer.lender_blob && !offer.ours_made) return res.status(409).json({ error: "no_our_term_sheet", message: "Make our term sheet for this offer first (Offer tab: Make our term sheet), so the client does not receive the lender's." });
+    if (offer.mode === "ours") offer.lender = null; // BF_SERVER_v943 - on a template the lender is still named
   }
   const got = await getStorage().get(offer.blob).catch(() => null);
   if (!got?.buffer?.length) return res.status(404).json({ error: "blob_missing", message: "The term sheet file could not be found." });

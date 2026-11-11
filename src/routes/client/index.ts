@@ -682,9 +682,9 @@ router.get(
     const ourName = "Boreal Financial";
     const rows = await Promise.all(r.rows.map(async (row: any) => {
       const { signnow_session: sess, term_sheet_mode: mode, client_rate, term_months, setup_fee, proceeds_fee, broker_fee, ...rest } = row;
-      if (mode === "ours") {
+      if (mode === "ours" || mode === "template") {
         const rev = revenueFor({ amount: rest.amount, lender_rate: rest.rate_factor, client_rate, term: rest.term, term_months, setup_fee, proceeds_fee, broker_fee });
-        rest.lender_name = ourName;
+        if (mode === "ours") rest.lender_name = ourName; // BF_SERVER_v943 - a template keeps the lender's name
         rest.rate_factor = clientRateText(rest.rate_factor, client_rate);
         if (!rest.term && rev.term_months) rest.term = `${rev.term_months} months`;
         rest.fees = { setup_fee: rev.setup_fee || null, broker_fee: rev.broker_fee || null, proceeds_fee: rev.proceeds_fee || null, funds_to_client: rev.funds_to_client };
