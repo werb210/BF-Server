@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { pool } from "../../db.js";
 import { WatchApnsError } from "../../watch/apnsProvider.js";
-import { __setClientPushProvider, clientApnsCredentials, sendClientPush } from "../clientPushService.js";
+import { __setClientPushProvider, clientApnsCredentials, iosTopic, sendClientPush } from "../clientPushService.js";
 import { pushConfigReport } from "../../modules/diagnostics/pushConfig.js";
 
 describe("BF_SERVER_v817_CLIENT client APNs", () => {
@@ -16,6 +16,16 @@ describe("BF_SERVER_v817_CLIENT client APNs", () => {
       if (sql.includes("DELETE FROM client_push_tokens")) deleted.push(String(params?.[0]));
       return { rows: [] };
     }) as typeof pool.query);
+  });
+
+  it("uses the iPhone bundle id as Apple's topic when the Android id was set by mistake (v947)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(iosTopic("com.boreal.client")).toBe("com.borealfinancial.client");
+    expect(warn).toHaveBeenCalled();
+    expect(iosTopic(" com.borealfinancial.client ")).toBe("com.borealfinancial.client");
+    expect(iosTopic("")).toBeUndefined();
+    expect(clientApnsCredentials({ CLIENT_APNS_BUNDLE_ID_BF: "com.boreal.client" } as NodeJS.ProcessEnv).bundleId).toBe("com.borealfinancial.client");
+    warn.mockRestore();
   });
 
   it("prefers CLIENT_APNS_* credentials and falls back to WATCH_APNS_*", () => {
