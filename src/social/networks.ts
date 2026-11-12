@@ -10,6 +10,13 @@ export const NETWORK_LABEL: Record<Network, string> = {
 /** Which sign-in connects a network ("meta" connects Facebook pages and their Instagram accounts together). */
 export type Provider = "meta" | "threads" | "linkedin" | "x" | "google" | "bluesky";
 export const PROVIDER_OF: Record<Network, Provider> = { facebook: "meta", instagram: "meta", threads: "threads", linkedin: "linkedin", x: "x", google_business: "google", bluesky: "bluesky" };
+// BF_SERVER_v951_LINKEDIN_PROFILE_SCOPE - posting to a personal profile needs only "Share on LinkedIn", which any
+// LinkedIn app has. Company pages need LinkedIn's Community Management approval; asking for those permissions before
+// the app has them makes LinkedIn refuse the whole sign-in. They are requested only when LINKEDIN_COMPANY_PAGES=on.
+export function linkedinScopes(env: NodeJS.ProcessEnv = process.env): string {
+  const pages = ["on", "true", "1", "yes"].includes(String(env.LINKEDIN_COMPANY_PAGES ?? "").trim().toLowerCase());
+  return "openid profile w_member_social" + (pages ? " w_organization_social r_organization_social" : "");
+}
 export const PROVIDERS: Provider[] = ["meta", "threads", "linkedin", "x", "google", "bluesky"];
 
 const env = (k: string) => String(process.env[k] ?? "").trim();
@@ -56,7 +63,7 @@ export function authorizeUrl(p: Exclude<Provider, "bluesky">, redirectUri: strin
   switch (p) {
     case "meta": return q(`https://www.facebook.com/${META_V}/dialog/oauth`, { client_id: id(p), redirect_uri: redirectUri, state, scope: META_SCOPES, response_type: "code" });
     case "threads": return q("https://threads.net/oauth/authorize", { client_id: id(p), redirect_uri: redirectUri, state, scope: "threads_basic,threads_content_publish", response_type: "code" });
-    case "linkedin": return q("https://www.linkedin.com/oauth/v2/authorization", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: "openid profile w_member_social w_organization_social r_organization_social" });
+    case "linkedin": return q("https://www.linkedin.com/oauth/v2/authorization", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: linkedinScopes() });
     case "x": return q("https://x.com/i/oauth2/authorize", { response_type: "code", client_id: id(p), redirect_uri: redirectUri, state, scope: "tweet.read tweet.write users.read media.write offline.access", code_challenge: challenge ?? "", code_challenge_method: "S256" });
     case "google": return q("https://accounts.google.com/o/oauth2/v2/auth", { client_id: id(p), redirect_uri: redirectUri, state, scope: "https://www.googleapis.com/auth/business.manage", response_type: "code", access_type: "offline", prompt: "consent" });
   }
