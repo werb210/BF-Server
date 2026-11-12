@@ -33,8 +33,20 @@ export function clientApnsCredentials(env: NodeJS.ProcessEnv = process.env): {
     teamId: pick("CLIENT_APNS_TEAM_ID", "WATCH_APNS_TEAM_ID"),
     keyId: pick("CLIENT_APNS_KEY_ID", "WATCH_APNS_KEY_ID"),
     privateKey: pick("CLIENT_APNS_PRIVATE_KEY", "WATCH_APNS_PRIVATE_KEY")?.replace(/\\n/g, "\n"),
-    bundleId: env.CLIENT_APNS_BUNDLE_ID_BF?.trim() || undefined,
+    bundleId: iosTopic(env.CLIENT_APNS_BUNDLE_ID_BF),
   };
+}
+
+// BF_SERVER_v947_CLIENT_APNS_TOPIC - Apple refused every client push with "TopicDisallowed" (Nov 12 2026 log): the
+// setting held com.boreal.client, which is the Android application id. Apple's topic is the iPhone app's bundle id,
+// com.borealfinancial.client. The Android id is corrected here so pushes work without a change to the server settings.
+const ANDROID_ID_SET_BY_MISTAKE: Record<string, string> = { "com.boreal.client": "com.borealfinancial.client" };
+export function iosTopic(value: string | undefined): string | undefined {
+  const v = value?.trim();
+  if (!v) return undefined;
+  const fixed = ANDROID_ID_SET_BY_MISTAKE[v];
+  if (fixed) console.warn(JSON.stringify({ event: "client_apns_bundle_id_corrected", configured: v, using: fixed }));
+  return fixed ?? v;
 }
 
 export function initializeClientPushProvider(env: NodeJS.ProcessEnv = process.env): boolean {
