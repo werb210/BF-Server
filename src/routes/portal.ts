@@ -2222,28 +2222,8 @@ router.post(
     eventBus.emit("term_sheet_uploaded", { applicationId: appId, offerId, blobName: put.blobName });
     // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - the reader fills the offer's empty fields so the client sees real terms.
     void import("../brokerTools/termSheetView.js").then((m) => m.fillOfferFromTermSheet(offerId)).catch((err) => console.warn("[term-sheet] fill not started", String(err)));
-    // BF_SERVER_BLOCK_v552 - one notice below through notifyClient (app first, else SMS).
-
-    try {
-      const phoneRes = await runQuery<{ phone: string | null }>(
-        `SELECT c.phone AS phone
-           FROM applications a LEFT JOIN contacts c ON c.id::text = a.contact_id::text
-          WHERE a.id::text = ($1)::text LIMIT 1`,
-        [appId]
-      );
-      const phone = phoneRes.rows[0]?.phone ?? null;
-      if (phone) {
-        const portalBase = process.env.CLIENT_PORTAL_URL || "https://client.boreal.financial";
-        const link = `${portalBase}/application/${appId}`;
-        const { notifyClient } = await import("../services/notifications/notifyClient.js"); // BF_SERVER_BLOCK_v552
-        await notifyClient({ phone, applicationId: appId, kind: "term_sheet", categoryId: "OFFER_READY",
-          sms: `Your term sheet from ${lenderName} is ready to review: ${link}`,
-          title: "Your offer is ready",
-          body: lenderName ? `${lenderName} sent a term sheet for you to review.` : "A term sheet is ready for you to review." });
-      }
-    } catch (err) {
-      console.warn("[term-sheet] SMS notification failed", { appId, err: String(err) });
-    }
+    // BF_SERVER_v947_SENDABLE_OFFERS - no notice to the client on upload. They are told when staff press "Send to the
+    // client for signature" (routes/offers.ts), after the terms have been checked.
 
     res.status(201).json({ ok: true, offer_id: offerId, blob_name: put.blobName, stage: cur === "Off to Lender" ? "Offer" : cur });
   })

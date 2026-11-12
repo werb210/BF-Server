@@ -1,6 +1,6 @@
 // BF_SERVER_v865_BROKER_TOOLS_1_FUNDING_CONDITIONS - the checklist rules and the Funded gate (database faked by SQL content).
 import { describe, expect, it } from "vitest";
-import { checkFundingGate, clientView, conditionsFromOfferText, FundingBlockedError, outstanding, parseConditionInput, rowToCondition } from "../conditions.js";
+import { checkFundingGate, clientView, forSignedOffer, isOngoing, conditionsFromOfferText, FundingBlockedError, outstanding, parseConditionInput, rowToCondition } from "../conditions.js";
 import { canTransition, ApplicationStage, statusFromPipeline } from "../../modules/applications/pipelineState.js";
 
 const row = (o: Record<string, unknown>) => rowToCondition({ id: "c1", application_id: "a1", title: "T", owner: "staff", status: "open", ...o }, new Date("2026-11-10T12:00:00Z"));
@@ -9,6 +9,7 @@ function fakeDb(rows: Record<string, unknown>[]) {
   return {
     query: async (sql: string) => {
       if (/FROM funding_conditions fc/.test(sql)) return { rows };
+      if (/FROM offers o/.test(sql)) return { rows: [] }; // v947: no term sheet signed yet
       throw new Error("unexpected SQL: " + sql.slice(0, 60));
     },
   };
@@ -51,10 +52,26 @@ describe("funding conditions", () => {
 
   it("shows the client only their own open items, without staff notes", () => {
     const list = [row({ id: "1", owner: "client", note: "internal", client_submitted_at: "2026-11-02T00:00:00Z", status: "received" }), row({ id: "2", owner: "staff" }), row({ id: "3", owner: "client", status: "cleared" })];
-    const v = clientView(list);
+    expect(clientView(list, null)).toEqual([]); // nothing until a term sheet is signed
+    const v = clientView(list, "o1");
     expect(v).toHaveLength(1);
     expect(v[0]).toMatchObject({ id: "1", submitted: true });
     expect(JSON.stringify(v)).not.toContain("internal");
+  });
+
+  it("after signing, the client sees only that sheet's own to-dos, never ongoing obligations (v947)", () => {
+    const list = [
+      row({ id: "1", owner: "client", title: "Void cheque", offer_id: "o1" }),
+      row({ id: "2", owner: "client", title: "Corporate guarantees", offer_id: "o2" }),
+      row({ id: "3", owner: "client", title: "Provide weekly status reports", offer_id: "o1" }),
+      row({ id: "4", owner: "client", title: "Maintain required insurance", offer_id: "o1" }),
+      row({ id: "5", owner: "lender", title: "Lender review", offer_id: "o1" }),
+      row({ id: "6", owner: "client", title: "Signed insurance certificate", offer_id: null }),
+    ];
+    expect(clientView(list, "o1").map((c) => c.id)).toEqual(["1", "6"]);
+    expect(forSignedOffer(list, "o1").map((c) => c.id)).toEqual(["1", "3", "4", "5", "6"]);
+    expect(forSignedOffer(list, null)).toHaveLength(6);
+    expect(isOngoing({ title: "Provide articles of incorporation" })).toBe(false);
   });
 
   it("puts Funded after Accepted", () => {
