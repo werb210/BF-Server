@@ -44,11 +44,11 @@ beforeEach(() => {
 });
 
 describe("Settings > Your documents (BF)", () => {
-  it("offers only the term sheet (and other) kinds", async () => {
+  it("offers the term sheet, invoice and other kinds", async () => {
     h.query.mockImplementation(answerBySql([[/FROM licensee_documents/, { rows: [] }], [/licensee_wizard_questions/, { rows: [] }]]));
     const r = await request(app).get("/api/licensee-documents").set("Authorization", token("Staff"));
     expect(r.status).toBe(200);
-    expect(r.body.kinds.map((k: any) => k.key)).toEqual(["term_sheet", "other"]);
+    expect(r.body.kinds.map((k: any) => k.key)).toEqual(["term_sheet", "invoice", "other"]);
   });
 
   it("refuses an application form, which BF does not use", async () => {

@@ -19,7 +19,7 @@ import { matchFields, type MatchedField } from "../licenseeDocs/match.js";
 import { fillDocument } from "../licenseeDocs/fill.js";
 import { DOC_KINDS, KIND_LABEL, addDocument, getDocument, listDocuments, listQuestions, saveFields, setActive, setFinancingType, updateQuestion, type DocKind } from "../licenseeDocs/repo.js";
 const brandName = (): string => "Boreal Financial";
-const BF_KINDS = new Set<string>(["term_sheet", "other"]);
+const BF_KINDS = new Set<string>(["term_sheet", "invoice", "other"]); // BF_SERVER_v952_INVOICE_TEMPLATES
 import { PRODUCT_CATEGORIES } from "../modules/applications/productCategoryChange.js";
 // BF_SERVER_v948_TERM_SHEET_BY_TYPE - "" / missing means the general template.
 const FINANCING_TYPES = new Set(PRODUCT_CATEGORIES.map((c) => c.value));
@@ -46,7 +46,7 @@ router.post("/", ...admin, upload.single("file"), safeHandler(async (req: Reques
   if (!DOC_KINDS.includes(kind)) return bad(res, "Choose what this document is.");
   // BF_SERVER_v938_OUR_TERM_SHEET - BF uses the brokerage's own term sheet; its own application form and client agreement
   // are not wired into BF's signing, so they are not accepted here (yet).
-  if (!BF_KINDS.has(kind)) return bad(res, "Upload a term sheet template here.");
+  if (!BF_KINDS.has(kind)) return bad(res, "Upload a term sheet or invoice template here.");
   const financing_type = kind === "term_sheet" ? financingTypeOf(req.body?.financing_type) : null;
   if (financing_type === undefined) return bad(res, "Choose a type of financing from the list.");
   if (!file?.buffer?.length) return bad(res, "Choose the file to upload.");
@@ -153,6 +153,47 @@ router.post("/offers/:offerId/term-sheet", ...staff, safeHandler(async (req: Req
     const status = Number(err?.status) || 500;
     if (status >= 500) console.warn("[licensee-docs] term sheet from template failed", { offerId, message: String(err?.message ?? err) });
     return bad(res, status >= 500 ? "The term sheet could not be made. Try again." : String(err.message), status, status === 404 ? "not_found" : "not_ready");
+  }
+}));
+
+// BF_SERVER_v952_INVOICE_TEMPLATES
+//   GET  /applications/:applicationId/invoices   the invoices already made for this file
+//   POST /applications/:applicationId/invoice    { amount, description, tax_percent?, due_days? } -> the invoice (PDF)
+router.get("/applications/:applicationId/invoices", ...staff, safeHandler(async (req: Request, res: Response) => {
+  const applicationId = String(req.params.applicationId);
+  const { canSeeApplication } = await import("../brokerTools/platform.js");
+  if (!UUID_RE.test(applicationId) || !(await canSeeApplication(req, applicationId))) return bad(res, "Application not found.", 404, "not_found");
+  const { listClientInvoices } = await import("../licenseeDocs/service.js");
+  const { activeDocument } = await import("../licenseeDocs/repo.js");
+  res.json({ ok: true, has_template: Boolean(await activeDocument(db(), "invoice")), invoices: await listClientInvoices(applicationId) });
+}));
+
+router.post("/applications/:applicationId/invoice", ...staff, safeHandler(async (req: Request, res: Response) => {
+  const applicationId = String(req.params.applicationId);
+  const { canSeeApplication } = await import("../brokerTools/platform.js");
+  if (!UUID_RE.test(applicationId) || !(await canSeeApplication(req, applicationId))) return bad(res, "Application not found.", 404, "not_found");
+  const b = req.body ?? {};
+  const num = (v: unknown): number => Number(String(v ?? "").replace(/[$,\s]/g, ""));
+  const amount = num(b.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100_000_000) return bad(res, "Enter the invoice amount.");
+  const description = String(b.description ?? "").trim().slice(0, 300);
+  if (!description) return bad(res, "Say what the invoice is for.");
+  const taxPercent = b.tax_percent === undefined || b.tax_percent === null || b.tax_percent === "" ? 0 : num(b.tax_percent);
+  if (!Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 30) return bad(res, "Tax must be between 0 and 30 percent.");
+  const dueDays = b.due_days === undefined || b.due_days === null || b.due_days === "" ? null : Math.round(num(b.due_days));
+  if (dueDays !== null && (!Number.isFinite(dueDays) || dueDays < 0 || dueDays > 365)) return bad(res, "Due in must be between 0 and 365 days.");
+  try {
+    const { licenseeInvoicePdf } = await import("../licenseeDocs/service.js");
+    const out = await licenseeInvoicePdf(applicationId, { amount, description, taxPercent, dueDays }, actor(req));
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${out.number}.pdf"`);
+    res.setHeader("X-Invoice-Number", out.number);
+    res.setHeader("Access-Control-Expose-Headers", "X-Invoice-Number, Content-Disposition");
+    res.end(Buffer.from(out.pdf));
+  } catch (err: any) {
+    const status = Number(err?.status) || 500;
+    if (status >= 500) console.warn("[licensee-docs] invoice not made", { applicationId, message: String(err?.message ?? err) });
+    return bad(res, status >= 500 ? "The invoice could not be made. Try again." : String(err.message), status, status === 409 ? "no_template" : "not_made");
   }
 }));
 

@@ -80,3 +80,33 @@ export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promis
   const pdf = await fillDocument({ name: doc.name, format: doc.format, file: doc.file, fields: doc.fields }, values, [], `${brandName()} - ${doc.name}`);
   return { pdf, applicationId: o.application_id, name: doc.name };
 }
+
+// BF_SERVER_v952_INVOICE_TEMPLATES - the brokerage's own invoice, filled for one file. The invoice gets the next number
+// and is recorded, so the same number is never used twice. Throws with a readable reason and an HTTP status.
+export type InvoiceInput = { amount: number; description: string; taxPercent: number; dueDays: number | null };
+export function invoiceTotals(i: { amount: number; taxPercent: number }): { amount: number; tax: number; total: number } {
+  const cents = Math.round(i.amount * 100);
+  const tax = Math.round((cents * i.taxPercent) / 100);
+  return { amount: cents / 100, tax: tax / 100, total: (cents + tax) / 100 };
+}
+export async function licenseeInvoicePdf(applicationId: string, input: InvoiceInput, actor: string | null, q: Q = db(), today: Date = new Date()): Promise<{ pdf: Uint8Array; number: string; name: string; total: number }> {
+  const doc = await activeDocument(q, "invoice");
+  if (!doc) throw Object.assign(new Error("Upload your invoice template in Settings first."), { status: 409 });
+  const { loadApplicationForPdf } = await import("../signnow/sendApplicationForSignature.js");
+  const inputs = await loadApplicationForPdf(applicationId);
+  const t = invoiceTotals(input);
+  const date = today.toISOString().slice(0, 10);
+  const due = input.dueDays === null ? null : new Date(today.getTime() + input.dueDays * 86_400_000).toISOString().slice(0, 10);
+  const seq = (await q.query(`SELECT nextval('client_invoice_number_seq')::text AS n`)).rows[0]?.n;
+  const number = `INV-${String(seq).padStart(5, "0")}`;
+  const values = valuesFor({ app: inputs, brokerName: brandName(), extras: await extrasOf(q, applicationId), today,
+    invoice: { number, date, due_date: due, description: input.description, ...t } });
+  const pdf = await fillDocument({ name: doc.name, format: doc.format, file: doc.file, fields: doc.fields }, values, [], `${brandName()} - ${doc.name} ${number}`);
+  await q.query(
+    `INSERT INTO client_invoices (application_id, number, description, amount, tax, total, due_date, created_by) VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::date,$8::uuid)`,
+    [applicationId, number, input.description, t.amount, t.tax, t.total, due, actor]);
+  return { pdf, number, name: doc.name, total: t.total };
+}
+export async function listClientInvoices(applicationId: string, q: Q = db()): Promise<Array<{ id: string; number: string; description: string; amount: string; tax: string; total: string; due_date: string | null; created_at: string }>> {
+  return (await q.query(`SELECT id::text AS id, number, description, amount::text AS amount, tax::text AS tax, total::text AS total, due_date::text AS due_date, created_at FROM client_invoices WHERE application_id::text = $1 ORDER BY created_at DESC`, [applicationId])).rows;
+}

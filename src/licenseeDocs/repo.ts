@@ -3,10 +3,10 @@ import type { Q } from "../brokerTools/common.js";
 import { questionKey, type MatchedField } from "./match.js";
 import type { DocFormat } from "./readFields.js";
 
-export const DOC_KINDS = ["application_form", "client_agreement", "term_sheet", "other"] as const;
+export const DOC_KINDS = ["application_form", "client_agreement", "term_sheet", "invoice", "other"] as const; // BF_SERVER_v952_INVOICE_TEMPLATES
 export type DocKind = (typeof DOC_KINDS)[number];
 export const KIND_LABEL: Record<DocKind, string> = {
-  application_form: "Application form", client_agreement: "Client / fee agreement", term_sheet: "Offer / term sheet", other: "Other document to sign",
+  application_form: "Application form", client_agreement: "Client / fee agreement", term_sheet: "Offer / term sheet", invoice: "Invoice", other: "Other document to sign",
 };
 
 export type DocRow = { id: string; kind: DocKind; name: string; file_name: string | null; format: DocFormat; fields: MatchedField[]; active: boolean; financing_type: string | null; created_at: string; updated_at: string };
