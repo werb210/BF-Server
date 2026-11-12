@@ -46,6 +46,15 @@ describe("readiness pre-fill answers only the signed-in client about their own n
     const readiness = sqls.find((s) => s.includes("from readiness_sessions"))!;
     expect(readiness).toContain("regexp_replace(coalesce(phone, ''), '\\D', '', 'g')"); // digits only, not the letter D
   });
+  it("phone=me answers the signed-in client about their own number, and nobody else (v947)", async () => {
+    const r = await request(app).get("/api/client/readiness-prefill?phone=me").set("Authorization", token("+17805550100"));
+    expect(r.body.found).toBe(true);
+    expect(r.body.prefill.business).toMatchObject({ businessName: "Boreal Financial" });
+    const anon = await request(app).get("/api/client/readiness-prefill?phone=me");
+    expect(anon.body).toEqual({ found: false });
+    const picked = sqls.find((s) => s.includes("FROM applications a") && s.includes("ORDER BY"))!;
+    expect(picked).toContain("<> '{}'::jsonb) DESC"); // the newest application that has business details, not a blank one
+  });
   it("falls back to the CRM contact when there is no application", async () => {
     mode = "contact";
     const r = await request(app).get("/api/client/readiness-prefill?phone=%2B17805550100").set("Authorization", token("+17805550100"));
