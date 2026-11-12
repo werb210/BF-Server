@@ -77,6 +77,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   try { events = JSON.parse(raw.toString("utf8")); } catch { res.status(200).json({ ok: true }); return; }
   // BF_SERVER_SENDGRID_WEBHOOK_VISIBILITY_v20
   let resolved = 0;
+  let suppressed = 0; // addresses added to (or seen again on) the suppression list in this call
   // BF_SERVER_SENDGRID_RESOLVE_v332 - retain a capped diagnostic sample for
   // events that cannot be associated with a contact.
   const unresolvedEmails = new Set<string>();
@@ -102,6 +103,22 @@ router.post("/", safeHandler(async (req: any, res: any) => {
           [email],
         );
         cid = r.rows[0]?.id ?? null;
+      }
+      // BF_SERVER_v945_EMAIL_SUPPRESSIONS - an unsubscribe, spam report or hard bounce is remembered by address, whether
+      // or not a contact matched, and every contact with that address is opted out (not only the one matched below).
+      if (email && isSuppressEvent(event, ev)) {
+        await pool.query(
+          `INSERT INTO email_suppressions (email, reason, source) VALUES ($1, $2, 'sendgrid')
+           ON CONFLICT (email) DO UPDATE SET last_seen_at = now(), events = email_suppressions.events + 1`,
+          [email, event],
+        );
+        await pool.query(
+          `UPDATE contacts SET marketing_opt_out = true, updated_at = now()
+            WHERE marketing_opt_out = false AND coalesce(silo, 'BF') <> 'KS' -- Keystone prospects are a separate sender (KS-Ops)
+              AND (lower(trim(coalesce(email, ''))) = $1 OR lower(trim(coalesce(secondary_email, ''))) = $1)`,
+          [email],
+        );
+        suppressed += 1;
       }
       if (!cid) {
         if (email) unresolvedEmails.add(email);
@@ -171,6 +188,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     events: Array.isArray(events) ? events.length : 0,
     contactsResolved: resolved,
     contactsUnresolved: unresolvedEmails.size,
+    suppressed,
     unresolvedSample: Array.from(unresolvedEmails).slice(0, 5).join(",") || "none",
     types: Array.from(seenTypes).join(",") || "none",
   });
