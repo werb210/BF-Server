@@ -10,6 +10,11 @@ import { upsertResult } from "./store.js";
 
 export type DocRow = { id: string; application_id: string; category: string | null; storage_key: string | null; blob_name: string | null; storage_path: string | null };
 
+// BF_SERVER_v953_SCAN_IDENTITY_PHOTOS - forms we generate ourselves (uploaded_by = 'system') are never scanned,
+// but the ID pictures and selfie from identity verification are stored the same way and DO come from the client.
+// One SQL condition, used by the worker, the engine and the overview, says which files are scanned ("d" = documents).
+export const SCANNED_DOCUMENT_SQL = `(COALESCE(d.uploaded_by, '') <> 'system' OR d.document_type IN ('id_verification_document', 'id_verification_selfie'))`;
+
 export type LoadFile = (doc: DocRow) => Promise<Buffer | null>;
 
 export type ImageInfo = {

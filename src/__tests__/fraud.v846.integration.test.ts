@@ -179,6 +179,32 @@ describe("BF v846 fraud suite (real Postgres)", () => {
     expect((await pool.query(`SELECT done_at < requested_at AS due FROM fraud_queue WHERE application_id = $1`, [C])).rows[0].due).toBe(true);
   });
 
+  // BF_SERVER_v953_SCAN_IDENTITY_PHOTOS
+  it("scans the ID picture and selfie from identity verification, but not the forms we generate", async () => {
+    const idPhoto = randomUUID(), selfie = randomUUID(), form = randomUUID();
+    docs[idPhoto] = makeJpeg(800, 500, 80, 5); docs[selfie] = makeJpeg(600, 600, 80, 6); docs[form] = await textPdf();
+    for (const [id, type] of [[idPhoto, "id_verification_document"], [selfie, "id_verification_selfie"], [form, "signed_application"]] as const) {
+      await pool.query(
+        `INSERT INTO documents (id, application_id, created_at, category, filename, uploaded_by, document_type) VALUES ($1, $2, now(), $3, $4, 'system', $5)`,
+        [id, C, type === "signed_application" ? "Signed application" : "Identity verification", `${type}-${tag}`, type],
+      );
+    }
+    await queueNewWork(db);
+    await processQueue(db, { loadFile, providers }, 50);
+    const rows = (await listResults(db, C)).filter((x) => x.check_key === "fraud_1");
+    expect(rows.find((x) => x.subject === idPhoto)?.status).toBe("green");
+    expect(rows.find((x) => x.subject === selfie)?.status).toBe("green");
+    expect(rows.find((x) => x.subject === form)).toBeUndefined();
+    expect((await pool.query(`SELECT id_kind FROM document_fingerprints WHERE document_id = $1`, [idPhoto])).rows[0].id_kind).toBe("id");
+    const res = await request(app()).get(`/api/fraud/applications/${C}`).set("Authorization", `Bearer ${token("Admin")}`);
+    const byId = (id: string) => (res.body.documents ?? []).find((d: any) => d.document_id === id);
+    expect(res.status).toBe(200);
+    {
+      expect(byId(idPhoto).generated).toBe(false);
+      expect(byId(form).generated).toBe(true);
+    }
+  });
+
   it("shares confirmed fraud with the Keystone watchlist as hashes and withdraws it when restored", async () => {
     await saveFraudSettings(db, { watchlist_opt_in: true }, ADMIN);
     const env = { KS_WATCHLIST_PEPPER: "network-pepper-0123456789", KS_OPS_URL: "https://ops.example", KS_LICENSEE_ID: randomUUID(), KS_OPS_KEY: "k" } as any;

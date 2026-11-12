@@ -6,7 +6,7 @@ import type { Q } from "./types.js";
 import { buildProfile, type AppProfile } from "./profile.js";
 import { fraudProviders, type FraudProviders } from "./providers/index.js";
 import { allowedChecks, listResults, previousResult, upsertResult } from "./store.js";
-import { scanDocument, defaultLoadFile, type DocRow, type LoadFile } from "./documents.js";
+import { scanDocument, defaultLoadFile, SCANNED_DOCUMENT_SQL, type DocRow, type LoadFile } from "./documents.js";
 import { hamming, NEAR_DUPLICATE_BITS } from "./imageHash.js";
 import { evaluateDuplicates, type DuplicateHit } from "./checks/duplicates.js";
 import { evaluateRevenue, type RevenueClaim } from "./checks/revenue.js";
@@ -208,7 +208,7 @@ export async function runFraudChecks(db: Q, applicationId: string, deps: EngineD
       `SELECT d.id::text AS id, d.application_id::text AS application_id, COALESCE(d.category, d.document_type, d.signed_category) AS category,
               d.storage_key, d.blob_name, d.storage_path
          FROM documents d LEFT JOIN document_fingerprints f ON f.document_id = d.id::text
-        WHERE d.application_id::text = $1 AND f.document_id IS NULL AND COALESCE(d.uploaded_by, '') <> 'system'
+        WHERE d.application_id::text = $1 AND f.document_id IS NULL AND ${SCANNED_DOCUMENT_SQL}
         ORDER BY d.created_at ASC LIMIT 40`,
       [applicationId],
     );
