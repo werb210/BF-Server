@@ -1876,22 +1876,9 @@ router.post('/:id/lenders/:lenderId/files', lenderTermSheetUpload.single('file')
     stage = 'Offer';
   }
 
-  try {
-    const phoneRes = await pool.query<{ phone: string | null }>(
-      `SELECT c.phone AS phone FROM applications a LEFT JOIN contacts c ON c.id::text = a.contact_id::text WHERE a.id::text = ($1)::text LIMIT 1`,
-      [appId],
-    );
-    const phone = phoneRes.rows[0]?.phone ?? null;
-    if (phone) {
-      const portalBase = process.env.CLIENT_PORTAL_URL || 'https://client.boreal.financial';
-      const { notifyClient } = await import('../../services/notifications/notifyClient.js'); // BF_SERVER_BLOCK_v552
-      await notifyClient({ phone, applicationId: appId, kind: 'term_sheet', categoryId: 'OFFER_READY',
-        sms: `Your term sheet from ${lenderName} is ready to review: ${portalBase}/application/${appId}`,
-        title: 'Your offer is ready', body: `${lenderName} sent a term sheet for you to review.` });
-    }
-  } catch (err) {
-    console.warn('[lender-term-sheet] SMS notification failed', { appId, err: String(err) });
-  }
+  // BF_SERVER_v950_NO_NOTICE_ON_UPLOAD - no "Your offer is ready" notice when a term sheet is added. The client is told
+  // when staff press "Send to the client for signature" (routes/offers.ts). Before this, the client was notified about
+  // a term sheet they could not see yet (not sent, or expired).
 
   // BF_SERVER_BLOCK_v552 - the push now goes out through notifyClient above (app first, else SMS).
   return res.status(201).json({ ok: true, offer_id: offerId, lender_id: resolvedLenderId, blob_name: put.blobName, stage });
