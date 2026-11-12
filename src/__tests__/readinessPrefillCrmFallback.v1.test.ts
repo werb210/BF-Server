@@ -45,7 +45,7 @@ describe("readiness-prefill CRM fallback", () => {
     expect(r.body.found).toBe(true);
     const fallback = callsMatching(query, APP_SQL);
     expect(fallback).toHaveLength(1);
-    expect(fallback[0][0]).toContain("ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC");
+    expect(fallback[0][0]).toContain("a.updated_at DESC NULLS LAST, a.created_at DESC");
   });
 
   it("only runs the fallback on the phone path, keyed on last-10-digit match", async () => {

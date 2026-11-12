@@ -822,8 +822,14 @@ export function safePrefillFields(obj: unknown): Record<string, unknown> | null 
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {
-    const phone = typeof req.query.phone === "string" ? req.query.phone.trim() : null;
+    let phone = typeof req.query.phone === "string" ? req.query.phone.trim() : null;
     const token = typeof req.query.token === "string" ? req.query.token.trim() : null;
+    // BF_SERVER_v947_PREFILL_SIGNED_IN - phone=me is the signed-in client asking for their own details (the app no
+    // longer has the number to hand once the sign-in code step is behind it).
+    if (!token && phone === "me") {
+      phone = signedInPhone10(req);
+      if (!phone) { res.status(200).json({ found: false }); return; }
+    }
 
     if (!phone && !token) {
       res.status(400).json({ error: "phone_or_token_required" });
@@ -899,7 +905,9 @@ router.get(
                 = right(regexp_replace($1, '\\D', '', 'g'), 10)
             AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
             AND a.silo = 'BF'
-          ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC
+          -- BF_SERVER_v947_PREFILL_SIGNED_IN - the newest application is often the blank one just started; take the
+          -- newest one that actually has business details.
+          ORDER BY (COALESCE(a.metadata->'business', '{}'::jsonb) <> '{}'::jsonb) DESC, a.updated_at DESC NULLS LAST, a.created_at DESC
           LIMIT 1`,
         [phone]
       );
@@ -960,9 +968,26 @@ router.get(
       return;
     }
 
+    // BF_SERVER_v947_PREFILL_SIGNED_IN - a client who once did the readiness check got only those answers back, and
+    // never the business and owner details from their last application. Add them (phone path only: own number).
+    let lastApp: { business: unknown; applicant: unknown } | undefined;
+    if (!token && phone) {
+      const prior = await dbQuery(
+        `SELECT a.metadata->'business' AS business, a.metadata->'applicant' AS applicant
+           FROM applications a JOIN contacts c ON c.id = a.contact_id
+          WHERE right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)
+            AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
+            AND a.silo = 'BF' AND COALESCE(a.metadata->'business', '{}'::jsonb) <> '{}'::jsonb
+          ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC LIMIT 1`,
+        [phone]
+      );
+      lastApp = prior.rows[0] as { business: unknown; applicant: unknown } | undefined;
+    }
+
     res.status(200).json({
       found: true,
       prefill: {
+        ...(lastApp ? { business: safePrefillFields(lastApp.business), applicant: withoutPlaceholderNames(safePrefillFields(lastApp.applicant)) } : {}),
         // Identity
         companyName: row.company_name ?? null,
         fullName: realName(row.full_name), // BF_SERVER_v851_APPLICANT_NAME
