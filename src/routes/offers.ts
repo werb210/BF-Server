@@ -67,7 +67,8 @@ router.get(
       ? {
           text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
                         o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
-                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet
+                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet,
+                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where o.application_id = $1
@@ -78,7 +79,8 @@ router.get(
       : {
           text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
                         o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
-                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet
+                        o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet,
+                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where ($1::text is null or a.silo is null or a.silo = $1::text)
@@ -397,8 +399,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
   // Review fix: a staff user limited to one silo cannot send another silo's offer (same rule as confirm-acceptance).
   const { getSilo } = await import("../middleware/silo.js");
   const callerSilo = getSilo(res) ?? null;
-  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null; mode: string | null; lender_blob: string | null; ours_made?: boolean }>(
-    `select o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender,
+  const o = await runQuery<{ application_id: string | null; blob: string | null; filename: string | null; lender: string | null; mode: string | null; lender_blob: string | null; ours_made?: boolean; has_amount: boolean; expired: boolean }>(
+    `select (o.amount is not null and o.amount > 0) as has_amount, (o.expiry_date is not null and o.expiry_date::date < current_date) as expired,
+            o.application_id::text as application_id, o.term_sheet_blob_name as blob, o.term_sheet_filename as filename, o.lender_name as lender,
             o.term_sheet_mode as mode, o.lender_term_sheet_blob_name as lender_blob, (o.our_term_sheet_at is not null) as ours_made
        from offers o
        join applications a on a.id::text = o.application_id::text
@@ -406,6 +409,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
       limit 1`, [offerId, callerSilo]);
   const offer = o.rows[0];
   if (!offer) return res.status(404).json({ error: "not_found" });
+  // BF_SERVER_v947_SENDABLE_OFFERS (Todd, Nov 12 2026) - an expired term sheet, or one with no amount, is never sent.
+  if (!offer.has_amount) return res.status(409).json({ error: "offer_incomplete", message: "This term sheet has no amount. Fill in its terms before sending it for signature." });
+  if (offer.expired) return res.status(409).json({ error: "offer_expired", message: "This term sheet has expired. Change its expiry date, or add the lender's new term sheet, before sending it." });
   if (!offer.blob) return res.status(409).json({ error: "no_term_sheet", message: "Upload the lender's term sheet first." });
   // OFFER_PRICING_v1 - when we buy the deal the client signs OUR term sheet and never sees the lender's name.
   if (offer.mode === "ours" || offer.mode === "template") {

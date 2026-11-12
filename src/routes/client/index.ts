@@ -672,6 +672,12 @@ router.get(
          FROM offers o
          LEFT JOIN applications a ON a.id::text = o.application_id::text
         WHERE o.application_id::text = ($1)::text
+          -- BF_SERVER_v947_SENDABLE_OFFERS - the client never sees an archived, expired or empty term sheet,
+          -- unless it is the one already accepted or out for signature.
+          AND COALESCE(o.is_archived, false) = false
+          AND (o.status IN ('accepted', 'pending_acceptance')
+               OR a.metadata->'offer_signnow'->>'offer_id' = o.id::text
+               OR ((o.expiry_date IS NULL OR o.expiry_date::date >= current_date) AND o.amount IS NOT NULL AND o.amount > 0))
         ORDER BY o.updated_at DESC`,
       [applicationId]
     );

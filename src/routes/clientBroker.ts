@@ -8,7 +8,7 @@ import multer from "multer";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { callerOwnsApplication } from "../auth/clientApplicationOwnership.js";
 import { db, str } from "../brokerTools/common.js";
-import { clientView, getCondition, listConditions } from "../brokerTools/conditions.js";
+import { clientView, getCondition, listConditions, signedOfferId } from "../brokerTools/conditions.js";
 import { storeConditionDocument } from "./brokerTools.js";
 
 const router = Router();
@@ -26,12 +26,14 @@ router.get("/conditions", safeHandler(async (req: Request, res: Response) => {
   const applicationId = String(req.query.applicationId ?? "").trim();
   if (!(await owned(req, res, applicationId))) return;
   res.setHeader("Cache-Control", "no-store");
-  res.json({ ok: true, conditions: clientView(await listConditions(db(), applicationId)) });
+  res.json({ ok: true, conditions: clientView(await listConditions(db(), applicationId), await signedOfferId(db(), applicationId)) });
 }));
 
 async function clientCondition(applicationId: string, id: string) {
-  const c = await getCondition(db(), applicationId, id);
-  return c && c.owner === "client" && c.status !== "cleared" && c.status !== "waived" ? c : null;
+  // BF_SERVER_v947_CONDITIONS_PER_SHEET - only what the client can see in their list can be acted on.
+  const visible = clientView(await listConditions(db(), applicationId), await signedOfferId(db(), applicationId));
+  if (!visible.some((v) => v.id === id)) return null;
+  return getCondition(db(), applicationId, id);
 }
 
 router.post("/conditions/:id/upload", upload.single("file"), safeHandler(async (req: Request, res: Response) => {

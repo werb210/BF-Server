@@ -88,8 +88,19 @@ describe("PATCH /api/offers/:id/pricing", () => {
 });
 
 describe("our term sheet hides the lender", () => {
+  it("will not send an expired term sheet or one with no amount (v947)", async () => {
+    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "lender", lender_blob: null, has_amount: false, expired: false }] }]]));
+    const blank = await request(await buildApp()).post(`/api/offers/${OFFER}/send-for-signature`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({});
+    expect(blank.status).toBe(409);
+    expect(blank.body.error).toBe("offer_incomplete");
+    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "lender", lender_blob: null, has_amount: true, expired: true }] }]]));
+    const old = await request(await buildApp()).post(`/api/offers/${OFFER}/send-for-signature`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({});
+    expect(old.status).toBe(409);
+    expect(old.body.error).toBe("offer_expired");
+  });
+
   it("will not send the lender's own term sheet when we bought the deal", async () => {
-    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "ours", lender_blob: null }] }]]));
+    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "ours", lender_blob: null, has_amount: true, expired: false }] }]]));
     const res = await request(await buildApp()).post(`/api/offers/${OFFER}/send-for-signature`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({});
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("no_our_term_sheet");
@@ -101,7 +112,7 @@ describe("template mode (v943)", () => {
     queryMock.mockImplementation(answerBySql([[/update offers set/i, { rows: [{ id: OFFER, amount: "100000", rate_factor: "6%", term: "36", term_sheet_mode: "template", client_rate: null }] }]]));
     const ok = await request(await buildApp()).patch(`/api/offers/${OFFER}/pricing`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({ term_sheet_mode: "template" });
     expect(ok.status).toBe(200);
-    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "template", lender_blob: null }] }]]));
+    queryMock.mockImplementation(answerBySql([[/from offers o\s+join applications a/i, { rows: [{ application_id: "A1", blob: "b1", filename: "x.pdf", lender: "Big Bank", mode: "template", lender_blob: null, has_amount: true, expired: false }] }]]));
     const send = await request(await buildApp()).post(`/api/offers/${OFFER}/send-for-signature`).set("Authorization", `Bearer ${sign(STAFF_ID, "Staff")}`).send({});
     expect(send.body.error).toBe("no_our_term_sheet");
   });

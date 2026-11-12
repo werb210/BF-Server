@@ -27,6 +27,7 @@ export type Condition = {
   due_date: string | null;
   status: ConditionStatus;
   source: string;
+  offer_id: string | null;
   requires_document: boolean;
   document_id: string | null;
   document_url: string | null;
@@ -58,6 +59,7 @@ export function rowToCondition(r: Record<string, any>, today = new Date()): Cond
     due_date: due,
     status,
     source: String(r.source ?? "manual"),
+    offer_id: r.offer_id ? String(r.offer_id) : null,
     requires_document: r.requires_document === true,
     document_id: r.document_id ? String(r.document_id) : null,
     document_url: r.document_url ?? null,
@@ -218,17 +220,54 @@ export class FundingBlockedError extends Error {
  */
 export async function checkFundingGate(q: Q, applicationId: string, opts: { isAdmin: boolean; overrideReason?: string | null }):
   Promise<{ outstanding: number; overridden: boolean }> {
-  const open = outstanding(await listConditions(q, applicationId));
+  const open = outstanding(forSignedOffer(await listConditions(q, applicationId), await signedOfferId(q, applicationId)));
   if (open.length === 0) return { outstanding: 0, overridden: false };
   const reason = String(opts.overrideReason ?? "").trim();
   if (opts.isAdmin && reason.length >= 3) return { outstanding: open.length, overridden: true };
   throw new FundingBlockedError(open);
 }
 
-/** What the client sees: their own open conditions (no staff notes). */
-export function clientView(list: Condition[]) {
-  return list
-    .filter((c) => c.owner === "client" && !DONE.includes(c.status))
+// BF_SERVER_v947_CONDITIONS_PER_SHEET (Todd, Nov 12 2026). Each condition read from a term sheet belongs to that term
+// sheet (offer_id). Once the client has signed one, only that sheet's conditions (and the ones added by hand or from
+// templates, which have no offer_id) count - for the client's list, the staff checklist's count and the Funded gate.
+
+/** The offer the client signed: the accepted one, else the one whose SignNow copy came back signed. Null until then. */
+export async function signedOfferId(q: Q, applicationId: string): Promise<string | null> {
+  const r = await q.query(
+    `SELECT o.id::text AS id
+       FROM offers o
+       LEFT JOIN applications a ON a.id::text = o.application_id::text
+      WHERE o.application_id::text = $1 AND COALESCE(o.is_archived, false) = false
+        AND (o.status = 'accepted'
+          OR (a.metadata->'offer_signnow'->>'offer_id' = o.id::text AND EXISTS (
+                SELECT 1 FROM documents d JOIN document_versions v ON v.document_id = d.id
+                 WHERE d.application_id::text = o.application_id::text AND d.document_type = 'signed_term_sheet'
+                   AND d.uploaded_by = 'system' AND v.metadata->>'docId' = a.metadata->'offer_signnow'->>'doc_id')))
+      ORDER BY (o.status = 'accepted') DESC, o.updated_at DESC NULLS LAST LIMIT 1`,
+    [applicationId],
+  );
+  return r.rows[0]?.id ? String(r.rows[0].id) : null;
+}
+
+/** The conditions that count on this file: all of them until a sheet is signed, then the signed sheet's and the unlinked ones. */
+export function forSignedOffer(list: Condition[], signed: string | null): Condition[] {
+  return signed ? list.filter((c) => !c.offer_id || c.offer_id === signed) : list;
+}
+
+const ONGOING = /\b(weekly|monthly|quarterly|annual(ly)?|regular(ly)?|ongoing|at all times|from time to time|until repayment|during the term)\b|\bmaintain\b|\bcovenant|\bno material adverse change\b|\bstatus reports?\b/i;
+/** An obligation that runs after funding (reporting, keeping insurance in force, ratios): never a to-do before funding. */
+export function isOngoing(c: { title: string; description?: string | null }): boolean {
+  return ONGOING.test(c.title) || ONGOING.test(String(c.description ?? "").slice(0, 200));
+}
+
+/**
+ * What the client sees: nothing until they have signed a term sheet; then the open conditions they own on that sheet
+ * (and unlinked ones), without ongoing obligations and without staff notes.
+ */
+export function clientView(list: Condition[], signed: string | null) {
+  if (!signed) return [];
+  return forSignedOffer(list, signed)
+    .filter((c) => c.owner === "client" && !DONE.includes(c.status) && !isOngoing(c))
     .map((c) => ({ id: c.id, title: c.title, description: c.description, due_date: c.due_date, status: c.status,
       requires_document: c.requires_document, submitted: Boolean(c.client_submitted_at) }));
 }

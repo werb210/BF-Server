@@ -29,6 +29,7 @@ import { canSeeApplication, gate } from "../brokerTools/platform.js";
 import {
   OWNERS, STATUSES, addCondition, applyTemplates, getCondition, importFromOffer, listConditions, outstanding, parseConditionInput,
   type ConditionInput,
+  forSignedOffer, signedOfferId,
 } from "../brokerTools/conditions.js";
 import {
   PROVINCES, PROVINCE_NAMES, applicationProvince, combinedRate, currentRates, deleteRate, listRates, normaliseProvince, parseRateInput,
@@ -59,9 +60,11 @@ function appGuard(req: Request, res: Response, next: NextFunction): void {
 const conditions = [...staff, gate("funding_conditions")];
 
 async function conditionsPayload(applicationId: string) {
-  const list = await listConditions(db(), applicationId);
+  // BF_SERVER_v947_CONDITIONS_PER_SHEET - once a term sheet is signed, the other sheets' conditions drop off the list.
+  const signed = await signedOfferId(db(), applicationId);
+  const list = forSignedOffer(await listConditions(db(), applicationId), signed);
   const open = outstanding(list);
-  return { ok: true, conditions: list, outstanding_count: open.length, can_fund: open.length === 0, owners: OWNERS, statuses: STATUSES };
+  return { ok: true, signed_offer_id: signed, conditions: list, outstanding_count: open.length, can_fund: open.length === 0, owners: OWNERS, statuses: STATUSES };
 }
 
 router.get("/applications/:id/conditions", ...conditions, appGuard, safeHandler(async (req: Request, res: Response) => {
@@ -143,7 +146,9 @@ router.post("/applications/:id/conditions/confirm", ...conditions, appGuard, saf
   const list = Array.isArray(body.conditions) ? body.conditions.slice(0, 40) : [];
   const offerId = str(body.offer_id, 64);
   const offerOk = offerId ? (await db().query(`SELECT 1 FROM offers WHERE id::text = $1 AND application_id::text = $2`, [offerId, app.id])).rows.length > 0 : false;
-  const existing = new Set((await listConditions(db(), app.id)).map((c) => c.title.toLowerCase()));
+  // BF_SERVER_v947_CONDITIONS_PER_SHEET - a title is a repeat only on the same term sheet; two sheets may share one.
+  const sheet = offerOk ? offerId : null;
+  const existing = new Set((await listConditions(db(), app.id)).filter((c) => c.offer_id === sheet).map((c) => c.title.toLowerCase()));
   let added = 0;
   const skipped: string[] = [];
   for (const raw of list) {
