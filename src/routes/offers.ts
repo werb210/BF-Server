@@ -72,6 +72,7 @@ router.get(
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where o.application_id = $1
+                   and coalesce(o.is_archived, false) = false
                    and ($2::text is null or a.silo is null or a.silo = $2::text)
                  order by o.updated_at desc`,
           values: [applicationId, callerSilo],
@@ -84,6 +85,7 @@ router.get(
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where ($1::text is null or a.silo is null or a.silo = $1::text)
+                   and coalesce(o.is_archived, false) = false
                  order by o.updated_at desc
                  limit 100`,
           values: [callerSilo],
@@ -447,6 +449,30 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
     }
   } catch (err) { console.warn("[offer] sign notice failed", { offerId, message: String(err) }); }
   return res.json({ ok: true, sent: true });
+}));
+
+// BF_SERVER_v947_REMOVE_TERM_SHEET - staff take a term sheet off a file (uploaded by mistake, a test, replaced).
+// It is archived, not erased, so the record of what was on the file stays; its conditions that nobody has acted on
+// go with it. A signed (accepted) term sheet cannot be removed.
+router.delete("/:id", requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] }), safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  const { getSilo } = await import("../middleware/silo.js");
+  const callerSilo = getSilo(res) ?? null;
+  const o = await runQuery<{ application_id: string; status: string | null }>(
+    `select o.application_id::text as application_id, o.status
+       from offers o
+       join applications a on a.id::text = o.application_id::text
+      where o.id::text = $1 and coalesce(o.is_archived, false) = false and ($2::text is null or a.silo is null or a.silo = $2::text)
+      limit 1`, [offerId, callerSilo]);
+  const offer = o.rows[0];
+  if (!offer) return res.status(404).json({ error: "not_found" });
+  if (offer.status === "accepted") return res.status(409).json({ error: "offer_signed", message: "The client has signed this term sheet, so it cannot be removed." });
+  await runQuery(`update offers set is_archived = true, archived_at = now(), updated_at = now() where id::text = $1`, [offerId]);
+  const gone = await runQuery(
+    `delete from funding_conditions where application_id = $1 and offer_id = $2 and status = 'open' and document_id is null and client_submitted_at is null`,
+    [offer.application_id, offerId]);
+  console.log("[offer] term sheet removed", { offerId, applicationId: offer.application_id, conditionsRemoved: gone.rowCount ?? 0, by: req.user?.userId ?? req.user?.id ?? null });
+  return res.json({ ok: true, removed: true, conditions_removed: gone.rowCount ?? 0 });
 }));
 
 // BF_SERVER_TERM_SHEET_STREAM_v1 - why a term sheet will not render. Reports whether the
