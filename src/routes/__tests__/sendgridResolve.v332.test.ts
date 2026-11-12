@@ -105,3 +105,44 @@ describe("an unresolved event is visible", () => {
     expect(callsMatching(queryMock, TIMELINE)).toHaveLength(0);
   });
 });
+
+// BF_SERVER_v945_EMAIL_SUPPRESSIONS
+describe("an unsubscribe is remembered by address", () => {
+  const SUPPRESS = /INSERT INTO email_suppressions/;
+  const OPT_OUT_ALL = /UPDATE contacts SET marketing_opt_out = true[\s\S]*secondary_email/;
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    process.env.SENDGRID_WEBHOOK_PUBLIC_KEY = PUBLIC_KEY;
+    queryMock.mockReset();
+    queryMock.mockImplementation(answerBySql([[LOOKUP, (_sql: string, p?: unknown[]) => ({ rows: CONTACTS[String(p?.[0])] ? [{ id: CONTACTS[String(p?.[0])] }] : [] })]]));
+    log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+  afterEach(() => log.mockRestore());
+
+  it("records the address even when no contact matches, so a later import cannot email it", async () => {
+    const res = await post([{ email: "Stranger@nowhere.test", event: "unsubscribe", sg_event_id: "u1" }]);
+    expect(res.status).toBe(200);
+    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["stranger@nowhere.test", "unsubscribe"]);
+    expect(callsMatching(queryMock, OPT_OUT_ALL)[0]![1]).toEqual(["stranger@nowhere.test"]);
+    expect(callsMatching(queryMock, TIMELINE)).toHaveLength(0);
+    expect(log.mock.calls.at(-1)![1]).toMatchObject({ contactsUnresolved: 1, suppressed: 1 });
+  });
+
+  it("opts out every contact with the address, leaving Keystone prospects to their own list", async () => {
+    await post([{ email: "ann@acme.test", event: "spamreport", sg_event_id: "s1" }]);
+    const sql = String(callsMatching(queryMock, OPT_OUT_ALL)[0]![0]);
+    expect(sql).not.toMatch(/LIMIT 1/);
+    expect(sql).toMatch(/coalesce\(silo, 'BF'\) <> 'KS'/);
+  });
+
+  it("does not suppress on an open, a click or a soft bounce", async () => {
+    await post([{ email: "ann@acme.test", event: "open" }, { email: "ann@acme.test", event: "click", url: "https://x.test" }, { email: "ann@acme.test", event: "bounce", type: "blocked" }]);
+    expect(callsMatching(queryMock, SUPPRESS)).toHaveLength(0);
+  });
+
+  it("does suppress on a hard bounce", async () => {
+    await post([{ email: "gone@acme.test", event: "bounce", type: "bounce" }]);
+    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["gone@acme.test", "bounce"]);
+  });
+});
+
