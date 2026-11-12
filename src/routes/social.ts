@@ -9,6 +9,7 @@
 //   POST   /posts                       Admin / Marketing: { body, link_url?, image_url?, account_ids, scheduled_at? }
 //                                        no scheduled_at -> published now and the results returned
 //   DELETE /posts/:id                   cancel a scheduled post
+//   GET    /link-preview?url=           Admin / Marketing: the linked page's { title, description, image_url, site }
 //   POST   /media                       Admin / Marketing: multipart "file" (image) -> { url } to use as image_url
 import { Router } from "express";
 import multer from "multer";
@@ -116,6 +117,18 @@ router.post("/posts", canPost, needCrypto, safeHandler(async (req: any, res: any
     return res.status(201).json({ ok: true, post: await publishPost(pool as any, post.id) });
   } catch (err: any) {
     if (err?.status === 400) return res.status(400).json({ ok: false, error: "validation_error", message: err.message });
+    throw err;
+  }
+}));
+
+// BF_SERVER_v951_SOCIAL_LINK_PREVIEW - the linked article's picture and headline, so a post about an article does not
+// need a picture uploaded by hand. Admin / Marketing only; the address is fetched through the private-address guard.
+router.get("/link-preview", canPost, safeHandler(async (req: any, res: any) => {
+  const { fetchLinkPreview, LinkPreviewError } = await import("../social/linkPreview.js");
+  try {
+    res.json({ ok: true, preview: await fetchLinkPreview(String(req.query.url ?? "")) });
+  } catch (err) {
+    if (err instanceof LinkPreviewError) return res.status(err.status).json({ ok: false, error: "no_preview", message: err.message });
     throw err;
   }
 }));
