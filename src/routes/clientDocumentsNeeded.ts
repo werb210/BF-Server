@@ -315,6 +315,7 @@ async function computeOutstandingDocsRaw(
       .filter((r: UploadedDocRow) => r.category && r.status !== "rejected")
       .map((r: UploadedDocRow) => r.category as string)
   );
+  for (const c of await idVerificationCovers(applicationId)) satisfied.add(c); // BF_SERVER_v954_ID_ASKED_ONCE
   const rejectedRows = uploaded.filter(
     (r: UploadedDocRow) => r.status === "rejected" && r.category
   );
@@ -494,7 +495,26 @@ export async function getSatisfiedDocTypes(applicationId: string): Promise<strin
        AND (d.status IS NULL OR d.status <> 'rejected')`,
     [applicationId]
   ).catch((swallowedErr: unknown) => logWarnSwallowed(swallowedErr, "routes/clientDocumentsNeeded.ts:439", ({ rows: [] as Array<{ category: string | null }> })));
-  return res.rows.map((r) => String(r.category ?? "").trim()).filter(Boolean);
+  const types = res.rows.map((r) => String(r.category ?? "").trim()).filter(Boolean);
+  return [...types, ...(await idVerificationCovers(applicationId))]; // BF_SERVER_v954_ID_ASKED_ONCE
+}
+
+// BF_SERVER_v954_ID_ASKED_ONCE - an identity check (ID pictures + selfie) IS the client's government ID. While one is
+// open, in review or approved, the required-items list must not also ask for "Government ID": the client was being
+// asked for the same thing twice. A declined, cancelled or expired check covers nothing.
+export const ID_VERIFICATION_COVERS = "Government ID";
+export async function idVerificationCovers(applicationId: string, q: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> } = pool as never): Promise<string[]> {
+  try {
+    const r = await q.query(
+      `SELECT 1 FROM kyc_verifications WHERE application_id = ($1)::text
+          AND status IN ('requested', 'in_progress', 'processing', 'review', 'approved') LIMIT 1`,
+      [applicationId],
+    );
+    return r.rows.length ? [ID_VERIFICATION_COVERS] : [];
+  } catch (err) {
+    logWarnSwallowed(err, "routes/clientDocumentsNeeded.ts:idVerificationCovers", null);
+    return [];
+  }
 }
 
 // BF_SERVER_DOC_WAIVERS_v1 - per-application admin waivers. A waived requirement is removed
