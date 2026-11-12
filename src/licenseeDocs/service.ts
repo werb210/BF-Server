@@ -54,13 +54,17 @@ export async function licenseeAgreementPdf(applicationId: string, signer: { role
 /** The licensee's term sheet, filled with an offer. No signature tags: it becomes the offer's term sheet, and Send for
  *  signature adds the client's signature box as it does for a lender's term sheet. Throws with a readable reason. */
 export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promise<{ pdf: Uint8Array; applicationId: string; name: string }> {
-  const doc = await activeDocument(q, "term_sheet");
-  if (!doc) throw Object.assign(new Error("Upload your term sheet template in Settings > Your documents first."), { status: 409 });
   const r = await q.query(
     `SELECT application_id::text AS application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date,
             client_rate, term_months, broker_fee, setup_fee, proceeds_fee, lender_commission, term_sheet_mode FROM offers WHERE id::text = $1 LIMIT 1`, [offerId]);
   const o = r.rows[0];
   if (!o?.application_id) throw Object.assign(new Error("Offer not found."), { status: 404 });
+  // BF_SERVER_v948_TERM_SHEET_BY_TYPE - the template for this file's type of financing, else the general one.
+  const { toBucketId, productCategoryLabel } = await import("../modules/applications/productCategoryChange.js");
+  const cat = (await q.query(`SELECT product_category FROM applications WHERE id::text = $1 LIMIT 1`, [o.application_id])).rows[0]?.product_category ?? null;
+  const type = toBucketId(cat);
+  const doc = await activeDocument(q, "term_sheet", type);
+  if (!doc) throw Object.assign(new Error(`Upload a term sheet template${type ? ` for ${productCategoryLabel(type)}, or a general one,` : ""} in Settings > Term sheet templates first.`), { status: 409 });
   const { loadApplicationForPdf } = await import("../signnow/sendApplicationForSignature.js");
   const inputs = await loadApplicationForPdf(o.application_id);
   // OFFER_PRICING_v1 - our term sheet means we buy the deal: no lender name, the client's rate (not the lender's) and our fees.
