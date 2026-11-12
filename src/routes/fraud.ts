@@ -24,6 +24,7 @@ import { sameSiloNetwork } from "../fraud/network.js";
 import { fraudProviders, providerStatus } from "../fraud/providers/index.js";
 import { watchlistReady } from "../fraud/watchlist.js";
 import { postToOps } from "../fraud/opsLink.js";
+import { SCANNED_DOCUMENT_SQL } from "../fraud/documents.js"; // BF_SERVER_v953_SCAN_IDENTITY_PHOTOS
 
 export const FRAUD_COMPANY_NAME = "Boreal Financial";
 
@@ -55,8 +56,8 @@ router.get("/applications/:id", ...staff, safeHandler(async (req: any, res) => {
   const rows = await listResults(db(), app.id);
   const docs = await db().query(
     `SELECT id::text AS id, COALESCE(display_name, filename, title) AS filename, COALESCE(category, document_type) AS category,
-            (COALESCE(uploaded_by, '') = 'system') AS generated
-       FROM documents WHERE application_id::text = $1 ORDER BY created_at ASC`,
+            (NOT ${SCANNED_DOCUMENT_SQL}) AS generated
+       FROM documents d WHERE application_id::text = $1 ORDER BY created_at ASC`,
     [app.id],
   );
   const checks = FRAUD_CHECKS.map((c) => {

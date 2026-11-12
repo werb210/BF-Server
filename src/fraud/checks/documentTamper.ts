@@ -16,7 +16,7 @@ export const IMAGE_EDITORS = ["photoshop", "gimp", "canva", "pixelmator", "affin
 export function classifyKindPlus(category: string | null | undefined, base: (c: string | null | undefined) => DocKind): DocKindPlus {
   const c = String(category ?? "").toLowerCase();
   if (/void|cheque|check\b|pad\b|direct deposit/.test(c)) return "void_cheque";
-  if (/\bid\b|identification|driver|licen[cs]e|passport|photo_id|government/.test(c)) return "id";
+  if (/\bid\b|identification|identity|id_verification|driver|licen[cs]e|passport|photo_id|government/.test(c)) return "id";
   // Category keys use underscores (t2_tax_return); the base classifier's word boundaries need spaces.
   return base(c.replace(/[_-]+/g, " "));
 }
