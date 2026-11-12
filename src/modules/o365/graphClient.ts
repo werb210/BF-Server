@@ -141,6 +141,19 @@ const GRAPH_MAX_CONCURRENT_PER_USER = 4;
 const GRAPH_MAX_RETRIES = 2;
 const GRAPH_MAX_RETRY_WAIT_MS = 20_000;
 
+// BF_SERVER_v949_GRAPH_BREAKER - when Microsoft's mail service is slow or returning gateway errors, reads must fail
+// fast. Before this, every inbox poll waited out three slow attempts behind a four-at-a-time queue; the browser's six
+// connections to this server filled with those waiting polls, and every other screen in the portal stopped loading.
+const GRAPH_READ_TIMEOUT_MS = 12_000;
+const GRAPH_BREAKER_MS = 45_000;
+const graphDownUntil = new Map<string, number>();
+const unavailable = (why: "timeout" | "breaker"): Response => new Response(
+  JSON.stringify({ error: { code: "ServiceUnavailable", message: "Microsoft's mail service is not responding." } }),
+  { status: 504, headers: { "Content-Type": "application/json", "x-bf-graph": why } },
+);
+export function graphBreakerOpen(userId: string, now: number = Date.now()): boolean { return (graphDownUntil.get(userId) ?? 0) > now; }
+export function resetGraphBreaker(): void { graphDownUntil.clear(); }
+
 type MailboxGate = { active: number; queue: Array<() => void> };
 const mailboxGates = new Map<string, MailboxGate>();
 
@@ -240,16 +253,29 @@ export async function getGraphForUser(
   const graphFetch = async (
     path: string,
     init: RequestInit = {},
-  ): Promise<Response> => withMailboxSlot(userId, async () => {
-    const doFetch = (token: string) =>
-      fetch(`https://graph.microsoft.com/v1.0${path}`, {
-        ...init,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-          ...(init.headers as Record<string, string> | undefined),
-        },
-      });
+  ): Promise<Response> => {
+   const isRead = String(init.method ?? "GET").toUpperCase() === "GET";
+   if (isRead && graphBreakerOpen(userId)) return unavailable("breaker");
+   return withMailboxSlot(userId, async () => {
+    // Reads that were already waiting in the queue when the breaker opened give up too.
+    if (isRead && graphBreakerOpen(userId)) return unavailable("breaker");
+    const doFetch = async (token: string): Promise<Response> => {
+      try {
+        return await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+          ...init,
+          ...(isRead && !init.signal ? { signal: AbortSignal.timeout(GRAPH_READ_TIMEOUT_MS) } : {}),
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            ...(init.headers as Record<string, string> | undefined),
+          },
+        });
+      } catch (err) {
+        const name = (err as { name?: string } | null)?.name;
+        if (isRead && !init.signal && (name === "TimeoutError" || name === "AbortError")) return unavailable("timeout");
+        throw err;
+      }
+    };
 
     let resp = await doFetch(currentToken);
     if (resp.status === 401 && refreshToken) {
@@ -263,7 +289,7 @@ export async function getGraphForUser(
     // To Do sync and bookings each failed once on a 502). Retry those too, but only for reads (GET): a POST such
     // as sendMail may already have gone through behind a gateway error, and repeating it could send twice.
     const isGet = String(init.method ?? "GET").toUpperCase() === "GET";
-    const transientGatewayRead = (s: number) => isGet && (s === 502 || s === 504);
+    const transientGatewayRead = (s: number) => isGet && (s === 502 || s === 504) && resp.headers.get("x-bf-graph") !== "timeout";
     for (
       let attempt = 0;
       attempt < GRAPH_MAX_RETRIES
@@ -291,8 +317,15 @@ export async function getGraphForUser(
       const detail = parseMicrosoftError(await resp.clone().text().catch(() => ""));
       recordO365Failure(userId, { stage: "graph", status: resp.status, ...detail });
     }
+    if (isRead) {
+      if (resp.status === 502 || resp.status === 504) {
+        if (!graphBreakerOpen(userId)) console.warn(JSON.stringify({ event: "graph_breaker_open", userId, path: path.split("?")[0], status: resp.status, forMs: GRAPH_BREAKER_MS }));
+        graphDownUntil.set(userId, Date.now() + GRAPH_BREAKER_MS);
+      } else if (resp.status < 500) graphDownUntil.delete(userId);
+    }
     return resp;
-  });
+   });
+  };
 
   return {
     get accessToken() {

@@ -248,6 +248,8 @@ router.get("/", safeHandler(async (req: any, res: any) => {
   } catch (err: any) {
     if (err?.graphStatus === undefined) throw err;
     const status = Number(err.graphStatus);
+    // BF_SERVER_v949_GRAPH_BREAKER - a gateway error is Microsoft being down, not a permission problem with the mailbox.
+    if (status >= 500) return res.status(502).json({ error: "graph_unavailable", reason: "Microsoft's mail service is not responding right now. Nothing is wrong with your account; mail will come back on its own.", mailbox: mailbox || null });
     // BF_SERVER_SHARED_MAILBOX_DIAGNOSTIC_v291 - for shared mailboxes, say which account and permissions
     // the token really has, and log it once per 10 minutes instead of on every 20s poll.
     if (mailbox) {
