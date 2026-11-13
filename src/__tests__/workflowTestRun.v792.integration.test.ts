@@ -14,7 +14,7 @@ import automations from "../routes/automations.js";
 const tag = "v792" + Math.floor(Math.random() * 1e6);
 const contactId = randomUUID();
 const rules: string[] = [];
-const settings = { reenroll: "always", quietHours: { enabled: true, start: "09:00", end: "09:01", tz: "America/Edmonton" }, unenrollOnGoal: true, testMode: false };
+const settings = { reenroll: "always", quietHours: { enabled: true, start: "09:00", end: "09:00", tz: "America/Edmonton" } /* an empty window: quiet at every minute of the day, so the result never depends on when CI runs */, unenrollOnGoal: true, testMode: false };
 
 async function makeRule(name: string, graph: unknown, goal: unknown = null): Promise<string> {
   const r = await pool.query(

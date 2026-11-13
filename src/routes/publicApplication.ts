@@ -54,6 +54,18 @@ export function deriveStartRequestedAmount(fp: any): number | null {
   return Number.isNaN(amount) ? null : amount;
 }
 
+// BF_SERVER_v956_REUSE_BLANK_DRAFT - $1 contact id, $2 silo.
+export const REUSABLE_BLANK_DRAFT_SQL = `
+  SELECT id FROM applications
+   WHERE contact_id::text = ($1)::text
+     AND COALESCE(silo, 'BF') = COALESCE($2, 'BF')
+     AND submitted_at IS NULL
+     AND COALESCE(source, 'client_direct') = 'client_direct'
+     AND parent_application_id IS NULL
+     AND created_at > now() - interval '30 days'
+   ORDER BY created_at DESC
+   LIMIT 1`;
+
 /**
  * POST /api/public/application/start
  * Converts a readiness session into an application. Public by design — the sessionId
@@ -355,6 +367,18 @@ router.post(
           }
         } catch (e) {
           console.warn("[start] journey stitch failed", String(e).slice(0, 200));
+        }
+      }
+
+      // BF_SERVER_v956_REUSE_BLANK_DRAFT - every sign-in without a sent application used to mint another blank
+      // application (three in three minutes for one client). The client's newest blank, unsent draft from the last
+      // 30 days is handed back instead. Only drafts this route made itself: never an import or a readiness draft.
+      if (startContactId) {
+        const blank = await dbQuery<{ id: string }>(REUSABLE_BLANK_DRAFT_SQL, [startContactId, silo])
+          .catch((e) => { console.warn("[start] blank draft lookup failed", String(e).slice(0, 200)); return { rows: [] as Array<{ id: string }> }; });
+        if (blank.rows[0]?.id) {
+          setPhase("done");
+          res.status(200).json(ok({ applicationId: blank.rows[0].id, reused: true, reusedBlankDraft: true })); return;
         }
       }
 
