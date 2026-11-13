@@ -37,7 +37,9 @@ async function defaultAskAi(prompt: string): Promise<string> {
 export async function matchFields(fields: DocField[], ask: AskAi | null = process.env.OPENAI_API_KEY ? defaultAskAi : null): Promise<MatchedField[]> {
   const out: MatchedField[] = fields.map((f) => {
     if (f.type === "signature") return { ...f, mapped_to: null, matched_by: null };
-    const key = matchByWords(f.label, f.name);
+    // A merge field named exactly as a catalogue key ({{offer.proceeds_fee}}) is that key: the words are not guessed at
+    // ("Offer proceeds fee" would otherwise match the broker fee).
+    const key = DATA_FIELD_KEYS.has(f.name) ? f.name : matchByWords(f.label, f.name);
     return { ...f, mapped_to: key, matched_by: key ? "words" : null };
   });
   const open = out.filter((f) => !f.mapped_to && f.type !== "signature");
