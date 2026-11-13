@@ -68,7 +68,8 @@ router.get(
           text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
                         o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
                         o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet,
-                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount
+                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount,
+                        a.metadata->'offer_sent'->>(o.id::text) as sent_for_signature_at
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where o.application_id = $1
@@ -81,7 +82,8 @@ router.get(
           text: `select o.id, o.application_id, o.lender_name, o.amount::text as amount, o.rate_factor, o.term, o.payment_frequency, o.expiry_date, o.document_url, o.recommended, o.status, o.created_at, o.updated_at,
                         o.term_sheet_mode, o.client_rate::text as client_rate, o.term_months, o.broker_fee::text as broker_fee, o.setup_fee::text as setup_fee,
                         o.proceeds_fee::text as proceeds_fee, o.lender_commission::text as lender_commission, (o.lender_term_sheet_blob_name is not null) as has_lender_term_sheet,
-                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount
+                        (o.expiry_date is not null and o.expiry_date::date < current_date) as expired, (o.amount is not null and o.amount > 0) as has_amount,
+                        a.metadata->'offer_sent'->>(o.id::text) as sent_for_signature_at
                  from offers o
                  join applications a on a.id::text = o.application_id::text
                  where ($1::text is null or a.silo is null or a.silo = $1::text)
@@ -103,6 +105,16 @@ router.get(
 /** The status a newly created offer is saved with: one the offers table's status check accepts. It was 'created',
  *  which the table refuses, so saving our own term sheet (no lender file) always failed. */
 export const NEW_OFFER_STATUS = "pending";
+
+/** OFFER_SENT_MARK - records the send time per offer on the application (metadata.offer_sent[offerId]). Never fatal. */
+export const OFFER_SENT_SQL = `update applications
+      set metadata = jsonb_set(coalesce(metadata, '{}'::jsonb), '{offer_sent}', coalesce(metadata->'offer_sent', '{}'::jsonb) || jsonb_build_object($2::text, now()::text))
+    where id::text = $1`;
+export async function markOfferSent(applicationId: string | null, offerId: string): Promise<void> {
+  if (!applicationId) return;
+  try { await runQuery(OFFER_SENT_SQL, [applicationId, offerId]); }
+  catch (err) { console.warn("[offer] sent mark failed", { offerId, message: String(err) }); }
+}
 
 router.post(
   "/",
@@ -452,6 +464,9 @@ router.post("/:id/send-for-signature", requireAuth, requireAuthorization({ roles
         body: offer.lender ? `Review and sign the term sheet from ${offer.lender}.` : "Review and sign your term sheet." });
     }
   } catch (err) { console.warn("[offer] sign notice failed", { offerId, message: String(err) }); }
+  // OFFER_SENT_MARK - remember when each term sheet went to the client, so the Offer tab can say "Sent" after a reload
+  // (the offer's status only changes once the client accepts).
+  await markOfferSent(offer.application_id, offerId);
   return res.json({ ok: true, sent: true });
 }));
 
