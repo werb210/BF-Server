@@ -248,11 +248,11 @@ async function loadAdditionalSignedDocs(ctx: LoadCtx): Promise<{ filename: strin
       console.warn("[loadPackageInputs] supplemental signed doc download failed", id, e instanceof Error ? e.message : String(e));
     }
   }
-  return files; // root-level; placed alongside signed-application.pdf by the package builder
+  return files; // root-level; placed alongside application-signed.pdf by the package builder
 }
 
 // BF_SERVER_BLOCK_v_FORM_PDFS_v1 — render client-completed CMP forms to PDF and
-// attach to the lender package (root, alongside signed-application.pdf).
+// attach to the lender package (root, alongside application-signed.pdf).
 const FORM_PDF_SPECS: Array<{ docType: string; title: string; file: string }> = [
   { docType: "personal_net_worth", title: "Personal Net Worth Statement", file: "personal-net-worth.pdf" },
   { docType: "net_worth_statement", title: "Personal Net Worth Statement", file: "personal-net-worth.pdf" },
