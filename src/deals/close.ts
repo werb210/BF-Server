@@ -103,8 +103,8 @@ export async function suggestClose(q: Q, applicationId: string): Promise<CloseIn
   }
   return {
     offer_id: offer?.id ?? null, closed_on: new Date().toISOString().slice(0, 10), currency: "CAD", funded_amount: funded,
-    rate: offer ? (offer.term_sheet_mode === "ours" && offer.client_rate ? String(offer.client_rate) : offer.rate_factor ?? null) : null,
-    term_months: num(offer?.term_months) ?? null, payment_frequency: offer?.payment_frequency ?? null,
+    rate: offer ? tidyRate(offer.term_sheet_mode === "ours" && offer.client_rate ? String(offer.client_rate) : offer.rate_factor ?? null) : null,
+    term_months: num(offer?.term_months) ?? monthsFromTerm(offer?.term), payment_frequency: offer?.payment_frequency ?? null,
     lender_id: app.lender_id ?? null, lender_name: offer?.term_sheet_mode === "ours" ? offer?.lender_name ?? null : offer?.lender_name ?? null,
     lender_product_id: app.lender_product_id ?? null, broker_user_id: app.owner_user_id ?? null, lead_source: "company",
     clawback_days: terms.clawback_days ?? null, residual_percent: kind === "profit_share" ? terms.share_percent ?? null : null,
@@ -185,4 +185,19 @@ export async function addResidual(q: Q, closeId: string, month: string, amount: 
     `INSERT INTO deal_revenue_lines (close_id, application_id, kind, description, basis, percent, expected_amount, month, received_amount, received_on, status)
      VALUES ($1::uuid, $2, 'residual', $3, 'flat', $4, $5, $6::date, $7, $8::date, $9) RETURNING ${LINE_COLS}`,
     [closeId, c.application_id, `Profit share for ${month.slice(0, 7)}`, c.residual_percent, amount, month, receivedOn ? amount : null, receivedOn, receivedOn ? "received" : "expected"])).rows[0];
+}
+
+/** CLOSE_PREFILL - "9.5000" reads as "9.5"; anything that is not a plain number is left as written. */
+export function tidyRate(v: string | null | undefined): string | null {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const t = String(v).trim();
+  return /^\d+\.\d+$/.test(t) ? t.replace(/\.?0+$/, "") : t;
+}
+/** CLOSE_PREFILL - the months in a term written as text ("60 months", "5 years", "36"); null when it cannot be read. */
+export function monthsFromTerm(term: string | null | undefined): number | null {
+  const t = String(term ?? "").trim().toLowerCase();
+  const m = /^(\d+(?:\.\d+)?)\s*(months?|mos?|m|years?|yrs?|y)?$/.exec(t);
+  if (!m) return null;
+  const n = Number(m[1]) * (m[2] && m[2].startsWith("y") ? 12 : 1);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
