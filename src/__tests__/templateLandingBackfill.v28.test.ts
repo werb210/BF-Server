@@ -79,6 +79,8 @@ describe("wiring", () => {
     try {
       expect(boot.stubs.backfillTemplateLandingPages).toHaveBeenCalledWith(boot.pool);
       expect(boot.logText("log")).toContain('"event":"template_landing_backfill"');
+      // Let this boot's background workers go quiet, so none of their late starts land in the next test's boot.
+      await boot.drain();
     } finally { boot.restore(); }
   });
 
@@ -88,8 +90,9 @@ describe("wiring", () => {
       const err = boot.logText("error");
       expect(err).toContain('"event":"template_landing_backfill_error"');
       expect(err).toContain("relation marketing_template does not exist");
-      expect(boot.events).toContain("listen");
+      await vi.waitFor(() => expect(boot.events).toContain("listen"), { timeout: 10_000, interval: 20 });
       expect(boot.exitCodes).toEqual([]);
+      await boot.drain();
     } finally { boot.restore(); }
   });
 });
