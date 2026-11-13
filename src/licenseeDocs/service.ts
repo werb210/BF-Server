@@ -51,8 +51,12 @@ export async function licenseeAgreementPdf(applicationId: string, signer: { role
   }
 }
 
-/** The licensee's term sheet, filled with an offer. No signature tags: it becomes the offer's term sheet, and Send for
- *  signature adds the client's signature box as it does for a lender's term sheet. Throws with a readable reason. */
+/** TERM_SHEET_SIGN_BLOCK - the role the client signs a term sheet as (the same one Send for signature invites). */
+export const TERM_SHEET_SIGNER_ROLE = "Client";
+/** The licensee's term sheet, filled with an offer. A Word template gets a visible place for the client to sign and
+ *  date (on the template's own "Signature: ____" line when it has one, otherwise after the text); a fillable PDF keeps
+ *  its own layout and Send for signature adds the signature box as it does for a lender's term sheet. Throws with a
+ *  readable reason. */
 export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promise<{ pdf: Uint8Array; applicationId: string; name: string }> {
   const r = await q.query(
     `SELECT application_id::text AS application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date,
@@ -77,7 +81,8 @@ export async function licenseeTermSheetPdf(offerId: string, q: Q = db()): Promis
     setup_fee: o.setup_fee, proceeds_fee: o.proceeds_fee, funds_to_client: rev.funds_to_client, total_repaid: rev.client_total_repaid };
   const fee = o.broker_fee === null || o.broker_fee === undefined ? null : { amount: o.broker_fee };
   const values = valuesFor({ app: inputs, brokerName: brandName(), extras: await extrasOf(q, o.application_id), offer, fee });
-  const pdf = await fillDocument({ name: doc.name, format: doc.format, file: doc.file, fields: doc.fields }, values, [], `${brandName()} - ${doc.name}`);
+  const signers = doc.format === "docx_fields" ? [{ role: TERM_SHEET_SIGNER_ROLE, name: String(values["owner1.full_name"] ?? "").trim() || "Borrower", email: "" }] : [];
+  const pdf = await fillDocument({ name: doc.name, format: doc.format, file: doc.file, fields: doc.fields }, values, signers, `${brandName()} - ${doc.name}`, { inlineSignatures: true });
   return { pdf, applicationId: o.application_id, name: doc.name };
 }
 
