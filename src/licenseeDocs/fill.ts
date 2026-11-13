@@ -47,7 +47,7 @@ async function appendSignaturePage(pdf: Uint8Array, signers: SignerRole[]): Prom
 }
 
 /** The filled document as a PDF ready for SignNow. */
-export async function fillDocument(doc: FillableDoc, values: Record<string, string>, signers: SignerRole[], footer: string): Promise<Uint8Array> {
+export async function fillDocument(doc: FillableDoc, values: Record<string, string>, signers: SignerRole[], footer: string, opts: { inlineSignatures?: boolean } = {}): Promise<Uint8Array> {
   const byName = fieldValues(doc.fields, values);
   if (doc.format === "pdf_form") {
     const map: FieldMap = {};
@@ -66,7 +66,7 @@ export async function fillDocument(doc: FillableDoc, values: Record<string, stri
   }
   if (doc.format === "docx_fields") {
     const merged = mergeDocx(doc.file, byName).docx;
-    return renderContractPdf(docxBlocks(merged), { title: doc.name, signers: signers.map((s) => ({ name: s.name || s.role, email: s.email, role: s.role })), footer });
+    return renderContractPdf(docxBlocks(merged), { title: doc.name, signers: signers.map((s) => ({ name: s.name || s.role, email: s.email, role: s.role })), footer, inlineSignatures: opts.inlineSignatures });
   }
   throw new Error("This document has no fill-in fields.");
 }

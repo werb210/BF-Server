@@ -178,12 +178,32 @@ function wrap(text: string, font: PDFFont, size: number, width: number): string[
   return lines;
 }
 
-/** A readable PDF of the filled document, then a signature page with one SignNow signature and date tag per signer
- *  (role "Signer 1", "Signer 2"...; tags are drawn in white so only SignNow sees them). */
-export async function renderContractPdf(blocks: Block[], opts: { title: string; signers: Signer[]; footer: string }): Promise<Uint8Array> {
+/** Marks a PDF that already carries its SignNow signature tags, so nothing stamps a second box on it. */
+export const SIGN_TAGS_KEYWORD = "signnow-tags";
+export async function hasSigningTags(pdf: Uint8Array): Promise<boolean> {
+  try { return String((await PDFDocument.load(pdf)).getKeywords() ?? "").includes(SIGN_TAGS_KEYWORD); } catch { return false; }
+}
+
+/** TERM_SHEET_SIGN_BLOCK - a line of the document that is a place to sign, e.g. "Signature: ________   Date: ______".
+ *  `date` says whether the same line also has a place for the date. */
+export function signatureLine(text: string): { date: boolean } | null {
+  if (!/\b(signature|signed(\s+by)?|sign\s+here)\b[^_]{0,24}_{4,}/i.test(text)) return null;
+  return { date: /\bdated?\b[^_]{0,12}_{4,}/i.test(text) };
+}
+/** A line that is only a place for the date, e.g. "Date: ________". */
+export function dateLine(text: string): boolean {
+  return /^\s*dated?\b[^_]{0,12}_{4,}\s*$/i.test(text);
+}
+
+/** A readable PDF of the filled document with one SignNow signature and date tag per signer (tags are drawn in white
+ *  so only SignNow sees them). By default the signatures go on a page of their own at the end. With
+ *  `inlineSignatures` (term sheets) the first signer signs on the document's own signature line when it has one;
+ *  otherwise the signature block follows the text, on the same page when there is room. */
+export async function renderContractPdf(blocks: Block[], opts: { title: string; signers: Signer[]; footer: string; inlineSignatures?: boolean }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const F = await doc.embedFont(StandardFonts.Helvetica), B = await doc.embedFont(StandardFonts.HelveticaBold);
   doc.setTitle(pdfSafe(opts.title));
+  if (opts.signers.length) doc.setKeywords([SIGN_TAGS_KEYWORD]);
   let page: PDFPage = doc.addPage([PW, PH]);
   let y = PH - M;
   const newPage = () => { page = doc.addPage([PW, PH]); y = PH - M; };
@@ -195,26 +215,53 @@ export async function renderContractPdf(blocks: Block[], opts: { title: string; 
     }
     y -= gapAfter;
   };
+  const ink = rgb(0.3, 0.3, 0.3), white = rgb(1, 1, 1);
+  /** One signer's place to sign: a signature line and a date line, labelled, with the tags SignNow reads. */
+  const signBlock = (s: Signer, withDate = true) => {
+    if (y < M + 90) newPage();
+    y -= 34;
+    page.drawText(`{{t:s;r:y;o:"${s.role}";w:200;h:30;}}`, { x: M + 2, y: y + 6, size: 6, font: F, color: white });
+    page.drawLine({ start: { x: M, y: y + 2 }, end: { x: M + 240, y: y + 2 }, thickness: 0.7, color: ink });
+    if (withDate) {
+      page.drawText(`{{t:t;r:y;o:"${s.role}";l:"Date";w:110;h:16;}}`, { x: M + 300, y: y + 6, size: 6, font: F, color: white });
+      page.drawLine({ start: { x: M + 300, y: y + 2 }, end: { x: M + 420, y: y + 2 }, thickness: 0.7, color: ink });
+      page.drawText("Date", { x: M + 300, y: y - 9, size: 8, font: F, color: ink });
+    }
+    page.drawText("Signature", { x: M, y: y - 9, size: 8, font: F, color: ink });
+    y -= 24;
+  };
+  /** A place for the date on a line of its own. */
+  const dateBlock = (s: Signer) => {
+    if (y < M + 70) newPage();
+    y -= 26;
+    page.drawText(`{{t:t;r:y;o:"${s.role}";l:"Date";w:110;h:16;}}`, { x: M + 2, y: y + 6, size: 6, font: F, color: white });
+    page.drawLine({ start: { x: M, y: y + 2 }, end: { x: M + 120, y: y + 2 }, thickness: 0.7, color: ink });
+    page.drawText("Date", { x: M, y: y - 9, size: 8, font: F, color: ink });
+    y -= 24;
+  };
+  const inline = Boolean(opts.inlineSignatures) && opts.signers.length > 0;
+  let signedInline = false, datedInline = false;
   for (const b of blocks) {
     if (b.kind === "pagebreak") { newPage(); continue; }
     if (!b.text.trim()) { y -= 8; continue; }
+    if (inline && b.kind !== "heading") {
+      const sig = signedInline ? null : signatureLine(b.text);
+      if (sig) { signBlock(opts.signers[0]!, true); signedInline = true; datedInline = true; continue; }
+      if (signedInline && dateLine(b.text)) { if (!datedInline) { dateBlock(opts.signers[0]!); datedInline = true; } continue; }
+    }
     if (b.kind === "heading") { y -= 4; draw(b.text, B, 13, 0, 6); }
     else if (b.kind === "bullet") draw(`-  ${b.text}`, F, 10.5, 10);
     else if (b.kind === "row") draw(b.text, F, 10, 0, 2);
     else draw(b.text, F, 10.5);
   }
-  if (opts.signers.length) {
-    newPage();
-    draw("Signatures", B, 14, 0, 12);
-    for (const s of opts.signers) {
+  const left = inline && signedInline ? opts.signers.slice(1) : opts.signers;
+  if (left.length) {
+    if (inline) { if (y < M + 150) newPage(); else y -= 10; } else newPage();
+    draw(inline && left.length === 1 ? "Signature" : "Signatures", B, inline ? 13 : 14, 0, inline ? 2 : 12);
+    for (const s of left) {
       if (y < M + 120) newPage();
-      draw(`${s.name} (${s.email})`, B, 11, 0, 30);
-      page.drawText(`{{t:s;r:y;o:"${s.role}";w:200;h:30;}}`, { x: M + 2, y: y + 6, size: 6, font: F, color: rgb(1, 1, 1) });
-      page.drawLine({ start: { x: M, y: y + 2 }, end: { x: M + 240, y: y + 2 }, thickness: 0.7, color: rgb(0.3, 0.3, 0.3) });
-      page.drawText(`{{t:t;r:y;o:"${s.role}";l:"Date";w:110;h:16;}}`, { x: M + 300, y: y + 6, size: 6, font: F, color: rgb(1, 1, 1) });
-      page.drawLine({ start: { x: M + 300, y: y + 2 }, end: { x: M + 420, y: y + 2 }, thickness: 0.7, color: rgb(0.3, 0.3, 0.3) });
-      y -= 12;
-      draw("Signature                                                                                    Date", F, 8, 0, 24);
+      draw(s.email ? `${s.name} (${s.email})` : s.name, B, 11, 0, 0);
+      signBlock(s);
     }
   }
   const pages = doc.getPages();

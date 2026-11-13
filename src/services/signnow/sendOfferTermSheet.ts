@@ -96,7 +96,9 @@ export async function sendOfferTermSheet(params: { pool: Pool; offerId: string }
   const blob = await getStorage().get(offer.term_sheet_blob_name);
   if (!blob || !blob.buffer || blob.buffer.length === 0) return { url: null, reason: "term_sheet_download_failed" };
 
-  const stamped = await stampSignatureField(blob.buffer);
+  // TERM_SHEET_SIGN_BLOCK - a term sheet made from the brokerage's Word template already has its place to sign.
+  const { hasSigningTags } = await import("../../brokerTools/docx.js");
+  const stamped = (await hasSigningTags(blob.buffer)) ? new Uint8Array(blob.buffer) : await stampSignatureField(blob.buffer);
   const lender = (offer.lender_name || "Lender").replace(/[^\w .-]/g, "").slice(0, 40);
   const { documentId } = await uploadDocumentWithFieldExtract(stamped, `term-sheet-${lender}-${offer.id}.pdf`);
   const { groupId } = await createDocumentGroup([documentId], `Term Sheet ${lender} ${offer.id}`);

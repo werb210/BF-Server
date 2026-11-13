@@ -21,7 +21,7 @@ export type BuildPackageInput = {
   documents: CategoryGroup[];
   // BF_SERVER_BLOCK_v_ACCORD_PACKAGE_ROOT_v1 — supplemental SIGNED forms (the
   // Accord credit application today) attached at the package ROOT, exactly like
-  // signed-application.pdf, instead of nested in a category subfolder.
+  // application-signed.pdf, instead of nested in a category subfolder.
   additionalSignedDocs?: DocumentInPackage[];
 };
 
@@ -96,8 +96,8 @@ export async function buildApplicationPackage(input: BuildPackageInput): Promise
   const entries: string[] = [];
 
   if (input.signedApplicationPdf) {
-    archive.append(input.signedApplicationPdf, { name: "signed-application.pdf" });
-    entries.push("signed-application.pdf");
+    archive.append(input.signedApplicationPdf, { name: "application-signed.pdf" });
+    entries.push("application-signed.pdf");
   }
   // BF_SERVER_BLOCK_v_ACCORD_PACKAGE_ROOT_v1 — root-level supplemental signed forms.
   for (const d of input.additionalSignedDocs ?? []) {
