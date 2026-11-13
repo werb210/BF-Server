@@ -61,6 +61,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/retention.v855.integration.test.ts", // BF_SERVER_v855_RETENTION - needs Postgres
   "src/__tests__/fraudAutoHold.v944.integration.test.ts", // BF_SERVER_v944_FRAUD_AUTO_HOLD - needs Postgres
   "src/__tests__/idAskedOnce.v954.integration.test.ts", // BF_SERVER_v954_ID_ASKED_ONCE - needs Postgres
+  "src/__tests__/requestedDocAfterDrop.v955.integration.test.ts", // BF_SERVER_v955_REQUESTED_AFTER_DROP - needs Postgres
   "src/__tests__/emailSuppressions.v945.integration.test.ts", // BF_SERVER_v945_EMAIL_SUPPRESSIONS - needs Postgres
   "src/__tests__/activeContracts.v864.integration.test.ts", // BF_SERVER_v864_ACTIVE_CONTRACTS - needs Postgres
   "src/__tests__/aiChatFlow.v784.integration.test.ts", // BF_SERVER_v784_CHAT_SCHEMA - needs Postgres

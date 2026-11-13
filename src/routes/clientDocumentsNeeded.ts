@@ -419,7 +419,10 @@ async function computeOutstandingDocsRaw(
       const key = docKey(row.document_type);
       if (!key || have.has(key)) continue;
       have.add(key);
-      appendRequiredDocAll({ category: row.document_type, required: true, forceRequired: true }, seen, required); // BF_SERVER_LEASE_OPTIONAL_v752
+      // BF_SERVER_v955_REQUESTED_AFTER_DROP - a fresh "seen" set: `have` above already dedupes against what is in
+      // the list. The shared one still remembers documents a rule REMOVED (bank statements on media and SBA files),
+      // so a document staff asked for by hand was silently skipped - the request was stored and texted, then vanished.
+      appendRequiredDocAll({ category: row.document_type, required: true, forceRequired: true }, new Set<string>(), required); // BF_SERVER_LEASE_OPTIONAL_v752
     }
   } catch (err: any) {
     console.error("requested_docs_read_failed", { applicationId, message: err?.message });
