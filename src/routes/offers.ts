@@ -100,6 +100,10 @@ router.get(
   })
 );
 
+/** The status a newly created offer is saved with: one the offers table's status check accepts. It was 'created',
+ *  which the table refuses, so saving our own term sheet (no lender file) always failed. */
+export const NEW_OFFER_STATUS = "pending";
+
 router.post(
   "/",
   requireAuth,
@@ -181,7 +185,7 @@ router.post(
 
     const result = await runQuery(
       `insert into offers (id, application_id, lender_name, amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created',$11,now(),now())
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'${NEW_OFFER_STATUS}',$11,now(),now())
        returning id, application_id, lender_name, amount::text as amount, rate_factor, term, payment_frequency, expiry_date, document_url, recommended, status, notes, created_at, updated_at`,
       [
         randomUUID(),
