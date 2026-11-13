@@ -42,7 +42,7 @@ describe("buildApplicationPackage", () => {
     expect(out.manifest.applicationId).toBe("app-1");
 
     const entries = listZipEntries(out.zipBuffer);
-    expect(entries).toContain("signed-application.pdf");
+    expect(entries).toContain("application-signed.pdf");
     expect(entries).toContain("credit-summary.pdf");
     expect(entries).toContain("application-fields.json");
     expect(entries).toContain("application-fields.pdf");
