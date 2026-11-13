@@ -4,7 +4,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { pool } from "../db.js";
-import { NEW_OFFER_STATUS } from "../routes/offers.js";
+import { NEW_OFFER_STATUS, OFFER_SENT_SQL } from "../routes/offers.js";
 
 const appId = randomUUID();
 const offerIds: string[] = [];
@@ -29,5 +29,13 @@ describe("creating an offer", () => {
     );
     const bad = randomUUID();
     await expect(pool.query(`insert into offers (id, application_id, lender_name, status) values ($1,$2,'x','created')`, [bad, appId])).rejects.toThrow(/offers_status_check/);
+  });
+  it("remembers when each term sheet was sent, one entry per offer", async () => {
+    const [a, b] = [offerIds[0], randomUUID()];
+    await pool.query(OFFER_SENT_SQL, [appId, a]);
+    await pool.query(OFFER_SENT_SQL, [appId, b]);
+    const r = await pool.query(`select metadata->'offer_sent' as sent, metadata->'offer_sent'->>($2::text) as one from applications where id::text = $1`, [appId, a]);
+    expect(Object.keys(r.rows[0].sent).sort()).toEqual([a, b].sort());
+    expect(Number.isNaN(Date.parse(r.rows[0].one))).toBe(false);
   });
 });
