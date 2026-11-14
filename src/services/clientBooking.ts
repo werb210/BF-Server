@@ -116,9 +116,15 @@ export async function busyTimes(emails: string[], from: Date, to: Date): Promise
   for (const s of json.value ?? []) out.set(s.scheduleId.toLowerCase(), (s.scheduleItems ?? []).filter((i) => i.status !== "free").map((i) => ({ start: new Date(i.start.dateTime + "Z"), end: new Date(i.end.dateTime + "Z") })));
   return out;
 }
-export async function openSlots(now: Date, staffId: string | null, days?: number, type: MeetingType = DEFAULT_MEETING_TYPE, hours?: BookingHours): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
+/** BF_SERVER_BOOKING_TEAMS_v1 - the people a booking can go to: one person, a named team, or the Intake team. */
+export function staffPool(everyone: Staff[], staffId: string | null, teamEmails?: string[] | null): Staff[] {
+  if (staffId) return everyone.filter((s) => s.id === staffId);
+  if (teamEmails) return everyone.filter((s) => teamEmails.includes(s.email.toLowerCase()) || teamEmails.includes(mailboxOf(s)));
+  return intakeTeam(everyone);
+}
+export async function openSlots(now: Date, staffId: string | null, days?: number, type: MeetingType = DEFAULT_MEETING_TYPE, hours?: BookingHours, teamEmails?: string[] | null): Promise<Array<{ startsAt: string; staffIds: string[] }>> {
   const everyone = await bookableStaff();
-  const staff = staffId ? everyone.filter((s) => s.id === staffId) : intakeTeam(everyone);
+  const staff = staffPool(everyone, staffId, teamEmails);
   // BF_SERVER_v869_BOOKING_PAGES - the meeting type's length, buffer, notice and booking window.
   const duration = type.duration_min, buffer = type.buffer_min;
   const slots = candidateSlots(now, days ?? type.max_days_ahead, { durationMin: duration, minNoticeMin: type.min_notice_min, hours });
@@ -149,12 +155,13 @@ export class BookingCalendarError extends Error {
 // (crm_meetings: what the Meetings tab and the timeline read) all exist before Graph is called.
 // If Graph fails the CRM records stay, marked failed, and the caller answers 503.
 export async function createBooking(input: { kind: BookingKind; startsAt: Date; staffId: string | null; name: string; email: string; phone: string | null; notes: string | null; now?: Date;
-  /** BF_SERVER_v869_BOOKING_PAGES */ meetingType?: MeetingType; hours?: BookingHours; smsReminders?: boolean }): Promise<BookingResult> {
+  /** BF_SERVER_v869_BOOKING_PAGES */ meetingType?: MeetingType; hours?: BookingHours; smsReminders?: boolean;
+  /** BF_SERVER_BOOKING_TEAMS_v1 */ teamEmails?: string[] | null; teamLabel?: string; extraTags?: string[] }): Promise<BookingResult> {
   const type = input.meetingType ?? DEFAULT_MEETING_TYPE;
-  const match = (await openSlots(input.now ?? new Date(), input.staffId, type.id ? type.max_days_ahead + 1 : 15, type, input.hours)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
+  const match = (await openSlots(input.now ?? new Date(), input.staffId, type.id ? type.max_days_ahead + 1 : 15, type, input.hours, input.teamEmails)).find((s) => new Date(s.startsAt).getTime() === input.startsAt.getTime());
   if (!match) return { ok: false, reason: "slot_taken" };
   const everyone = await bookableStaff();
-  const staffList = input.staffId ? everyone : intakeTeam(everyone);
+  const staffList = input.staffId ? everyone : staffPool(everyone, null, input.teamEmails);
   const last = await pool.query<{ staff_user_id: string; last_at: string }>(`SELECT staff_user_id::text, max(created_at) AS last_at FROM client_bookings WHERE staff_user_id IS NOT NULL GROUP BY 1`);
   const lastAssigned = new Map(last.rows.map((r) => [r.staff_user_id, new Date(r.last_at).getTime()] as [string, number]));
   const pickId = input.staffId ?? roundRobinPick(match.staffIds, lastAssigned)!;
@@ -162,7 +169,8 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   if (!staff) return { ok: false, reason: "staff_unavailable" };
   const phone = input.phone ? bookingPhoneE164(input.phone) : null;
   const end = new Date(input.startsAt.getTime() + type.duration_min * 60_000);
-  const subject = (type.id ? type.name : (input.kind === "teams" ? "Teams meeting" : "Phone call")) + " with " + input.name + " - Boreal Financial";
+  const subject = (type.id ? type.name : (input.kind === "teams" ? "Teams meeting" : "Phone call")) + " with " + input.name + " - " + (input.teamLabel || "Boreal Financial");
+  const tags = ["booked_call", ...(input.extraTags ?? [])];
   const location = input.kind === "phone" ? "Phone call - Boreal calls " + (phone ?? "") : "Microsoft Teams";
 
   // 1. Contact: find by email or last-10 phone; fill what is missing; tag; owner if none.
@@ -176,18 +184,18 @@ export async function createBooking(input: { kind: BookingKind; startsAt: Date; 
   if (contactId) {
     await pool.query(
       `UPDATE contacts SET name = COALESCE(NULLIF(name, ''), $2), email = COALESCE(NULLIF(email, ''), $3), phone = COALESCE(NULLIF(phone, ''), $4),
-              tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || ARRAY['booked_call']))),
+              tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $6::text[]))),
               owner_id = COALESCE(owner_id, $5::uuid), updated_at = now()
-        WHERE id = $1::uuid`, [contactId, input.name, input.email, phone, staff.id]);
+        WHERE id = $1::uuid`, [contactId, input.name, input.email, phone, staff.id, tags]);
   } else {
     const ins = await pool.query<{ id: string }>(
-      `INSERT INTO contacts (id, name, email, phone, silo, tags, owner_id, created_at, updated_at) VALUES ($1,$2,$3,$4,'BF',ARRAY['booked_call'],$5::uuid,now(),now()) RETURNING id::text`,
-      [randomUUID(), input.name, input.email, phone, staff.id]);
+      `INSERT INTO contacts (id, name, email, phone, silo, tags, owner_id, created_at, updated_at) VALUES ($1,$2,$3,$4,'BF',$6::text[],$5::uuid,now(),now()) RETURNING id::text`,
+      [randomUUID(), input.name, input.email, phone, staff.id, tags]);
     contactId = ins.rows[0]!.id;
     contactCreated = true;
     // BF_SERVER_v869_LEAD_ROTATION - a new lead from the team page gets its owner in turn (a booking on someone's own
     // page stays theirs).
-    if (!input.staffId) {
+    if (!input.staffId && !input.teamEmails) {
       const { assignRotatingOwner } = await import("../leads/leadRotation.js");
       await assignRotatingOwner(pool as any, contactId, "booking", { replaceOwnerId: staff.id, silo: "BF" });
     }

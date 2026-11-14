@@ -2,8 +2,7 @@
 // Both v749 blocks ran; the second restored v748's helper names (intakeTeam(staff), intakeExcludes,
 // roundRobinPick) on top of the mailbox fix. This checks v748's behaviour against that live code.
 import { describe, it, expect, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
-import { intakeTeam, intakeExcludes, roundRobinPick, type Staff } from "../services/clientBooking.js";
+import { intakeTeam, intakeExcludes, roundRobinPick, staffPool, type Staff } from "../services/clientBooking.js";
 
 const todd: Staff = { id: "t", email: "todd.w@boreal.financial", first_name: "Todd", signed_in: true, mailbox: "todd.w@boreal.financial" };
 const andrew: Staff = { id: "a", email: "andrew@boreal.financial", first_name: "Andrew", signed_in: true, mailbox: "andrew.p@boreal.financial" };
@@ -30,8 +29,7 @@ describe("intake round robin for the general booking link", () => {
     expect(roundRobinPick([], last)).toBeNull();
   });
   it("personal links still book that person; only the general link uses the intake team", () => {
-    const s = readFileSync("src/services/clientBooking.ts", "utf8");
-    expect(s).toContain("const staff = staffId ? everyone.filter((s) => s.id === staffId) : intakeTeam(everyone);");
-    expect(s).toContain("roundRobinPick(match.staffIds");
+    expect(staffPool([todd, andrew, caden], "a").map((s) => s.id)).toEqual(["a"]);
+    expect(staffPool([todd, andrew, caden], null).map((s) => s.id)).toEqual(["t"]);
   });
 });

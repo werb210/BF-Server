@@ -84,7 +84,7 @@ describe("booking writes the CRM first", () => {
     await call({ kind: "teams" });
     expect(log.slice(0, 4)).toEqual(["contact.find", "contact.update", "booking.insert", "meeting.insert"]);
     expect(String(q.mock.calls.find((c) => String(c[0]).startsWith("UPDATE contacts"))![0])).toContain("owner_id = COALESCE(owner_id, $5::uuid)");
-    expect(paramsOf("UPDATE contacts")).toEqual(["c-old", "Pat Lee", "pat@example.com", "+17805551212", "u-todd"]);
+    expect(paramsOf("UPDATE contacts")).toEqual(["c-old", "Pat Lee", "pat@example.com", "+17805551212", "u-todd", ["booked_call"]]);
     expect(paramsOf("SELECT id::text, name, email, phone, owner_id::text FROM contacts")).toEqual(["pat@example.com", "+17805551212"]);
     expect(paramsOf("INSERT INTO crm_meetings")[9]).toBe("teams");
     expect(emitAutomationEvent.mock.calls.map((c: any[]) => c[0])).toEqual(["booking.created"]);

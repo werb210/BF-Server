@@ -5,6 +5,7 @@ import { brokerageTimeZone, zoneLabel } from "../settingsPack/boreal.js"; // BF_
 // GET/POST /manage/:token to cancel or reschedule.
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
+import { bookingTeam, forwardTeamLead, repCode, teamHours } from "../booking/teams.js"; // BF_SERVER_BOOKING_TEAMS_v1
 import { openSlots, createBooking, bookingPhoneE164, BookingCalendarError, manageTokenHash, type MeetingType } from "../services/clientBooking.js";
 import { pool } from "../db.js";
 import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
@@ -42,6 +43,19 @@ router.get("/staff/:slug", safeHandler(async (req: any, res: any) => {
 
 router.get("/slots", safeHandler(async (req: any, res: any) => {
   const staffId = typeof req.query?.staff === "string" && req.query.staff !== "any" ? req.query.staff : null;
+  // BF_SERVER_BOOKING_TEAMS_v1 - ?team=pgi&kind=phone|teams: that team's people, hours and call length.
+  if (req.query?.team !== undefined) {
+    const team = bookingTeam(req.query.team);
+    if (!team) { res.status(404).json({ error: "team_not_found" }); return; }
+    const t = team.types[req.query?.kind === "teams" ? "teams" : "phone"];
+    try {
+      res.json({ timeZone: brokerageTimeZone(), zoneLabel: zoneLabel(), meetingType: publicType(t), team: { slug: team.slug, label: team.label }, slots: await openSlots(new Date(), null, undefined, t, teamHours(team), team.emails) });
+    } catch (err) {
+      console.error("[booking] team slots failed", err instanceof Error ? err.message : String(err));
+      res.status(503).json({ error: "calendar_unavailable", message: "Booking is temporarily unavailable." + callUs() });
+    }
+    return;
+  }
   const type = await findOfferedType(db(), req.query?.type);
   if (!type) { res.status(404).json({ error: "meeting_type_not_found" }); return; }
   try {
@@ -65,13 +79,18 @@ async function sendConfirmation(to: string, msg: BookingMessageInput, bookingId:
   }
 }
 
-type BookBody = { kind?: unknown; name?: unknown; email?: unknown; phone?: unknown; startsAt?: unknown; staffId?: unknown; notes?: unknown; meetingTypeId?: unknown; sms_reminders?: unknown; website?: unknown };
+type BookBody = { kind?: unknown; name?: unknown; email?: unknown; phone?: unknown; startsAt?: unknown; staffId?: unknown; notes?: unknown; meetingTypeId?: unknown; sms_reminders?: unknown; website?: unknown; team?: unknown; rep?: unknown };
 
 async function book(req: any, res: any, b: BookBody, opts: { staffId?: string | null; source: string; previous?: { id: string; contactId: string | null }; smsReminders?: boolean } = { source: "website_booking" }) {
-  const type = await findOfferedType(db(), b.meetingTypeId);
+  // BF_SERVER_BOOKING_TEAMS_v1 - a team page sets the people, the hours and the call length for the chosen kind.
+  const team = b.team !== undefined ? bookingTeam(b.team) : null;
+  if (b.team !== undefined && !team) { res.status(404).json({ error: "team_not_found" }); return null; }
+  const teamKind = b.kind === "teams" ? "teams" : b.kind === "phone" ? "phone" : null;
+  if (team && !teamKind) { res.status(400).json({ error: "kind_must_be_phone_or_teams" }); return null; }
+  const type = team ? team.types[teamKind!] : await findOfferedType(db(), b.meetingTypeId);
   if (!type) { res.status(404).json({ error: "meeting_type_not_found" }); return null; }
   // A meeting type sets phone or video; without types the client still chooses (the original booking form).
-  const kind = type.id ? (type.kind === "video" ? "teams" : "phone") : (b.kind === "teams" ? "teams" : b.kind === "phone" ? "phone" : null);
+  const kind = team ? teamKind : type.id ? (type.kind === "video" ? "teams" : "phone") : (b.kind === "teams" ? "teams" : b.kind === "phone" ? "phone" : null);
   const name = String(b.name ?? "").trim().slice(0, 120);
   const email = String(b.email ?? "").trim().slice(0, 200);
   const phone = String(b.phone ?? "").trim().slice(0, 40) || null;
@@ -87,11 +106,12 @@ async function book(req: any, res: any, b: BookBody, opts: { staffId?: string | 
   const consent = parseExpressCaslConsent(b);
   const recordConsent = () => recordExpressCaslConsent((sql, params) => pool.query(sql, params as any[]), { email, silo: "BF" }, consent, opts.source);
   const settings = await bookingSettings(db());
-  const staffId = opts.staffId !== undefined ? opts.staffId : (typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null);
+  const rep = team ? repCode(b.rep) : null;
+  const staffId = team ? null : opts.staffId !== undefined ? opts.staffId : (typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null);
   try {
     const out = await createBooking({
-      kind, startsAt, staffId, name, email, phone: phoneE164, notes: String(b.notes ?? "").trim().slice(0, 1000) || null,
-      meetingType: type, hours: settings.hours, smsReminders: opts.smsReminders ?? (b.sms_reminders === true && consent !== null),
+      kind, startsAt, staffId, name, email, phone: phoneE164, notes: [String(b.notes ?? "").trim().slice(0, 1000), rep ? `Referred by rep ${rep}` : ""].filter(Boolean).join(" | ") || null,
+      meetingType: type, hours: team ? teamHours(team) : settings.hours, ...(team ? { teamEmails: team.emails, teamLabel: team.label, extraTags: [...team.tags, ...(rep ? [`rep:${rep}`] : [])] } : {}), smsReminders: opts.smsReminders ?? (b.sms_reminders === true && consent !== null),
     });
     if (!out.ok) { res.status(409).json({ error: out.reason, message: "That time was just taken. Please pick another." }); return null; }
     await recordConsent();
@@ -103,6 +123,7 @@ async function book(req: any, res: any, b: BookBody, opts: { staffId?: string | 
       booking_id: out.booking.id, starts_at: out.booking.startsAt, meeting_type: type.name, kind, source: opts.source, ...(opts.previous ? { previous_booking_id: opts.previous.id } : {}),
     });
     void sendConfirmation(email, msg, out.booking.id);
+    if (team) void forwardTeamLead(team, { name, email, phone: phoneE164, rep });
     return out;
   } catch (err) {
     if (err instanceof BookingCalendarError) await recordConsent();
