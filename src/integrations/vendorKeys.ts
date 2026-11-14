@@ -66,6 +66,15 @@ export function unseal(sealed: string, key: Buffer | null): string | null {
 
 const fromAzure = new Set<string>(VENDOR_KEYS.map((d) => d.key).filter((k) => String(process.env[k] ?? "").trim()));
 const setByUs = new Set<string>();
+// VENDOR_KEYS_WARN_ONCE - the keys are re-read every minute; an unreadable one (normal on the staging slot, whose
+// encryption key differs from production's) is reported once per start, not once a minute.
+const unreadable = new Set<string>();
+/** True the first time a key is found unreadable since this process started. */
+export function firstUnreadable(key: string): boolean {
+  if (unreadable.has(key)) return false;
+  unreadable.add(key);
+  return true;
+}
 let current: Record<string, string> = {};
 
 /** Reads, decrypts and applies the saved keys. Never throws. */
@@ -77,7 +86,7 @@ export async function loadVendorKeys(db: Q): Promise<Record<string, string>> {
       if (!VENDOR_KEY_NAMES.has(row.key)) continue;
       const v = unseal(row.value_enc, keyNamed(row.key_name));
       if (v) out[row.key] = v;
-      else console.warn("[vendor-keys] a saved key could not be read (its encryption key changed); enter it again", { key: row.key });
+      else if (firstUnreadable(row.key)) console.warn("[vendor-keys] a saved key could not be read (its encryption key changed); enter it again", { key: row.key });
     }
   } catch (err) {
     console.warn("[vendor-keys] load failed", { message: (err as Error)?.message });
