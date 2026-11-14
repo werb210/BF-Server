@@ -20,6 +20,8 @@ export type Condition = {
   id: string;
   application_id: string;
   title: string;
+  /** BF_SERVER_v956_CONDITION_CLIENT_WORDING - the same requirement in plain words, shown to the client instead of the lender's wording. */
+  client_title: string | null;
   description: string | null;
   owner: Owner;
   assigned_user_id: string | null;
@@ -52,6 +54,7 @@ export function rowToCondition(r: Record<string, any>, today = new Date()): Cond
     id: String(r.id),
     application_id: String(r.application_id),
     title: String(r.title ?? ""),
+    client_title: r.client_title ? String(r.client_title) : null,
     description: r.description ?? null,
     owner: oneOf(r.owner, OWNERS, "staff"),
     assigned_user_id: r.assigned_user_id ? String(r.assigned_user_id) : null,
@@ -91,7 +94,7 @@ export function conditionsFromOfferText(text: string | null | undefined): string
 
 export type ConditionInput = {
   title: string; description: string | null; owner: Owner; assigned_user_id: string | null; due_date: string | null;
-  requires_document: boolean; document_url: string | null; note: string | null;
+  requires_document: boolean; document_url: string | null; note: string | null; client_title?: string | null;
 };
 
 export function parseConditionInput(b: Record<string, unknown>, partial = false):
@@ -103,6 +106,7 @@ export function parseConditionInput(b: Record<string, unknown>, partial = false)
     v.title = t;
   }
   if (b.description !== undefined) v.description = str(b.description, 4000);
+  if (b.client_title !== undefined) v.client_title = str(b.client_title, 300);
   if (!partial || b.owner !== undefined) v.owner = oneOf(b.owner, OWNERS, "staff");
   if (b.assigned_user_id !== undefined) {
     const u = str(b.assigned_user_id, 80);
@@ -143,13 +147,13 @@ export async function addCondition(q: Q, applicationId: string, v: ConditionInpu
   actor: string | null): Promise<Condition> {
   const r = await q.query(
     `INSERT INTO funding_conditions (application_id, title, description, owner, assigned_user_id, due_date, requires_document,
-        document_url, note, source, template_id, offer_id, position, created_by)
+        document_url, note, source, template_id, offer_id, position, created_by, client_title)
      VALUES ($1, $2, $3, $4, $5::uuid, $6::date, $7, $8, $9, $10, $11::uuid, $12,
-        (SELECT COALESCE(max(position), 0) + 1 FROM funding_conditions WHERE application_id = $1), $13::uuid)
+        (SELECT COALESCE(max(position), 0) + 1 FROM funding_conditions WHERE application_id = $1), $13::uuid, $14)
      ON CONFLICT DO NOTHING
      RETURNING id`,
     [applicationId, v.title, v.description, v.owner, v.assigned_user_id, v.due_date, v.requires_document, v.document_url, v.note,
-      v.source ?? "manual", v.template_id ?? null, v.offer_id ?? null, actor],
+      v.source ?? "manual", v.template_id ?? null, v.offer_id ?? null, actor, v.client_title ?? null],
   );
   const id = r.rows[0]?.id;
   if (!id) {
@@ -268,6 +272,8 @@ export function clientView(list: Condition[], signed: string | null) {
   if (!signed) return [];
   return forSignedOffer(list, signed)
     .filter((c) => c.owner === "client" && !DONE.includes(c.status) && !isOngoing(c))
-    .map((c) => ({ id: c.id, title: c.title, description: c.description, due_date: c.due_date, status: c.status,
+    // BF_SERVER_v956_CONDITION_CLIENT_WORDING - plain wording when there is one; the lender's description goes with the
+    // lender's title, so it is left out beside a plain title.
+    .map((c) => ({ id: c.id, title: c.client_title || c.title, description: c.client_title ? null : c.description, due_date: c.due_date, status: c.status,
       requires_document: c.requires_document, submitted: Boolean(c.client_submitted_at) }));
 }

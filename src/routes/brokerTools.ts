@@ -78,7 +78,7 @@ router.post("/applications/:id/conditions", ...conditions, appGuard, safeHandler
   const v = p.value;
   const c = await addCondition(db(), String(req.params.id), {
     title: v.title!, description: v.description ?? null, owner: v.owner ?? "staff", assigned_user_id: v.assigned_user_id ?? null,
-    due_date: v.due_date ?? null, requires_document: v.requires_document === true, document_url: v.document_url ?? null, note: v.note ?? null,
+    due_date: v.due_date ?? null, requires_document: v.requires_document === true, document_url: v.document_url ?? null, note: v.note ?? null, client_title: v.client_title ?? null,
   }, actorId(req));
   await audit(req, "funding_condition.added", { application_id: req.params.id, title: c.title, owner: c.owner }, { type: "application", id: String(req.params.id) });
   res.status(201).json({ ok: true, condition: c });
@@ -157,7 +157,7 @@ router.post("/applications/:id/conditions/confirm", ...conditions, appGuard, saf
     if (existing.has(p.value.title.toLowerCase())) { skipped.push(p.value.title); continue; }
     await addCondition(db(), app.id, {
       title: p.value.title, description: p.value.description ?? null, owner: p.value.owner ?? "client", assigned_user_id: null, due_date: null,
-      requires_document: p.value.requires_document === true, document_url: null, note: null, source: "offer", offer_id: offerOk ? offerId : null,
+      requires_document: p.value.requires_document === true, document_url: null, note: null, source: "offer", offer_id: offerOk ? offerId : null, client_title: p.value.client_title ?? null,
     }, actorId(req));
     existing.add(p.value.title.toLowerCase());
     added += 1;
@@ -179,6 +179,7 @@ router.patch("/applications/:id/conditions/:cid", ...conditions, appGuard, safeH
   const v = p.value as Partial<ConditionInput>;
   if (v.title !== undefined) put("title", v.title);
   if (v.description !== undefined) put("description", v.description);
+  if (v.client_title !== undefined) put("client_title", v.client_title); // BF_SERVER_v956_CONDITION_CLIENT_WORDING
   if (v.owner !== undefined) put("owner", v.owner);
   if (v.assigned_user_id !== undefined) put("assigned_user_id", v.assigned_user_id, "::uuid");
   if (v.due_date !== undefined) put("due_date", v.due_date, "::date");
