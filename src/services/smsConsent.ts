@@ -44,9 +44,14 @@ function tollFreeMarketingSender(): boolean {
 }
 export const MARKETING_OPTIN_SQL = `(COALESCE(c.sms_consent, false) = true AND c.consent_source = 'marketing_sms_optin')`;
 
+// BF_SERVER_v958_MARKETING_CONTACTS - only contacts marked "Marketing contact" get marketing (campaigns, sequences,
+// automation marketing texts, renewal outreach). Imports come in unmarked; everyone else is marked by default.
+export const MARKETING_CONTACT_SQL = `COALESCE(c.marketing_contact, true) = true`;
+
 // Everything the law and the carriers require before a marketing SMS may go out.
 export const SMS_ELIGIBLE_SQL = `
       COALESCE(c.phone,'') <> ''
+  AND ${MARKETING_CONTACT_SQL}
   AND COALESCE(c.sms_opt_out, false) = false
   AND COALESCE(c.marketing_opt_out, false) = false
   AND (c.line_type IS NULL OR c.line_type = 'mobile')
@@ -62,6 +67,7 @@ export const SMS_ELIGIBLE_SQL = `
 // the inline fallback both already use.
 export const EMAIL_FALLBACK_ELIGIBLE_SQL = `(
       COALESCE(c.email,'') <> ''
+  AND ${MARKETING_CONTACT_SQL}
   AND COALESCE(c.marketing_opt_out, false) = false
 )`;
 

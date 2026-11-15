@@ -419,6 +419,10 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   where.push(...customFieldFilters(contactDefs, req.query ?? {}, "c", values));
   // BF_SERVER_CONTACTS_HIDE_ARCHIVED_v1 - merged/archived contacts must not appear in the CRM list.
   if (hasStatus) where.push("coalesce(c.status, 'active') <> 'archived'");
+  // BF_SERVER_v958_MARKETING_CONTACTS - ?marketing=yes | no.
+  const marketingFilter = String(req.query.marketing ?? "").trim().toLowerCase();
+  if (marketingFilter === "yes" || marketingFilter === "true") where.push("COALESCE(c.marketing_contact, true) = true");
+  if (marketingFilter === "no" || marketingFilter === "false") where.push("COALESCE(c.marketing_contact, true) = false");
 
   // BF_SERVER_CONTACTS_COMPANY_FILTER_v1 — the portal company page requests a single company's
   // people via ?companyId=<uuid>. Without this filter the endpoint ignored companyId and returned
@@ -540,7 +544,9 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
       coalesce(u.first_name || ' ' || u.last_name, '') AS owner_name,
       c.created_at,
       c.silo,
-      c.custom_fields
+      c.custom_fields,
+      COALESCE(c.marketing_contact, true) AS marketing_contact,
+      COALESCE(c.marketing_opt_out, false) AS marketing_opt_out
     FROM contacts c
     LEFT JOIN companies co ON ${hasCompanyId ? "c.company_id = co.id" : "false"}
     LEFT JOIN users u ON ${hasOwnerId ? "c.owner_id = u.id" : "false"}
@@ -650,6 +656,19 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
   // BF_SERVER_IMPORT_CONSENT_v1 - when the importer marks the file as express-consented
   // (application terms), stamp the CASL consent fields so contacts are SMS-marketable.
   const smsConsentExpress = req.body?.smsConsentExpress === true;
+  // BF_SERVER_v958_MARKETING_CONTACTS - imported contacts are NOT marketing contacts unless the importer ticks
+  // "Make these marketing contacts" (marketingContacts: true) or a row's Marketing contact column says yes.
+  // A row's column wins; an existing contact keeps its setting unless the file or the row says otherwise; a contact
+  // who unsubscribed is never made a marketing contact again by an import.
+  const fileMarketing = req.body?.marketingContacts === true;
+  const rowMarketing = (r: any): boolean | null => {
+    const v = r?.marketing_contact;
+    if (typeof v === "boolean") return v;
+    const t = String(v ?? "").trim().toLowerCase();
+    if (["yes", "y", "true", "1", "x", "marketing"].includes(t)) return true;
+    if (["no", "n", "false", "0", "non-marketing", "not marketing"].includes(t)) return false;
+    return null;
+  };
   if (!Array.isArray(req.body?.rows)) {
     return res.status(400).json({ error: { field: "rows", message: "rows[] is required" } });
   }
@@ -749,6 +768,8 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         if (has("owner_id") && rowOwnerId) { sets.push(`owner_id = $${i}`); vals.push(rowOwnerId); i++; }
         else if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
         if (has("updated_at")) { sets.push("updated_at = now()"); }
+        const mk = rowMarketing(r) ?? (fileMarketing ? true : null); // BF_SERVER_v958_MARKETING_CONTACTS
+        if (has("marketing_contact") && mk !== null) { sets.push(`marketing_contact = ($${i}::boolean AND NOT COALESCE(marketing_opt_out, false))`); vals.push(mk); i++; }
         if (smsConsentExpress) {
           if (has("sms_consent")) { sets.push(`sms_consent = $${i}`); vals.push(true); i++; }
           if (has("consent_basis")) { sets.push(`consent_basis = $${i}`); vals.push("express"); i++; }
@@ -787,6 +808,7 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
           add("marketing_opt_out", false);
           add("sms_opt_out", false);
         }
+        add("marketing_contact", rowMarketing(r) ?? fileMarketing); // BF_SERVER_v958_MARKETING_CONTACTS
         const ins = await client.query(
           `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")}) RETURNING id`,
           vals,
@@ -925,6 +947,22 @@ router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, r
 // "Website Visitor" rows for the selected silo. NON-DESTRUCTIVE — the merge
 // ships separately after review. Registered before /contacts/:id so the path
 // isn't captured as an :id.
+// BF_SERVER_v958_MARKETING_CONTACTS - how many contacts are marketing contacts. Boreal's own campaigns have no monthly
+// allowance, so budget is null here (Keystone fills it in from the brokerage's plan).
+router.get("/contacts/marketing-summary", safeHandler(async (req: any, res: any) => {
+  const silo = resolveSiloFromRequest(req);
+  const { EMAIL_BLAST_ELIGIBLE_SQL } = await import("../services/marketingSendRunner.js");
+  const c = await pool.query(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE COALESCE(c.marketing_contact, true))::int AS marketing,
+            count(*) FILTER (WHERE COALESCE(c.marketing_opt_out, false))::int AS unsubscribed,
+            count(*) FILTER (WHERE ${EMAIL_BLAST_ELIGIBLE_SQL})::int AS emailable
+       FROM contacts c WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived' AND c.merged_into_id IS NULL`,
+    [silo]);
+  const row = c.rows[0] ?? {};
+  res.json({ ok: true, total: Number(row.total ?? 0), marketing: Number(row.marketing ?? 0), unsubscribed: Number(row.unsubscribed ?? 0), emailable: Number(row.emailable ?? 0), budget: null });
+}));
+
 router.get("/contacts/dedupe-preview", safeHandler(async (req: any, res: any) => {
   const silo = resolveSiloFromRequest(req);
   const emailGroups = await pool.query(
@@ -1158,6 +1196,15 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
       updates.push(`${k} = $${i++}`);
       params.push(req.body[k] === "" ? null : req.body[k]);
     }
+  }
+  // BF_SERVER_v958_MARKETING_CONTACTS - the "Marketing contact" yes/no. Someone who unsubscribed cannot be put back.
+  if (typeof req.body?.marketing_contact === "boolean") {
+    if (req.body.marketing_contact === true && /^[0-9a-f-]{36}$/i.test(id)) {
+      const o = await pool.query(`SELECT COALESCE(marketing_opt_out, false) AS out FROM contacts WHERE id = $1`, [id]);
+      if (o.rows[0]?.out === true) return res.status(409).json({ error: "unsubscribed", message: "This contact unsubscribed from marketing, so they cannot be made a marketing contact." });
+    }
+    updates.push(`marketing_contact = $${i++}`);
+    params.push(req.body.marketing_contact);
   }
   // BF_SERVER_v870_CRM_DATA_MODEL - custom field values: { custom_fields: { name: value | null } }.
   if (req.body?.custom_fields !== undefined) {
@@ -1760,6 +1807,34 @@ router.post('/contacts/bulk-assign', safeHandler(async (req: any, res: any) => {
   const selected = await visibleSelection(req, "contact"); const ownerUserId = String(req.body?.ownerUserId ?? ''); const silo = getSilo(res);
   const u = await pool.query(`SELECT id FROM users WHERE id::text = ($1)::text LIMIT 1`, [ownerUserId]); if (!u.rows[0]) return res.status(400).json({ error: 'invalid_owner' });
   const out = await pool.query(`UPDATE contacts SET owner_id = $2 WHERE id = ANY($1::uuid[]) AND silo = $3`, [selected, ownerUserId, silo]); res.json({ updated: out.rowCount ?? 0 });
+}));
+
+// BF_SERVER_v958_MARKETING_CONTACTS - mark many contacts as marketing / not marketing at once: the selected ids, or
+// every contact (that this user may see) with any of the given tags. Contacts who unsubscribed are never marked yes.
+router.post('/contacts/bulk-marketing', requireCrmWrite, safeHandler(async (req: any, res: any) => {
+  if (typeof req.body?.marketing !== 'boolean') return res.status(400).json({ error: 'marketing_required', message: 'Say whether these are marketing contacts (marketing: true or false).' });
+  const silo = resolveSiloFromRequest(req);
+  const marketing: boolean = req.body.marketing;
+  const tags = ids(req.body?.tags).map((t) => String(t).trim()).filter(Boolean);
+  if (tags.length) {
+    const values: unknown[] = [silo, marketing, tags];
+    const scopeSql = ownerFilterSql(await scopeForRequest(req, pool as any), "contact", "c", values);
+    const out = await pool.query(
+      `UPDATE contacts c SET marketing_contact = $2, updated_at = now()
+        WHERE c.silo = $1 AND COALESCE(c.marketing_contact, true) <> $2
+          AND ($2 = false OR COALESCE(c.marketing_opt_out, false) = false)
+          AND EXISTS (SELECT 1 FROM unnest(coalesce(c.tags, '{}'::text[])) t WHERE bf_norm_tag(t) = ANY(SELECT bf_norm_tag(x) FROM unnest($3::text[]) x))
+          AND ${scopeSql}`,
+      values);
+    return res.json({ updated: out.rowCount ?? 0 });
+  }
+  const selected = await visibleSelection(req, "contact");
+  if (!selected.length) return res.json({ updated: 0 });
+  const out = await pool.query(
+    `UPDATE contacts SET marketing_contact = $2, updated_at = now()
+      WHERE id = ANY($1::uuid[]) AND silo = $3 AND ($2 = false OR COALESCE(marketing_opt_out, false) = false)`,
+    [selected, marketing, silo]);
+  res.json({ updated: out.rowCount ?? 0, skipped_unsubscribed: marketing ? selected.length - (out.rowCount ?? 0) : 0 });
 }));
 
 router.post('/companies/bulk-delete', safeHandler(async (req: any, res: any) => {
