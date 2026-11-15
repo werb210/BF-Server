@@ -103,6 +103,12 @@ export const PLACEHOLDER_NAME_RE = /^\s*(unknown|new applicant|applicant)?\s*\(?
 
 export type Proposal = { field: string; before: string; after: string; reason: string };
 
+/** A name that is really a web address ("virgohome.io"): imports use the domain when no company name was known.
+ *  Capitalising it ("Virgohome.io") makes it no more correct, so it is left alone. */
+export function looksLikeDomain(v: string): boolean {
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(v.trim());
+}
+
 /** Proposed changes for one contact. `knownName` is a real name found on its application, if any. */
 export function proposeContactFixes(row: Record<string, unknown>, knownName?: { first?: string | null; last?: string | null } | null): Proposal[] {
   const out: Proposal[] = [];
@@ -113,7 +119,7 @@ export function proposeContactFixes(row: Record<string, unknown>, knownName?: { 
     if (PLACEHOLDER_NAME_RE.test(v)) return;
     let next = collapseSpaces(v);
     let reason = next !== v ? "Extra spaces" : "";
-    if (isAllCapsOrLower(next)) {
+    if (isAllCapsOrLower(next) && !looksLikeDomain(next)) {
       const cased = properCasePersonName(next);
       if (cased !== next) { next = cased; reason = v === v.toUpperCase() ? "All capitals" : "All lower case"; }
     }
@@ -155,7 +161,7 @@ export function proposeCompanyFixes(row: Record<string, unknown>): Proposal[] {
     if (!v || !hasLetters(v)) continue;
     let next = collapseSpaces(v);
     let reason = next !== v ? "Extra spaces" : "";
-    if (isAllCapsOrLower(next)) {
+    if (isAllCapsOrLower(next) && !looksLikeDomain(next)) {
       const cased = properCaseCompanyName(next);
       if (cased !== next) { next = cased; reason = v === v.toUpperCase() ? "All capitals" : "All lower case"; }
     }
