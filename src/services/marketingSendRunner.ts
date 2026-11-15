@@ -31,7 +31,7 @@ export const EMAIL_CONSENT_SQL = `(c.email_consent_basis IN ('express', 'marketi
 // BF_SERVER_v917_EMAIL_ALL_CONTACTS - Todd's rule (Nov 9): every CRM contact with an email address gets campaign email.
 // Only people who unsubscribed / opted out of marketing are left out. EMAIL_CONSENT_SQL is kept for reports only.
 export const EMAIL_BLAST_ELIGIBLE_SQL = `
-      COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false`;
+      COALESCE(c.email,'') <> '' AND COALESCE(c.marketing_opt_out,false) = false AND COALESCE(c.marketing_contact, true) = true`; // BF_SERVER_v958_MARKETING_CONTACTS
 
 // BF_SERVER_v923_SKIP_TEXTED - "Skip contacts who got a marketing text in the last 7 days" on the Email tab.
 // true -> 7 days; a number of days (1-90) is also accepted.

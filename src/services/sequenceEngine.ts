@@ -233,7 +233,7 @@ async function processClaimed(pool: Pool, en: any): Promise<void> {
 
   // BF_SERVER_SEQUENCE_CONSENT_GATE_v31 - sms_consent / consent_basis / consent_at
   // were never selected, so the CASL test below could not be applied.
-  const cq = await pool.query(`SELECT id, silo, owner_id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, COALESCE(marketing_opt_out,false) AS marketing_opt_out, COALESCE(sms_consent,false) AS sms_consent, consent_basis, consent_at, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
+  const cq = await pool.query(`SELECT id, silo, owner_id, email, phone, name, COALESCE(sms_opt_out,false) AS sms_opt_out, (COALESCE(marketing_opt_out,false) OR NOT COALESCE(marketing_contact,true)) AS marketing_opt_out, COALESCE(sms_consent,false) AS sms_consent, consent_basis, consent_at, line_type, (SELECT name FROM companies WHERE id=contacts.company_id) AS company FROM contacts WHERE id=$1`, [en.contact_id]);
   const c = cq.rows[0];
   if (!c) { await complete(pool, en.id); return; }
 

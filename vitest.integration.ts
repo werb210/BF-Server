@@ -68,6 +68,7 @@ export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/activeContracts.v864.integration.test.ts", // BF_SERVER_v864_ACTIVE_CONTRACTS - needs Postgres
   "src/__tests__/aiChatFlow.v784.integration.test.ts", // BF_SERVER_v784_CHAT_SCHEMA - needs Postgres
   "src/__tests__/workflowEngine.v786.integration.test.ts", // BF_SERVER_v786_WORKFLOW_GRAPH - needs Postgres
+  "src/__tests__/marketingContacts.v958.integration.test.ts", // BF_SERVER_v958_MARKETING_CONTACTS - needs Postgres
   "src/__tests__/workflowTestRun.v792.integration.test.ts", // BF_SERVER_v792_WORKFLOW_TEST_RUN - needs Postgres
   "src/__tests__/teamPrefs.v643.integration.test.ts", // BF_SERVER_TEAM_PREFS_v643 - needs Postgres
   "src/__tests__/teamPhaseB.v658.integration.test.ts", // BF_SERVER_TEAM_PHASE_B_v658 - needs Postgres
