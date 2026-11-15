@@ -159,7 +159,14 @@ describe("offer reader (v906)", () => {
     });
     expect(o).toMatchObject({ lender_name: "Acme Capital", amount: 250000, rate: 8.99, rate_kind: "interest_rate", term_months: 60, payment_amount: 5190.12, payment_frequency: "biweekly", expiry_date: "2026-12-01" });
     expect(o.fees).toEqual([{ label: "Admin fee", amount: 495 }]);
-    expect(o.conditions).toEqual([{ title: "Signed personal guarantee", description: null, owner: "client", requires_document: true }]);
+    expect(o.conditions).toEqual([{ title: "Signed personal guarantee", description: null, owner: "client", requires_document: true, client_title: null }]);
+    // BF_SERVER_v956_CONDITION_CLIENT_WORDING - plain wording is kept for what the client must do, and never for the lender's or staff's items.
+    const plain = normalizeOffer({ conditions: [
+      { title: "Executed PG from all principals", owner: "client", client_title: "  Sign the personal guarantee we send to each owner  " },
+      { title: "Satisfactory lender due diligence", owner: "lender", client_title: "Wait for the lender" },
+    ] }).conditions;
+    expect(plain[0]).toMatchObject({ title: "Executed PG from all principals", client_title: "Sign the personal guarantee we send to each owner" });
+    expect(plain[1]!.client_title).toBeNull();
     expect(normalizeOffer({ rate: 1.32 }).rate_kind).toBe("factor_rate");
     expect(normalizeOffer(null).conditions).toEqual([]);
   });
