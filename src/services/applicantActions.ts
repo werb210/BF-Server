@@ -157,6 +157,8 @@ export async function sbaOwnersForTodo(applicationId: string): Promise<Array<{ i
   }
 }
 
+export const TERM_SHEET_TODO_LABEL = "Review and sign your term sheet"; // BF_SERVER_v957_OFFER_IN_APP
+
 export async function buildActionCenter(applicationId: string): Promise<ActionCenter> {
   // Every lookup degrades to empty rather than throwing: a half-rendered list is
   // recoverable, an exception on the applicant's home screen is not.
@@ -241,6 +243,32 @@ async function promptItems(applicationId: string, submittedFormTypes: string[], 
     }
   } catch (err: any) {
     console.warn("[action-center] fee_agreement_read_failed", { applicationId, message: err?.message });
+  }
+  // BF_SERVER_v957_OFFER_IN_APP - a term sheet sent for signature is something the client has to do. It was missing
+  // from this list, so the app said "You're all caught up" and the home-screen widget said "Nothing to do" while a
+  // term sheet waited to be signed.
+  try {
+    const ts = await dbQuery<{ signed: boolean }>(
+      `SELECT EXISTS (
+                SELECT 1 FROM documents d JOIN document_versions v ON v.document_id = d.id
+                 WHERE d.application_id::text = a.id::text AND d.document_type = 'signed_term_sheet'
+                   AND d.uploaded_by = 'system' AND v.metadata->>'docId' = a.metadata->'offer_signnow'->>'doc_id') AS signed
+         FROM applications a
+         JOIN offers o ON o.id::text = a.metadata->'offer_signnow'->>'offer_id' AND o.application_id::text = a.id::text
+        WHERE a.id::text = ($1)::text
+          AND COALESCE(a.metadata->'offer_signnow'->>'signing_url', '') <> ''
+          AND COALESCE(o.is_archived, false) = false
+          AND (o.expiry_date IS NULL OR o.expiry_date::date >= current_date)
+        LIMIT 1`,
+      [applicationId],
+    );
+    const row = ts.rows?.[0];
+    if (row) {
+      const item: ActionItem = { key: "term_sheet_sign", kind: "action", label: TERM_SHEET_TODO_LABEL, action: "offers", urgent: true };
+      if (row.signed === true) completed.push(item); else outstanding.push(item);
+    }
+  } catch (err: any) {
+    console.warn("[action-center] term_sheet_signing_read_failed", { applicationId, message: err?.message });
   }
   return { outstanding, completed };
 }

@@ -35,12 +35,13 @@ type OfferRow = {
   term_sheet_blob_name: string | null;
   document_url: string | null;
   lender_name: string | null;
+  term_sheet_mode?: string | null;
 };
 
 async function resolveOffer(pool: Pool, offerId: string): Promise<OfferRow | null> {
   const r = await pool.query<OfferRow>(
     `SELECT id::text AS id, application_id::text AS application_id,
-            term_sheet_blob_name, document_url, lender_name
+            term_sheet_blob_name, document_url, lender_name, term_sheet_mode
        FROM offers WHERE id::text = $1 LIMIT 1`,
     [offerId],
   );
@@ -81,6 +82,12 @@ async function stampSignatureField(pdfBytes: Uint8Array): Promise<Uint8Array> {
   return doc.save();
 }
 
+// BF_SERVER_v957_OFFER_IN_APP - SignNow shows this name to the client in its welcome box ("Please fill out and sign
+// this document group ..."). It used to end with the offer's internal id, which read as a string of code.
+export function termSheetGroupName(lender: string | null | undefined): string {
+  const name = String(lender ?? "").replace(/\s+/g, " ").trim();
+  return name ? `Term sheet from ${name}` : "Term sheet";
+}
 export async function sendOfferTermSheet(params: { pool: Pool; offerId: string }): Promise<{ url: string | null; reason?: string }> {
   const { pool, offerId } = params;
   if (!isApiKeyConfigured()) return { url: null, reason: "signnow_not_configured" };
@@ -99,9 +106,11 @@ export async function sendOfferTermSheet(params: { pool: Pool; offerId: string }
   // TERM_SHEET_SIGN_BLOCK - a term sheet made from the brokerage's Word template already has its place to sign.
   const { hasSigningTags } = await import("../../brokerTools/docx.js");
   const stamped = (await hasSigningTags(blob.buffer)) ? new Uint8Array(blob.buffer) : await stampSignatureField(blob.buffer);
-  const lender = (offer.lender_name || "Lender").replace(/[^\w .-]/g, "").slice(0, 40);
-  const { documentId } = await uploadDocumentWithFieldExtract(stamped, `term-sheet-${lender}-${offer.id}.pdf`);
-  const { groupId } = await createDocumentGroup([documentId], `Term Sheet ${lender} ${offer.id}`);
+  // BF_SERVER_v957_OFFER_IN_APP - SignNow shows the client both names below. On our own term sheet (we bought the deal)
+  // the client must see us, never the lender; and neither name carries the offer's internal id any more.
+  const lender = (offer.term_sheet_mode === "ours" ? "Boreal Financial" : offer.lender_name || "your lender").replace(/[^\w .'&-]/g, "").slice(0, 60);
+  const { documentId } = await uploadDocumentWithFieldExtract(stamped, `${termSheetGroupName(lender)}.pdf`);
+  const { groupId } = await createDocumentGroup([documentId], termSheetGroupName(lender));
   const { inviteId } = await createEmbeddedGroupInvite(groupId, [documentId], [{ email: signer.email, name: signer.name || undefined, roleName: SIGNER_ROLE }]);
   const { url } = await createEmbeddedGroupLink(groupId, inviteId, signer.email);
 
