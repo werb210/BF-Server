@@ -398,6 +398,21 @@ router.get("/:id/term-sheet", requireAuthAllowClient, safeHandler(async (req: an
   return res.end(got.buffer);
 }));
 
+// BF_SERVER_v957_OFFER_IN_APP - the term sheet in its viewing form, for the client app to show inside the portal (it no
+// longer opens another browser window): a PDF as is, a Word term sheet as a plain page the app shows in a locked frame.
+router.get("/:id/term-sheet-view", requireAuthAllowClient, safeHandler(async (req: any, res: any) => {
+  const offerId = String(req.params.id);
+  if (!(await requireOfferAccess(req, res, offerId))) return;
+  const { termSheetForViewing } = await import("../brokerTools/termSheetView.js");
+  const v = await termSheetForViewing(offerId);
+  if (!v.ok) return res.status(v.status).json({ error: v.error, message: "The term sheet could not be opened." });
+  res.setHeader("Content-Type", v.contentType);
+  res.setHeader("Content-Disposition", `inline; filename="${v.filename}"`);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.end(v.body);
+}));
+
 // BF_SERVER_v936_CLIENT_OFFER_CLEANUP - a 15-minute link the client app opens in the phone's browser (a PDF shows as a
 // PDF, a Word term sheet as a readable page). Handing the system browser a blob URL showed an empty page on iPhone.
 router.post("/:id/term-sheet-link", requireAuthAllowClient, safeHandler(async (req: any, res: any) => {
