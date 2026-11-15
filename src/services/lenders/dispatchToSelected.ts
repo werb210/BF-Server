@@ -206,6 +206,15 @@ export async function dispatchToSelected(
     let ok = false;
     let error: string | null = null;
     let deliveredTo: string | null = null;
+    // BF_SERVER_v960_LENDER_REPS - once staff record who at the lender is handling this file, everything for this file
+    // goes to that person by email, and only to them (not the lender's general address, API or sheet).
+    let rep: { name: string; email: string } | null = null;
+    try {
+      rep = deps.forceConnector ? null : await (await import("./lenderReps.js")).repForFile(ctx.applicationId, l.lender_id, ctx.pool as any);
+    } catch (repErr) {
+      console.error("[dispatch] lender rep not read; sending to the lender's usual address", { applicationId: ctx.applicationId, lender: l.name, message: repErr instanceof Error ? repErr.message : String(repErr) });
+    }
+    if (rep) method = "email";
 
     // Rebuild the recipient-sensitive portion for every lender. The initial
     // application-wide load deliberately had no recipient and therefore could
@@ -244,7 +253,7 @@ export async function dispatchToSelected(
     try {
       const lenderApi = await import("../../lenderConnectors/submit.js");
       const usable = await lenderApi.usableConnection(ctx.pool as any, l.lender_id);
-      const useApi = usable.reason === null && (deps.forceConnector || usable.connection.submit_by_api);
+      const useApi = !rep && usable.reason === null && (deps.forceConnector || usable.connection.submit_by_api);
       if (useApi && usable.reason === null) {
         const fallbackOk = !deps.forceConnector && usable.connection.email_fallback && Boolean((l.submission_email ?? "").trim());
         const pkgForApi = await lenderApi.buildLenderPackage(ctx.pool, {
@@ -287,13 +296,13 @@ export async function dispatchToSelected(
         lenderName: l.name,
         zip: lenderPkg.zipBuffer,
         filename: `application-${ctx.applicationId}.zip`,
-        details: emailDetails,
+        details: rep ? { ...emailDetails, greeting: rep.name.split(/\s+/)[0] || rep.name } : emailDetails,
       });
       if (!delivery.ok) {
         error = delivery.error;
       } else {
         const r = await sendLenderEmail({
-          lender: { id: l.lender_id, name: l.name, submission_email: l.submission_email },
+          lender: { id: l.lender_id, name: l.name, submission_email: rep?.email ?? l.submission_email },
           subject: lenderEmailSubject({ ...emailDetails, lenderName: l.name, applicationId: ctx.applicationId }),
           bodyText: delivery.bodyText,
           bodyHtml: delivery.bodyHtml,
@@ -319,6 +328,8 @@ export async function dispatchToSelected(
       // a sheet id gets both. Merchant Growth asked for this. The dispatch only
       // counts as sent when both succeed, so a silent sheet failure cannot look
       // like a clean submission.
+      // BF_SERVER_v960_LENDER_REPS - a send to the rep handling the file goes to the rep only: no sheet row.
+      if (!rep) {
       if (ok && l.google_sheet_id) {
         const sheet = await appendLenderSheetRow(ctx, l, deps);
         if (sheet.ok) {
@@ -327,6 +338,7 @@ export async function dispatchToSelected(
           ok = false;
           error = `email_sent_but_sheet_failed: ${sheet.error ?? "unknown"}`;
         }
+      }
       }
     } else if (method === "api") {
       const endpoint = (l.api_endpoint ?? "").trim();

@@ -18,6 +18,7 @@
 // swallow any future test that happened to match, which is exactly how a suite
 // rots. Adding a file here has to be a decision someone makes on purpose.
 export const INTEGRATION_TEST_FILES: string[] = [
+  "src/__tests__/lenderReps.v960.integration.test.ts", // BF_SERVER_v960_LENDER_REPS - needs Postgres
   "src/__tests__/pipelineNames.v959.integration.test.ts", // PIPELINE_NAME_FROM_APPLICATION - needs Postgres
   "src/__tests__/mayaReports.v930.integration.test.ts", // BF_SERVER_v930_MAYA_REPORTS - needs Postgres
   "src/__tests__/companyFromEmail.v925.integration.test.ts", // BF_SERVER_v925_COMPANY_FROM_EMAIL - needs Postgres

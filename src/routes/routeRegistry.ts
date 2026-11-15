@@ -83,6 +83,7 @@ import portalLenderProductsRoutes from "./portalLenderProducts.js";
 // BF_SERVER_BLOCK_TWO_STAGE_v1
 import applicationFormResponses from "./applicationFormResponses.js";
 import lenderQaRoutes from "./lenderQa.js"; // BF_SERVER_LENDER_QA_v1
+import lenderRepsRoutes from "./lenderReps.js"; // BF_SERVER_v960_LENDER_REPS
 // BF_SERVER_BLOCK_v109_REQUIRED_DOCS_ROUTE_v1
 import lenderProductsRequiredDocsRoutes from "./lenderProductsRequiredDocs.js";
 // BF_SERVER_BLOCK_v128_REQUIRED_DOCS_PREVIEW_v1
@@ -231,6 +232,7 @@ combinedPortalRoutes.use(portalLenderProductsRoutes);
 // BF_SERVER_BLOCK_TWO_STAGE_v1
 combinedPortalRoutes.use(applicationFormResponses);
 combinedPortalRoutes.use(lenderQaRoutes); // BF_SERVER_LENDER_QA_v1
+combinedPortalRoutes.use(lenderRepsRoutes); // BF_SERVER_v960_LENDER_REPS
 combinedPortalRoutes.use(documentTypesRouter);
 
 const rootRoutes = Router();
