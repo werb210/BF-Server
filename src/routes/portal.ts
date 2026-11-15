@@ -366,6 +366,13 @@ router.get(
           -- "Draft application"; falls back to the company name, then Unnamed.
           COALESCE(
             NULLIF(NULLIF(NULLIF(a.name, ''), 'Draft application'), 'Untitled Application'),
+            -- PIPELINE_NAME_FROM_APPLICATION - the business name the client typed into the application (kept in
+            -- metadata until submit). Without it a file whose client stopped before submitting kept the placeholder
+            -- name, and the board hid it as an empty draft although it held a named business, an amount and a contact.
+            NULLIF(btrim(COALESCE(
+              a.metadata->'business'->>'legalName', a.metadata->'business'->>'companyName', a.metadata->'business'->>'businessName', a.metadata->'business'->>'name',
+              a.metadata->'company'->>'legalName', a.metadata->'company'->>'companyName', a.metadata->'company'->>'name',
+              a.metadata->'business_info'->>'legalName', a.metadata->'business_info'->>'companyName', a.metadata->'business_info'->>'name')), ''),
             c.name, 'Unnamed application') AS business_name,
           ct.name                                               AS contact_name,
           ct.email                                              AS contact_email,

@@ -57,6 +57,8 @@ describe("placeholder application names", () => {
     expect(res.status).toBe(200);
     expect(res.body.items[0]).toMatchObject({ name: "Acme Co", businessName: "Acme Co" });
     const sql = String(callsMatching(queryMock, /AS business_name/)[0]![0]);
-    expect(sql).toMatch(/COALESCE\(\s*NULLIF\(NULLIF\(NULLIF\(a\.name, ''\), 'Draft application'\), 'Untitled Application'\),\s*c\.name, 'Unnamed application'\) AS business_name/);
+    // PIPELINE_NAME_FROM_APPLICATION - placeholder names are nulled, then the name the client typed (metadata), then the company.
+    expect(sql).toMatch(/COALESCE\(\s*NULLIF\(NULLIF\(NULLIF\(a\.name, ''\), 'Draft application'\), 'Untitled Application'\),/);
+    expect(sql).toMatch(/a\.metadata->'business'->>'legalName'[\s\S]*c\.name, 'Unnamed application'\) AS business_name/);
   });
 });
