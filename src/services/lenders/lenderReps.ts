@@ -3,24 +3,24 @@ import { pool as defaultPool } from "../../db.js";
 
 type Db = { query: (sql: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number | null }> };
 
-export type LenderRep = { id: string; lender_id: string; name: string; position: string | null; email: string; phone: string | null };
-export type RepInput = { name?: unknown; position?: unknown; email?: unknown; phone?: unknown };
+export type LenderRep = { id: string; lender_id: string; name: string; position: string | null; email: string; phone: string | null; phone_extension?: string | null };
+export type RepInput = { name?: unknown; position?: unknown; email?: unknown; phone?: unknown; phone_extension?: unknown };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const clean = (v: unknown, max: number) => String(v ?? "").trim().slice(0, max);
 
 /** Checks the form; errors are plain sentences keyed by field. */
-export function parseRep(raw: RepInput): { ok: true; value: { name: string; position: string | null; email: string; phone: string | null } } | { ok: false; errors: Record<string, string> } {
+export function parseRep(raw: RepInput): { ok: true; value: { name: string; position: string | null; email: string; phone: string | null; phone_extension?: string | null } } | { ok: false; errors: Record<string, string> } {
   const name = clean(raw?.name, 120);
   const email = clean(raw?.email, 200).toLowerCase();
   const errors: Record<string, string> = {};
   if (name.length < 2) errors.name = "Enter the rep's name.";
   if (!EMAIL_RE.test(email)) errors.email = "Enter the rep's email address.";
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { name, position: clean(raw?.position, 120) || null, email, phone: clean(raw?.phone, 40) || null } };
+  return { ok: true, value: { name, position: clean(raw?.position, 120) || null, email, phone: clean(raw?.phone, 40) || null, phone_extension: clean(raw?.phone_extension, 8).replace(/\D/g, "") || null } };
 }
 
-const COLS = `id::text AS id, lender_id::text AS lender_id, name, position, email, phone`;
+const COLS = `id::text AS id, lender_id::text AS lender_id, name, position, email, phone, phone_extension`;
 
 export async function listReps(lenderId: string, db: Db = defaultPool as unknown as Db): Promise<LenderRep[]> {
   const r = await db.query(`SELECT ${COLS} FROM lender_reps WHERE lender_id::text = $1 ORDER BY lower(name)`, [lenderId]);
@@ -29,13 +29,14 @@ export async function listReps(lenderId: string, db: Db = defaultPool as unknown
 
 /** Adds a rep under the lender, or updates the one already there with that email. Also kept as a CRM contact under the
  *  lender's company (never a marketing contact). */
-export async function saveRep(lenderId: string, v: { name: string; position: string | null; email: string; phone: string | null }, by: string | null, db: Db = defaultPool as unknown as Db): Promise<LenderRep> {
+export async function saveRep(lenderId: string, v: { name: string; position: string | null; email: string; phone: string | null; phone_extension?: string | null }, by: string | null, db: Db = defaultPool as unknown as Db): Promise<LenderRep> {
   const r = await db.query(
-    `INSERT INTO lender_reps (lender_id, name, position, email, phone, created_by)
-     VALUES ($1::uuid, $2, $3, $4, $5, $6)
-     ON CONFLICT (lender_id, lower(email)) DO UPDATE SET name = EXCLUDED.name, position = EXCLUDED.position, phone = EXCLUDED.phone, updated_at = now()
+    `INSERT INTO lender_reps (lender_id, name, position, email, phone, created_by, phone_extension)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (lender_id, lower(email)) DO UPDATE SET name = EXCLUDED.name, position = EXCLUDED.position, phone = EXCLUDED.phone,
+       phone_extension = EXCLUDED.phone_extension, updated_at = now()
      RETURNING ${COLS}`,
-    [lenderId, v.name, v.position, v.email, v.phone, by],
+    [lenderId, v.name, v.position, v.email, v.phone, by, v.phone_extension ?? null],
   );
   const rep = r.rows[0] as LenderRep;
   try {
@@ -55,14 +56,14 @@ async function mirrorRepToCrm(rep: LenderRep, db: Db): Promise<void> {
   const existing = await db.query(`SELECT id::text AS id FROM contacts WHERE company_id::text = $1 AND lower(email) = $2 LIMIT 1`, [companyId, rep.email]);
   let contactId = existing.rows[0]?.id as string | undefined;
   if (contactId) {
-    await db.query(`UPDATE contacts SET name = $2, first_name = $3, last_name = $4, job_title = $5, phone = COALESCE(NULLIF($6, ''), phone), updated_at = now() WHERE id::text = $1`,
-      [contactId, rep.name, first ?? "", rest.join(" "), rep.position, rep.phone ?? ""]);
+    await db.query(`UPDATE contacts SET name = $2, first_name = $3, last_name = $4, job_title = $5, phone = COALESCE(NULLIF($6, ''), phone), phone_extension = COALESCE(NULLIF($7, ''), phone_extension), updated_at = now() WHERE id::text = $1`,
+      [contactId, rep.name, first ?? "", rest.join(" "), rep.position, rep.phone ?? "", rep.phone_extension ?? ""]);
   } else {
     const made = await db.query(
-      `INSERT INTO contacts (id, company_id, name, first_name, last_name, email, phone, job_title, status, silo, lead_status, tags, lifecycle_stage, role, marketing_contact, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, NULLIF($6, ''), $7, 'active', $8, 'Lender', ARRAY['lender']::text[], 'lender', 'other', false, now(), now())
+      `INSERT INTO contacts (id, company_id, name, first_name, last_name, email, phone, job_title, status, silo, lead_status, tags, lifecycle_stage, role, marketing_contact, phone_extension, created_at, updated_at)
+       VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, $5, NULLIF($6, ''), $7, 'active', $8, 'Lender', ARRAY['lender']::text[], 'lender', 'other', false, NULLIF($9, ''), now(), now())
        RETURNING id::text AS id`,
-      [companyId, rep.name, first ?? "", rest.join(" "), rep.email, rep.phone ?? "", rep.position, silo]);
+      [companyId, rep.name, first ?? "", rest.join(" "), rep.email, rep.phone ?? "", rep.position, silo, rep.phone_extension ?? ""]);
     contactId = made.rows[0]?.id;
   }
   if (contactId) await db.query(`UPDATE lender_reps SET contact_id = $2::uuid WHERE id::text = $1`, [rep.id, contactId]);
@@ -71,7 +72,7 @@ async function mirrorRepToCrm(rep: LenderRep, db: Db): Promise<void> {
 /** The rep handling this file at this lender, or null when none has been chosen. */
 export async function repForFile(applicationId: string, lenderId: string, db: Db = defaultPool as unknown as Db): Promise<LenderRep | null> {
   const r = await db.query(
-    `SELECT r.id::text AS id, r.lender_id::text AS lender_id, r.name, r.position, r.email, r.phone
+    `SELECT r.id::text AS id, r.lender_id::text AS lender_id, r.name, r.position, r.email, r.phone, r.phone_extension
        FROM application_lender_reps a JOIN lender_reps r ON r.id = a.lender_rep_id
       WHERE a.application_id = $1 AND a.lender_id::text = $2 LIMIT 1`,
     [applicationId, lenderId],

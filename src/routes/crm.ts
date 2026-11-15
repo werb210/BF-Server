@@ -641,6 +641,11 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
   if (row?.id) void pushContactToOutlook(pool, String(row.id)); // BF_SERVER_BLOCK_v_CONTACTS_OUTLOOK_SYNC_v1
   // BF_SERVER_v786_WORKFLOW_GRAPH - automation trigger.
   if (row?.id) void emitAutomationEvent("contact.created", { silo, contactId: String(row.id), data: { source: "manual" } });
+  // BF_SERVER_v961_PHONE_EXTENSION - an extension typed in its own box (one typed on the end of the number is split by the database).
+  if (String(req.body?.phone_extension ?? "").trim()) {
+    const e = await pool.query(`UPDATE contacts SET phone_extension = $2 WHERE id = $1 RETURNING phone_extension`, [row.id, String(req.body.phone_extension).trim().slice(0, 12)]);
+    (row as any).phone_extension = e.rows[0]?.phone_extension ?? null;
+  }
   return res.status(201).json({ ok: true, data: row });
 }));
 
@@ -1187,6 +1192,7 @@ router.patch("/contacts/:id", requireCrmWrite, safeHandler(async (req: any, res:
     "first_name", "last_name", "name", "email", "phone", "job_title",
     "lead_status", "lifecycle_stage", "owner_id", "company_id", "notes",
     "secondary_email", "secondary_phone", // BF_SERVER_CONTACT_SECONDARY_v1
+    "phone_extension", // BF_SERVER_v961_PHONE_EXTENSION
   ];
   const updates: string[] = [];
   const params: unknown[] = [];
