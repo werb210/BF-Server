@@ -246,6 +246,37 @@ function toGraphAttendees(raw: any): Array<{ emailAddress: { address: string }; 
   return out;
 }
 
+// BF_SERVER_v962_CALENDAR_TEAMS - "Add Event" on the Calendar page can make the event a Teams meeting. It is
+// registered like one booked from a contact, so it can be joined in the portal, is recorded and transcribed, and
+// nobody is held in the lobby. Best-effort: the event is already on the calendar, so a failure here is only logged.
+async function registerCalendarTeamsMeeting(graph: GraphClient, event: any, body: any, req: any, res: any): Promise<void> {
+  const graphId = String(event?.id ?? "");
+  const joinUrl = String(event?.onlineMeeting?.joinUrl ?? "");
+  if (!graphId || !joinUrl) { console.error("calendar_teams_meeting_no_join_url", { graph_event_id: graphId || null }); return; }
+  try {
+    let silo = "BF";
+    try { silo = getSilo(res); } catch { silo = "BF"; }
+    const me: any = await graphCall(graph, "/me?$select=userPrincipalName").catch((err) => { logWarnSwallowed(err, "calendar_teams_meeting_upn"); return null; });
+    const upn = me?.userPrincipalName ? String(me.userPrincipalName) : null;
+    await pool.query(
+      `INSERT INTO teams_meetings
+         (silo, organizer_user_id, organizer_upn, subject, graph_event_id, join_url, scheduled_at, scheduled_end_at, status)
+       VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, 'scheduled')
+       ON CONFLICT (graph_event_id) DO UPDATE
+         SET subject = EXCLUDED.subject, join_url = EXCLUDED.join_url, scheduled_at = EXCLUDED.scheduled_at,
+             scheduled_end_at = EXCLUDED.scheduled_end_at, updated_at = now()`,
+      [silo, req.user?.userId ?? null, upn, String(body.title ?? body.subject ?? "Untitled Event").slice(0, 300), graphId, joinUrl,
+        body.start ?? body.startDateTime ?? null, body.end ?? body.endDateTime ?? null],
+    );
+    if (upn) {
+      const { enableAutoRecording } = await import("../services/teams/autoRecord.js");
+      void enableAutoRecording(pool, graphId, upn, joinUrl);
+    }
+  } catch (err) {
+    logWarnSwallowed(err, "calendar_teams_meeting_register");
+  }
+}
+
 // POST /api/calendar/events
 // BF_SERVER_BLOCK_v649_SHOWSTOPPER_PATCHES_v1 — propagate Graph 4xx and
 // return the event in the same flat shape as GET so the portal cache
@@ -255,6 +286,7 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
   if (!graph) return res.status(412).json({ status: "error", code: "o365_not_connected", message: "Connect Microsoft 365 to save calendar events." });
   const body = req.body ?? {};
   const graphAttendees = toGraphAttendees(body.attendees); // BF_SERVER_CALENDAR_ATTENDEES_v1
+  const wantsTeams = body.online === true || body.meetingType === "teams"; // BF_SERVER_v962_CALENDAR_TEAMS
   try {
     const event = await graphCall(graph, "/me/events", {
       method: "POST",
@@ -268,8 +300,10 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       ...((body.notes ?? body.description) ? { body: { contentType: "text", content: body.notes ?? body.description } } : {}),
       ...(body.location ? { location: { displayName: body.location } } : {}),
       ...(graphAttendees.length ? { attendees: graphAttendees } : {}),
+      ...(wantsTeams ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}), // BF_SERVER_v962_CALENDAR_TEAMS
       }),
     });
+    if (wantsTeams) await registerCalendarTeamsMeeting(graph, event, body, req, res);
     // BF_SERVER_BLOCK_v734 — channel-level meeting logging. A calendar event
     // created here is logged to crm_meetings for every attendee that resolves
     // to a CRM contact (by email, within the request's silo), so meetings

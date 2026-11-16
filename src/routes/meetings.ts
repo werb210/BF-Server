@@ -129,6 +129,13 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
   if (tooManyTokens(who)) { res.status(429).json({ error: "too_many_requests", message: "Please wait a few minutes and try again.", joinUrl }); return; }
   // BF_SERVER_v890_TEAMS_IDENTITY - staff who sent their Microsoft token join as themselves. If the exchange fails
   // (permissions not granted yet, a guest account), they still join, as a named guest, and the reason is logged.
+  // BF_SERVER_v962_TEAMS_NO_LOBBY - a staff member joining a meeting they organise: make sure nobody is held in the lobby.
+  if (cPhone === null) {
+    const me = await staffIdentity(String(req.user?.userId ?? req.user?.id ?? ""));
+    const mail = me.email || String(req.user?.email ?? "");
+    if (mail) void import("../services/teams/autoRecord.js").then((m) => m.openLobbyForOrganizer(mail, joinUrl)).catch((err) => console.warn("[teams-in-app] lobby open failed", { message: err instanceof Error ? err.message : String(err) }));
+    if (!(typeof b.teamsToken === "string" && b.teamsToken)) console.warn("[teams-in-app] staff joining as a guest: the portal sent no Microsoft token", { who });
+  }
   if (cPhone === null && typeof b.teamsToken === "string" && b.teamsToken) {
     try {
       const me = await staffIdentity(String(req.user?.userId ?? req.user?.id ?? ""));
