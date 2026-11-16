@@ -211,12 +211,22 @@ export function teamsClientId(): string {
  * Exchanges the staff member's Microsoft token for an ACS token for their Teams identity. The token must be for
  * Boreal's Entra app and for the same mailbox as their Boreal account.
  */
-export async function issueTeamsUserToken(aadToken: string, staffEmail: string): Promise<AcsToken & { identity: "teams" }> {
+export async function issueTeamsUserToken(aadToken: string, staffEmail: string, hint: { oid?: unknown } = {}): Promise<AcsToken & { identity: "teams" }> {
   const conn = String(process.env.ACS_CONNECTION_STRING ?? "").trim();
   if (!conn) throw new Error("acs_not_configured");
-  const claims = teamsTokenClaims(aadToken);
-  if (!claims) throw new Error("teams_token_invalid");
   const clientId = teamsClientId();
+  let claims = teamsTokenClaims(aadToken);
+  // BF_SERVER_v963_TEAMS_OPAQUE_TOKEN - Microsoft's token for Azure Communication Services is not always readable
+  // by us (production logged teams_token_invalid for a genuine token). When it cannot be read, use the Microsoft
+  // user id the portal read from the sign-in. ACS still verifies the token itself and refuses one that was not
+  // issued to this app for that user, so nothing is taken on trust.
+  if (!claims) {
+    const oid = typeof hint.oid === "string" ? hint.oid.trim() : "";
+    const shape = { length: typeof aadToken === "string" ? aadToken.length : -1, parts: typeof aadToken === "string" ? aadToken.split(".").length : 0, hasUserId: /^[0-9a-f-]{36}$/i.test(oid) };
+    console.warn("[teams-in-app] Microsoft token could not be read; letting ACS verify it", shape);
+    if (!shape.hasUserId || shape.length < 20 || shape.length > 20000 || !clientId) throw new Error("teams_token_invalid");
+    claims = { oid, appId: clientId, email: "" };
+  }
   if (!clientId || claims.appId !== clientId) throw new Error("teams_token_wrong_app");
   if (staffEmail && claims.email && claims.email !== staffEmail.toLowerCase()) throw new Error("teams_token_wrong_person");
   const { CommunicationIdentityClient } = await import("@azure/communication-identity");

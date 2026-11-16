@@ -139,7 +139,7 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
   if (cPhone === null && typeof b.teamsToken === "string" && b.teamsToken) {
     try {
       const me = await staffIdentity(String(req.user?.userId ?? req.user?.id ?? ""));
-      const t = await issueTeamsUserToken(b.teamsToken, me.email || String(req.user?.email ?? ""));
+      const t = await issueTeamsUserToken(b.teamsToken, me.email || String(req.user?.email ?? ""), { oid: b.teamsUserId });
       res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
       return;
     } catch (err) {

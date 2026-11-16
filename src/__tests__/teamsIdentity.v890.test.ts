@@ -62,6 +62,23 @@ describe("Teams identity", () => {
     expect(h.createUserAndToken).not.toHaveBeenCalled();
   });
 
+  // BF_SERVER_v963_TEAMS_OPAQUE_TOKEN
+  it("a Microsoft token we cannot read is handed to ACS with the user id the portal sent; without one it is a guest join", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const opaque = "eyJhbGciOiJSU0EtT0FFUCJ9.key.iv.ciphertext-that-is-not-readable.tag";
+    const a = await app();
+    const r = await request(a).post("/api/meetings/acs-token").send({ joinUrl: JOIN, teamsToken: opaque, teamsUserId: OID });
+    expect(r.body).toMatchObject({ token: "teams-token", identity: "teams", acsUserId: "teams:" + OID });
+    expect(h.getTokenForTeamsUser).toHaveBeenCalledWith({ teamsUserAadToken: opaque, clientId: APP_ID, userObjectId: OID });
+    h.getTokenForTeamsUser.mockClear();
+    const none = await request(a).post("/api/meetings/acs-token").send({ joinUrl: JOIN, teamsToken: opaque });
+    expect(none.body).toMatchObject({ identity: "guest" });
+    const bad = await request(a).post("/api/meetings/acs-token").send({ joinUrl: JOIN, teamsToken: opaque, teamsUserId: "not-an-id" });
+    expect(bad.body).toMatchObject({ identity: "guest" });
+    expect(h.getTokenForTeamsUser).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("someone else's token, or a token for another app, falls back to a guest join", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const a = await app();
