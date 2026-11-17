@@ -193,6 +193,45 @@ router.post("/tasks", async (req, res) => {
 
 // Staff directory for the BI sequence builder's assignee dropdown. Id and name
 // only — this is a picker, not a user export.
+// BF_SERVER_v968_PGI_REP_AGREEMENT - BI-Server has no SignNow account of its own. When staff add an outside PGI rep
+// it asks here for the Introducer Agreement to be issued, for a fresh signing link when the rep opens their page,
+// and whether it has been signed. Nothing about the rep is stored on this server.
+const repStr = (v: unknown, max: number): string => str(v).replace(/\s+/g, " ").slice(0, max);
+router.post("/pgi-rep-agreement", safeHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const fullName = repStr(b.fullName, 120);
+  const email = repStr(b.email, 200).toLowerCase();
+  const repId = repStr(b.repId, 64);
+  if (!fullName || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email) || !repId) return res.status(400).json({ ok: false, error: "name_email_and_rep_required" });
+  const sn = await import("../signnow/signnowClient.js");
+  if (!sn.isApiKeyConfigured()) return res.status(503).json({ ok: false, error: "signing_not_configured" });
+  const { buildPgiRepAgreementPdf, PGI_REP_AGREEMENT_VERSION } = await import("../signnow/pgiRepAgreementPdfBuilder.js");
+  const pdf = await buildPgiRepAgreementPdf({ fullName, email, company: repStr(b.company, 160) || null, phone: repStr(b.phone, 40) || null });
+  const { documentId } = await sn.uploadDocumentWithFieldExtract(pdf, `Boreal Risk Management Introducer Agreement - ${fullName} - ${repId}.pdf`);
+  const { groupId } = await sn.createDocumentGroup([documentId], `PGI Introducer Agreement ${repId}`);
+  const { inviteId } = await sn.createEmbeddedGroupInvite(groupId, [documentId], [{ email, name: fullName, roleName: "Rep" }]);
+  console.log("[service] pgi rep agreement issued", { repId, version: PGI_REP_AGREEMENT_VERSION });
+  return res.status(201).json({ ok: true, groupId, inviteId, documentId, version: PGI_REP_AGREEMENT_VERSION });
+}));
+router.post("/pgi-rep-agreement/link", safeHandler(async (req, res) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const groupId = repStr(b.groupId, 80), inviteId = repStr(b.inviteId, 80), email = repStr(b.email, 200).toLowerCase();
+  if (!groupId || !inviteId || !email) return res.status(400).json({ ok: false, error: "group_invite_and_email_required" });
+  const sn = await import("../signnow/signnowClient.js");
+  if (!sn.isApiKeyConfigured()) return res.status(503).json({ ok: false, error: "signing_not_configured" });
+  const status = await sn.getDocumentGroupStatus(groupId);
+  if (status.signed) return res.json({ ok: true, signed: true, url: null });
+  const { url } = await sn.createEmbeddedGroupLink(groupId, inviteId, email);
+  return res.json({ ok: true, signed: false, url });
+}));
+router.get("/pgi-rep-agreement/:groupId/status", safeHandler(async (req, res) => {
+  const groupId = repStr(req.params.groupId, 80);
+  const sn = await import("../signnow/signnowClient.js");
+  if (!sn.isApiKeyConfigured()) return res.status(503).json({ ok: false, error: "signing_not_configured" });
+  const status = await sn.getDocumentGroupStatus(groupId);
+  return res.json({ ok: true, signed: status.signed });
+}));
+
 router.get("/staff", async (_req, res) => {
   try {
     const rows = await pool.query(
