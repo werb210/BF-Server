@@ -487,6 +487,24 @@ router.put("/direct-numbers/:userId", auth, safeHandler(async (req: any, res) =>
   }
 }));
 
+// BF_SERVER_v969_CALLER_ID_PER_BUSINESS - the outgoing line each business shows (Insurance, SLF, Keystone).
+router.get("/business-lines", auth, safeHandler(async (_req: any, res) => {
+  const { listSiloLines } = await import("../voice/directLines.js");
+  res.json({ ok: true, lines: await listSiloLines(pool) });
+}));
+router.put("/business-lines/:silo", auth, safeHandler(async (req: any, res) => {
+  if (String(req.user?.role ?? "").toLowerCase() !== "admin") return res.status(403).json({ ok: false, error: "admin_only" });
+  const { setSiloLineNumber } = await import("../voice/directLines.js");
+  try {
+    return res.json({ ok: true, line: await setSiloLineNumber(pool, req.params.silo, req.body?.number) });
+  } catch (err: any) {
+    const code = String(err?.message ?? "");
+    if (code === "unknown_business") return res.status(404).json({ ok: false, error: code });
+    if (code === "invalid_number") return res.status(400).json({ ok: false, error: code, message: "Enter a full phone number, e.g. +1 888 555 0142." });
+    throw err;
+  }
+}));
+
 router.post("/calls", auth, async (req: any, res) => {
   const target = req.body ?? {};
   const userId: string = req.user?.userId || req.user?.id || req.user?.sub || "";
@@ -537,8 +555,8 @@ router.post("/calls", auth, async (req: any, res) => {
     // Callee participant row + dial.
     if (kind === "pstn") {
       // BF_SERVER_DIRECT_LINES_v688 - show the caller's own direct number when they have one.
-      const { callerIdForUser } = await import("../voice/directLines.js");
-      const callerId = await callerIdForUser(pool, userId); // BF_SERVER_PHONE_ROUTING_v688b - direct number, else the 866 main line
+      const { callerIdForCall } = await import("../voice/directLines.js");
+      const callerId = await callerIdForCall(pool, userId, silo); // BF_SERVER_v969_CALLER_ID_PER_BUSINESS - the business's own line, else the direct number, else the 866
       if (!callerId) return res.status(503).json({ ok: false, error: "caller_id_unconfigured" });
       // BF_SERVER_v829_DIALER_RELIABILITY - dialOnJoin (the iPhone dialler): the customer is dialled when the staff
       // leg joins the conference (conferenceWebhooks /conference/join), so a staff side that fails or hangs up during
