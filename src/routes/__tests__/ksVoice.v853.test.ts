@@ -89,7 +89,8 @@ describe("Keystone line: greeting and menu", () => {
   it("greets the caller with the Keystone menu and logs the call in silo KS against the matched contact", async () => {
     const res = await ks("/voice", { CallSid: CALL_SID, From: CALLER, To: KS_NUMBER });
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Thanks for calling Keystone. This call may be recorded. Press 1 for sales, 2 for support.");
+    expect(res.text).toContain("Welcome to Keystone CRM, the complete commercial broker software package, built by brokers, for brokers just like you.");
+    expect(res.text).toContain("Press 1 for sales, 2 for support.");
     expect(res.text).toContain('action="/api/webhooks/twilio/ks/menu"');
     expect(h.startCall).toHaveBeenCalledWith(expect.objectContaining({ direction: "inbound", silo: "KS", crmContactId: CONTACT, twilioCallSid: CALL_SID }));
   });

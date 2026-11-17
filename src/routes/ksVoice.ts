@@ -30,7 +30,7 @@ export const KS_VOICE_BASE = "/api/webhooks/twilio/ks";
 const VOICE = "Polly.Joanna";
 
 export const KS_PHRASES = {
-  greeting: "Thanks for calling Keystone. This call may be recorded. Press 1 for sales, 2 for support.",
+  greeting: "Welcome to Keystone CRM, the complete commercial broker software package, built by brokers, for brokers just like you. This call may be recorded. Press 1 for sales, 2 for support.",
   retry: "Sorry, I didn't catch that. Press 1 for sales, 2 for support.",
   connecting: (queue: KsQueue) => `One moment, connecting you to Keystone ${queue}.`,
   closed: (queue: KsQueue) => `Keystone ${queue} is closed right now. Please leave your name, number and a short message after the tone, and we will call you back.`,

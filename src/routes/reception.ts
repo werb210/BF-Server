@@ -355,6 +355,12 @@ router.get("/audio/:id", safeHandler(async (req: Request, res: Response) => {
 }));
 
 // ------------------------------------------------------------------ routing a caller to a menu target
+/** What a business-line caller hears instead of a staff member's name. */
+export const TEAM_LINE_PHRASES = {
+  connecting: "Please stay on the line for the next team member who can assist you.",
+  nobody: "Sorry, no one is available to take your call right now.",
+};
+
 type RouteCtx = {
   /** The option id (or "after" / "noanswer") the target came from: carried in callback URLs. */
   ref: string;
@@ -364,14 +370,16 @@ type RouteCtx = {
   fallback: boolean;
   /** The person rung before the fallback (their voicemail is where the fallback ends). */
   forUserId: string | null;
+  /** A business line (Boreal Risk Management): the caller is never told a staff member's name. */
+  team?: boolean;
 };
 
 const ctxQuery = (ctx: RouteCtx): string =>
-  `${ctx.fallback ? "&fb=1" : ""}${ctx.forUserId ? `&for=${encodeURIComponent(ctx.forUserId)}` : ""}`;
+  `${ctx.fallback ? "&fb=1" : ""}${ctx.forUserId ? `&for=${encodeURIComponent(ctx.forUserId)}` : ""}${ctx.team ? "&tl=1" : ""}`;
 
 function ctxFrom(req: Request, ref: string, label: string): RouteCtx {
   const forId = String(req.query.for ?? "").trim();
-  return { ref, label, fallback: String(req.query.fb ?? "") === "1", forUserId: /^[0-9a-f-]{36}$/i.test(forId) ? forId : null };
+  return { ref, label, fallback: String(req.query.fb ?? "") === "1", forUserId: /^[0-9a-f-]{36}$/i.test(forId) ? forId : null, team: String(req.query.tl ?? "") === "1" };
 }
 
 /** The target a callback's ref points at in the current menu. */
@@ -393,7 +401,7 @@ async function noAnswer(v: any, req: Request, menu: PhoneMenu, ctx: RouteCtx, so
     return;
   }
   emitText(v, sorry);
-  await routeTarget(v, req, menu, fallback, { ref: "noanswer", label: "", fallback: true, forUserId: whoUserId });
+  await routeTarget(v, req, menu, fallback, { ref: "noanswer", label: "", fallback: true, forUserId: whoUserId, team: ctx.team });
 }
 
 function groupSorry(kind: "unavail" | "noanswer"): string {
@@ -438,7 +446,7 @@ async function routeTarget(v: any, req: Request, menu: PhoneMenu, target: MenuTa
     // BF_SERVER_v821_DIALER - outside the person's call hours: away prompt (press 1 rings them as normal).
     const away = await awayStatus(pool, t.userId);
     if (away.away && t.userId) {
-      awayTwiml(v, { name: target.name, userId: t.userId, urgentPassthrough: away.urgentPassthrough, ring: ctx.ref });
+      awayTwiml(v, { name: ctx.team ? "Our team" : target.name, userId: t.userId, urgentPassthrough: away.urgentPassthrough, ring: ctx.ref });
       return;
     }
     await ringNamedTarget(v, req, menu, target, t, ctx);
@@ -503,6 +511,7 @@ async function readyInOrder(refs: string[]): Promise<Array<{ ref: string; identi
 // BF_SERVER_v821_DIALER - one person's ring, shared by the menu and the away prompt's press-1.
 async function ringNamedTarget(v: any, req: Request, menu: PhoneMenu, target: { name: string }, t: Resolved, ctx: RouteCtx): Promise<void> {
   const name = target.name;
+  const connecting = ctx.team ? TEAM_LINE_PHRASES.connecting : `One moment, connecting you to ${name}.`;
   // BF_SERVER_PHONE_HOTFIX_v1 - forward the ORIGINAL caller's number so staff see who is calling.
   const callerId = callerIdFor(req);
   // Never parallel-dial cellular: a reachable iPhone/portal rings first and on its own.
@@ -511,7 +520,7 @@ async function ringNamedTarget(v: any, req: Request, menu: PhoneMenu, target: { 
   const watchCell = t.standaloneWatch && t.cell ? t.cell : null;
   if (t.clientReady && t.identity) {
     const { card, rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-    emitText(v, `One moment, connecting you to ${name}.`);
+    emitText(v, connecting);
     const action = `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${watchCell ? "&cell=1" : ""}${ctxQuery(ctx)}`;
     const dial = v.dial({ answerOnBridge: true, timeout: watchCell ? CLIENT_FIRST_TIMEOUT_SECONDS : (menu.noAnswer?.ringSeconds ?? DEFAULT_RING_SECONDS), action, method: "POST", callerId, ...recordingDialAttrs(rec) });
     dialClient(dial, t.identity, card, legStatusAttrs(rec ?? legRecordName(req), t.identity)); // BF_SERVER_v829_DIALER_RELIABILITY
@@ -520,11 +529,11 @@ async function ringNamedTarget(v: any, req: Request, menu: PhoneMenu, target: { 
   // No reachable app: the opted-in cell (screened) is the only leg.
   if (watchCell) {
     const { rec } = await cardAndRecord(req); // BF_SERVER_v821_DIALER
-    emitText(v, `One moment, connecting you to ${name}.`);
+    emitText(v, connecting);
     dialCell(v, watchCell, `${BASE}/unavailable?target=${encodeURIComponent(ctx.ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, t.userId);
     return;
   }
-  await noAnswer(v, req, menu, ctx, `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`, t.userId);
+  await noAnswer(v, req, menu, ctx, ctx.team ? TEAM_LINE_PHRASES.nobody : `Sorry, ${name} ${t.onCall ? "is on another call" : "isn't available right now"}.`, t.userId);
 }
 
 // ------------------------------------------------------------------ the greeting and the menu choices
@@ -578,11 +587,11 @@ router.post("/line", twilioWebhookValidation, safeHandler(async (req: Request, r
   console.log(JSON.stringify({ event: "business_line_call", silo: "BI", callSid: req.body?.CallSid ?? null, option: option.id }));
   if (!officeOpen(menu, new Date()).open) {
     v.say({ voice: VOICE }, BI_LINE_PHRASES.closed);
-    await routeTarget(v, req, menu, menu.afterHours, { ref: "after", label: "", fallback: false, forUserId: null });
+    await routeTarget(v, req, menu, menu.afterHours, { ref: "after", label: "", fallback: false, forUserId: null, team: true });
     return send(res, v);
   }
   v.say({ voice: VOICE }, BI_LINE_PHRASES.open);
-  await routeTarget(v, req, menu, option.target, { ref: option.id, label: option.label, fallback: false, forUserId: null });
+  await routeTarget(v, req, menu, option.target, { ref: option.id, label: option.label, fallback: false, forUserId: null, team: true });
   return send(res, v);
 }));
 
@@ -731,7 +740,7 @@ router.post("/unavailable", twilioWebhookValidation, safeHandler(async (req: Req
       dialCell(v, tt.cell, `${BASE}/unavailable?target=${encodeURIComponent(ref)}${ctxQuery(ctx)}`, callerId, callerFrom(req), rec, tt.userId);
       return send(res, v);
     }
-    await noAnswer(v, req, menu, ctx, `Sorry, ${found.target.name} didn't pick up.`, tt.userId);
+    await noAnswer(v, req, menu, ctx, ctx.team ? TEAM_LINE_PHRASES.nobody : `Sorry, ${found.target.name} didn't pick up.`, tt.userId);
     return send(res, v);
   }
   // The menu changed while this call was ringing: the shared voicemail.
