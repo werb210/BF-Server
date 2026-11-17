@@ -398,6 +398,7 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       if (await handleBlockedCall(blockPool as any, vb, from, callSid || null)) return res.send(vb.toString());
     }
     // BF_SERVER_v853_KS_PHONE_SUPPORT - the Keystone number has its own menu, queues and silo (routes/ksVoice.ts).
+    await (await import("../modules/ks/ksPhone.js")).refreshKsLine((await import("../db.js")).pool as any); // BF_SERVER_v970_BUSINESS_LINE_INBOUND
     if ((await import("../modules/ks/ksPhone.js")).isKsVoiceNumber(to)) {
       const { default: KsVoiceResponse } = await import("twilio/lib/twiml/VoiceResponse.js");
       const vks = new KsVoiceResponse();
@@ -461,6 +462,18 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
       }
     } catch (err: any) {
       console.warn("direct_line_lookup_failed", { callSid, message: err?.message });
+    }
+    // BF_SERVER_v970_BUSINESS_LINE_INBOUND - the Insurance line has its own greeting and goes straight to Risk Management.
+    try {
+      const { pool: lnPool } = await import("../db.js");
+      const { siloForLineNumber } = await import("../voice/directLines.js");
+      if ((await siloForLineNumber(lnPool, to)) === "BI") {
+        const vln = new VoiceResponse();
+        vln.redirect({ method: "POST" }, "/api/webhooks/twilio/reception/line?silo=BI");
+        return res.send(vln.toString());
+      }
+    } catch (err: any) {
+      console.warn("business_line_lookup_failed", { callSid, message: err?.message });
     }
     // BF_SERVER_RECEPTION_v1 — hand PSTN callers to the phone menu instead of ring-all.
     // BF_SERVER_v869_PHONE_MENU - on when RECEPTION_ENABLED=true (as today) or once an Admin has saved a phone menu

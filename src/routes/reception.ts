@@ -559,6 +559,33 @@ router.post("/greeting", twilioWebhookValidation, safeHandler(async (req: Reques
   return send(res, v);
 }));
 
+// BF_SERVER_v970_BUSINESS_LINE_INBOUND - a call to the Insurance line (settings `silo_line.BI`) skips the Boreal Group
+// greeting: the caller hears Boreal Risk Management and goes straight to that menu option (the one a caller on the
+// main line reaches with 2). With no such option in the saved menu the caller gets the normal greeting.
+export const BI_LINE_PHRASES = {
+  open: "This call may be recorded. Thank you for calling Boreal Risk Management.",
+  closed: "Thank you for calling Boreal Risk Management. Our office is closed right now.",
+};
+export function riskManagementOption(options: MenuOption[]): MenuOption | null {
+  return options.find((o) => /risk|insurance/i.test(o.label)) ?? options.find((o) => o.keywords?.some((k) => /risk|insurance/i.test(k))) ?? null;
+}
+router.post("/line", twilioWebhookValidation, safeHandler(async (req: Request, res: Response) => {
+  const v = await newVR();
+  if (await handleBlockedCall(pool as any, v, callerFrom(req), String(req.body?.CallSid ?? "") || null)) return send(res, v);
+  const { menu } = await loadMenu(pool as any);
+  const option = String(req.query.silo ?? "").toUpperCase() === "BI" ? riskManagementOption(menu.options) : null;
+  if (!option) { v.redirect({ method: "POST" }, `${BASE}/greeting`); return send(res, v); }
+  console.log(JSON.stringify({ event: "business_line_call", silo: "BI", callSid: req.body?.CallSid ?? null, option: option.id }));
+  if (!officeOpen(menu, new Date()).open) {
+    v.say({ voice: VOICE }, BI_LINE_PHRASES.closed);
+    await routeTarget(v, req, menu, menu.afterHours, { ref: "after", label: "", fallback: false, forUserId: null });
+    return send(res, v);
+  }
+  v.say({ voice: VOICE }, BI_LINE_PHRASES.open);
+  await routeTarget(v, req, menu, option.target, { ref: option.id, label: option.label, fallback: false, forUserId: null });
+  return send(res, v);
+}));
+
 /** BF_SERVER_v871_CALL_QUEUES - the greeting already tells callers the call may be recorded (Boreal's does). */
 function greetingSaysRecorded(menu: PhoneMenu): boolean {
   return menu.greeting.mode === "tts" && /\brecorded\b/i.test(menu.greeting.text);

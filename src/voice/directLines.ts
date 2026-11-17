@@ -89,6 +89,16 @@ export async function listSiloLines(q: Q): Promise<Array<{ silo: string; number:
   return out;
 }
 
+/** BF_SERVER_v970_BUSINESS_LINE_INBOUND - the business whose own line was called ("BI", "KS"...), else null. */
+export async function siloForLineNumber(q: Q, to: unknown): Promise<string | null> {
+  const n = e164(to);
+  if (!n) return null;
+  for (const s of LINE_SILOS) {
+    if ((await siloLineNumber(q, s)) === n) return s;
+  }
+  return null;
+}
+
 /** Caller ID for a call made in a business: that business's own line when it has one, else the staff rule. */
 export async function callerIdForCall(q: Q, userId: unknown, silo: unknown): Promise<string> {
   try {
