@@ -20,6 +20,7 @@
 export const INTEGRATION_TEST_FILES: string[] = [
   "src/__tests__/phoneExtension.v961.integration.test.ts", // BF_SERVER_v961_PHONE_EXTENSION - needs Postgres
   "src/__tests__/importListFields.v971.integration.test.ts", // BF_SERVER_v971_IMPORT_LIST_FIELDS - needs Postgres
+  "src/__tests__/crmSortAllColumns.v974.integration.test.ts", // BF_SERVER_v974_CRM_SORT_ALL_COLUMNS - needs Postgres
   "src/__tests__/lenderReps.v960.integration.test.ts", // BF_SERVER_v960_LENDER_REPS - needs Postgres
   "src/__tests__/pipelineNames.v959.integration.test.ts", // PIPELINE_NAME_FROM_APPLICATION - needs Postgres
   "src/__tests__/mayaReports.v930.integration.test.ts", // BF_SERVER_v930_MAYA_REPORTS - needs Postgres
