@@ -650,6 +650,23 @@ router.post("/contacts", requireCrmWrite, safeHandler(async (req: any, res: any)
 }));
 
 
+// BF_SERVER_v971_IMPORT_LIST_FIELDS - shared by the contact and company imports.
+export function importList(v: unknown): string[] {
+  const parts = Array.isArray(v) ? v.map((x) => String(x ?? "")) : String(v ?? "").split(/[;|]/);
+  return [...new Set(parts.map((x) => x.trim().slice(0, 80)).filter(Boolean))].slice(0, 30);
+}
+export function importCustom(v: unknown): Record<string, string | number | boolean> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string | number | boolean> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (!/^[a-z][a-z0-9_]{0,62}$/.test(k)) continue;
+    if (typeof val === "number" && Number.isFinite(val)) out[k] = val;
+    else if (typeof val === "boolean") out[k] = val;
+    else if (String(val ?? "").trim()) out[k] = String(val).trim().slice(0, 2000);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 // BF_SERVER_BLOCK_v759_CONTACT_CSV_IMPORT — bulk upsert from a CSV the portal
 // parsed client-side. Dedupe by email within the silo: existing -> update with
 // the new (non-empty) fields; new -> insert. Imported contacts are owned by the
@@ -746,7 +763,40 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
       const displayName = `${fname} ${lname}`.trim();
       const rowOwnerId = await resolveOwner(r.owner);
 
+      // BF_SERVER_v971_IMPORT_LIST_FIELDS - list imports (prospect lists) carry more than the basics: tags, a mobile,
+      // a mailing address, "do not text" and extra research fields. All optional; a file without them imports as before.
+      const xTags = importList(r.tags);
+      const xMobile = String(r.mobile ?? "").trim() || null;
+      const xAddr = {
+        address_street: String(r.address_street ?? "").trim() || null, address_city: String(r.address_city ?? "").trim() || null,
+        address_state: String(r.address_state ?? "").trim() || null, address_zip: String(r.address_zip ?? "").trim() || null,
+        address_country: String(r.address_country ?? "").trim() || null,
+      };
+      const xCustom = importCustom(r.custom_fields);
+      const xNoText = r.sms_opt_out === true;
+      let xCompanyId: string | null = null;
+      if (companyName && has("company_id")) {
+        const co = await client.query(`SELECT id FROM companies WHERE silo = $1 AND lower(name) = lower($2) LIMIT 1`, [silo, companyName]);
+        xCompanyId = co.rows[0]?.id ?? null;
+      }
+
       let existingId: string | null = null;
+      // A person with no email on file is matched by name and company, so a later, richer copy of the same list
+      // fills in the email instead of making a second record.
+      {
+        const exName = displayName && companyName ? await client.query(
+          `SELECT * FROM contacts WHERE silo = $1 AND COALESCE(email, '') = '' AND merged_into_id IS NULL
+              AND lower(trim(COALESCE(name, ''))) = lower($2) AND lower(trim(COALESCE(company_name, ''))) = lower($3) LIMIT 1`,
+          [silo, displayName, companyName],
+        ) : { rows: [] as any[] };
+        if (!email) existingId = exName.rows[0]?.id ?? null;
+        else {
+          const exEmail = await client.query(`SELECT id FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`, [silo, email]);
+          if (!exEmail.rows[0] && exName.rows[0]?.id) {
+            await client.query(`UPDATE contacts SET email = $2 WHERE id = $1`, [exName.rows[0].id, email]);
+          }
+        }
+      }
       if (email) {
         const ex = await client.query(
           `SELECT * FROM contacts WHERE silo = $1 AND lower(email) = lower($2) LIMIT 1`,
@@ -770,6 +820,12 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
         overwrite("company_name", companyName);
         overwrite("job_title", jobTitle);
         overwrite("lead_status", leadStatus);
+        overwrite("secondary_phone", xMobile); // v971
+        for (const [col, val] of Object.entries(xAddr)) overwrite(col, val);
+        if (has("company_id") && xCompanyId) { sets.push(`company_id = COALESCE(company_id, $${i})`); vals.push(xCompanyId); i++; }
+        if (has("tags") && xTags.length) { sets.push(`tags = (SELECT ARRAY(SELECT DISTINCT unnest(coalesce(contacts.tags,'{}'::text[]) || $${i}::text[])))`); vals.push(xTags); i++; }
+        if (has("custom_fields") && xCustom) { sets.push(`custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $${i}::jsonb`); vals.push(JSON.stringify(xCustom)); i++; }
+        if (has("sms_opt_out") && xNoText) { sets.push("sms_opt_out = true"); }
         if (has("owner_id") && rowOwnerId) { sets.push(`owner_id = $${i}`); vals.push(rowOwnerId); i++; }
         else if (has("owner_id") && ownerId) { sets.push(`owner_id = COALESCE(owner_id, $${i})`); vals.push(ownerId); i++; }
         if (has("updated_at")) { sets.push("updated_at = now()"); }
@@ -814,6 +870,12 @@ router.post("/contacts/import", requireCrmWrite, safeHandler(async (req: any, re
           add("sms_opt_out", false);
         }
         add("marketing_contact", rowMarketing(r) ?? fileMarketing); // BF_SERVER_v958_MARKETING_CONTACTS
+        if (xMobile) add("secondary_phone", xMobile); // v971
+        for (const [col, val] of Object.entries(xAddr)) if (val) add(col, val);
+        if (xCompanyId) add("company_id", xCompanyId);
+        if (xTags.length) add("tags", xTags);
+        if (xCustom && has("custom_fields")) { insCols.push("custom_fields"); ph.push(`$${i}::jsonb`); vals.push(JSON.stringify(xCustom)); i++; }
+        if (xNoText && !smsConsentExpress) add("sms_opt_out", true);
         const ins = await client.query(
           `INSERT INTO contacts (${insCols.join(", ")}) VALUES (${ph.join(", ")}) RETURNING id`,
           vals,
@@ -881,6 +943,13 @@ router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, r
       const region = String(r.region ?? "").trim() || null;
       const financing = splitList(r.types_of_financing);
       const tags = splitList(r.tags);
+      // BF_SERVER_v971_IMPORT_LIST_FIELDS - optional website, phone, mailing address, head count and research fields.
+      const xText: Record<string, string | null> = {};
+      for (const col of ["website", "phone", "address_street", "address_city", "address_state", "address_zip", "address_country", "country", "province"]) {
+        xText[col] = String(r[col] ?? "").trim() || null;
+      }
+      const xStaff = Number.isFinite(Number(r.employee_count)) && Number(r.employee_count) > 0 ? Math.round(Number(r.employee_count)) : null;
+      const xCustom = importCustom(r.custom_fields);
       const ex = await client.query(
         `SELECT id FROM companies WHERE silo = $1 AND lower(name) = lower($2) LIMIT 1`,
         [silo, name],
@@ -898,6 +967,9 @@ router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, r
         overwrite("domain", domain);
         overwrite("city", city);
         overwrite("region", region);
+        for (const [col, val] of Object.entries(xText)) overwrite(col, val);
+        overwrite("employee_count", xStaff);
+        if (has("custom_fields") && xCustom) { sets.push(`custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $${i}::jsonb`); vals.push(JSON.stringify(xCustom)); i++; }
         if (has("types_of_financing") && financing.length) {
           sets.push(`types_of_financing = $${i}`);
           vals.push(financing);
@@ -929,6 +1001,9 @@ router.post("/companies/import", requireCrmWrite, safeHandler(async (req: any, r
         add("region", region);
         if (has("types_of_financing")) { insCols.push("types_of_financing"); ph.push(`$${i}`); vals.push(financing); i++; }
         if (has("tags")) { insCols.push("tags"); ph.push(`$${i}`); vals.push(tags); i++; }
+        for (const [col, val] of Object.entries(xText)) if (val) add(col, val);
+        if (xStaff) add("employee_count", xStaff);
+        if (xCustom && has("custom_fields")) { insCols.push("custom_fields"); ph.push(`$${i}::jsonb`); vals.push(JSON.stringify(xCustom)); i++; }
         add("silo", silo);
         add("owner_id", ownerId);
         await client.query(`INSERT INTO companies (${insCols.join(", ")}) VALUES (${ph.join(", ")})`, vals);
