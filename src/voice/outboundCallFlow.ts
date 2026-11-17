@@ -145,7 +145,7 @@ export async function dialPendingCallees(conferenceId: string, deps: {
       `UPDATE conference_participants p SET status = 'invited'
          FROM conferences c
         WHERE p.conference_id = $1 AND c.id = p.conference_id AND p.status = '${PENDING_DIAL}' AND p.kind = 'pstn'
-        RETURNING p.id::text AS id, p.phone_number, c.friendly_name, c.created_by_user_id::text AS created_by_user_id`,
+        RETURNING p.id::text AS id, p.phone_number, c.friendly_name, c.created_by_user_id::text AS created_by_user_id, c.silo`,
       [conferenceId],
     );
     for (const row of claimed.rows) {
@@ -160,7 +160,7 @@ export async function dialPendingCallees(conferenceId: string, deps: {
       try {
         const callerId = deps.callerId
           ? await deps.callerId(row.created_by_user_id ?? null)
-          : await (await import("./directLines.js")).callerIdForUser(pool, row.created_by_user_id ?? "");
+          : await (await import("./directLines.js")).callerIdForCall(pool, row.created_by_user_id ?? "", row.silo); // v969: the business's own line first
         const dial = deps.dialPstn ?? (await import("./conferenceService.js")).dialPstnIntoConference;
         await dial({ conferenceId, conferenceFriendly: row.friendly_name, toNumber: row.phone_number, fromNumber: callerId, participantId: row.id });
         dialled += 1;

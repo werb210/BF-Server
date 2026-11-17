@@ -51,3 +51,51 @@ export async function callerIdForUser(q: Q, userId: unknown): Promise<string> {
     return mainLineNumber();
   }
 }
+
+// BF_SERVER_v969_CALLER_ID_PER_BUSINESS - a business can have its own outgoing line. A call made on the Insurance
+// or Keystone side of the portal or dialler shows that business's number; a business with no line of its own keeps
+// the rule above (the caller's direct number, else the 866). Lines are kept in `settings` as `silo_line.<SILO>`
+// so adding one needs no server variable. Boreal Financial has no line here on purpose: staff direct numbers stay.
+const LINE_KEY = (silo: string) => "silo_line." + silo;
+export const LINE_SILOS = ["BI", "SLF", "KS"] as const;
+const lineCache = new Map<string, { at: number; number: string | null }>();
+export const clearSiloLineCache = (): void => lineCache.clear();
+
+export async function siloLineNumber(q: Q, silo: unknown): Promise<string | null> {
+  const s = String(silo ?? "").trim().toUpperCase();
+  if (!(LINE_SILOS as readonly string[]).includes(s)) return null;
+  const hit = lineCache.get(s);
+  if (hit && Date.now() - hit.at < 60_000) return hit.number;
+  const { rows } = await q.query(`SELECT value FROM settings WHERE key = $1 LIMIT 1`, [LINE_KEY(s)]);
+  const number = e164(rows[0]?.value) ?? null;
+  lineCache.set(s, { at: Date.now(), number });
+  return number;
+}
+
+export async function setSiloLineNumber(q: Q, silo: unknown, raw: unknown): Promise<{ silo: string; number: string | null }> {
+  const s = String(silo ?? "").trim().toUpperCase();
+  if (!(LINE_SILOS as readonly string[]).includes(s)) throw new Error("unknown_business");
+  const number = String(raw ?? "").trim() ? e164(raw) : null;
+  if (String(raw ?? "").trim() && !number) throw new Error("invalid_number");
+  if (number) await q.query(`INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [LINE_KEY(s), number]);
+  else await q.query(`DELETE FROM settings WHERE key = $1`, [LINE_KEY(s)]);
+  lineCache.delete(s);
+  return { silo: s, number };
+}
+
+export async function listSiloLines(q: Q): Promise<Array<{ silo: string; number: string | null }>> {
+  const out: Array<{ silo: string; number: string | null }> = [];
+  for (const s of LINE_SILOS) { lineCache.delete(s); out.push({ silo: s, number: await siloLineNumber(q, s) }); }
+  return out;
+}
+
+/** Caller ID for a call made in a business: that business's own line when it has one, else the staff rule. */
+export async function callerIdForCall(q: Q, userId: unknown, silo: unknown): Promise<string> {
+  try {
+    const line = await siloLineNumber(q, silo);
+    if (line) return line;
+  } catch (err: any) {
+    console.warn("[voice] business line lookup failed", { message: err?.message });
+  }
+  return callerIdForUser(q, userId);
+}
