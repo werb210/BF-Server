@@ -93,7 +93,7 @@ describe("the Boreal Financial RCS brand is used for Boreal Financial only", () 
     expect(h.sendSMS).toHaveBeenCalledWith("+17805550100", "Your policy renews soon", { silo: "BI" });
   });
 
-  it("staff texts in the Insurance silo pass their silo (plain SMS); Financial texts use RCS", async () => {
+  it("a text a staff member types goes out from their own number in every silo, never through the branded service (v972)", async () => {
     process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = MG;
     const app = await mount("/api/communications", "../routes/communications.js");
     const bi = await request(app).post("/api/communications/sms").set("Authorization", `Bearer ${adminToken()}`).set("X-Silo", "BI").send({ to: "+17804561234", body: "Hello from Insurance" });
@@ -105,7 +105,8 @@ describe("the Boreal Financial RCS brand is used for Boreal Financial only", () 
     const bf = await request(app).post("/api/communications/sms").set("Authorization", `Bearer ${adminToken()}`).set("X-Silo", "BF").send({ to: "+17804561234", body: "Hello from Financial" });
     expect(bf.status).toBeLessThan(300);
     const bfArgs = (h.twilioCreate.mock.calls[1] as unknown as [any])[0];
-    expect(bfArgs.messagingServiceSid).toBe(MG);
+    expect(bfArgs.messagingServiceSid).toBeUndefined();
+    expect(bfArgs.from).toBeTruthy();
   });
 });
 
