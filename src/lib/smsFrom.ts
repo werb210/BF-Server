@@ -38,7 +38,11 @@ export function smsFromFor<T extends string | undefined | null>(to: unknown, def
 // the text from "Boreal Financial" with the logo and a verified badge; every other phone gets an ordinary SMS from the
 // service's number pool (put the 866 toll-free number and the local number in the pool). Unset = unchanged behaviour
 // (send from smsFromFor). Marketing and bulk sends do not use this.
-export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null, opts: { silo?: string | null } = {}): { messagingServiceSid: string } | { from: string | undefined | null } {
+// BF_SERVER_v972_RCS_SYSTEM_TEXTS_ONLY - a text a staff member types (portal or dialler) always goes out from the number
+// it was sent from, never through the service: the service picks its own fallback number for phones without RCS
+// (every iPhone), so a staff text could arrive from a colleague's line and the reply would go to them.
+export function smsSenderFor(to: unknown, defaultFrom: string | undefined | null, opts: { silo?: string | null; staffTyped?: boolean } = {}): { messagingServiceSid: string } | { from: string | undefined | null } {
+  if (opts.staffTyped) return { from: smsFromFor(to, defaultFrom) };
   // BF_SERVER_RCS_BRAND_BF_ONLY_v781 - the RCS sender is branded "Boreal Financial". Boreal Insurance / Boreal Risk
   // Management texts stay plain SMS until BI has its own RCS sender.
   // BF_SERVER_v850_KS_CRM - Keystone (KS) is not Boreal Financial either: plain SMS until it has its own RCS sender.

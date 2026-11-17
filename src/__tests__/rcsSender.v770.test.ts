@@ -37,13 +37,24 @@ describe("branded (RCS) texting through a Messaging Service", () => {
     expect(smsSenderFor("+15875550123", "+15875550100")).toEqual({ from: "+15875550100" });
   });
 
-  it.each(TRANSACTIONAL)("%s (transactional) sends through the Messaging Service", async (name) => {
+  it.each(TRANSACTIONAL.filter((n) => n !== "staff communications"))("%s (transactional) sends through the Messaging Service", async (name) => {
     process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = SID;
     const r = await driveSender(name, "+15874441234", { queryMock, createMock });
     expect(r.error).toBeUndefined();
     expect(r.payload, `${name} reached Twilio`).toBeDefined();
     expect(r.payload!.messagingServiceSid).toBe(SID);
     expect(r.payload).not.toHaveProperty("from");
+  });
+
+  // BF_SERVER_v972_RCS_SYSTEM_TEXTS_ONLY - the service picks its own fallback number for phones without RCS, so a
+  // text a staff member types keeps the number it was sent from.
+  it("a staff-typed text never goes through the Messaging Service", async () => {
+    process.env.TWILIO_RCS_MESSAGING_SERVICE_SID = SID;
+    expect(smsSenderFor("+15875550123", "+15875550100", { staffTyped: true })).toEqual({ from: "+15875550100" });
+    expect(smsSenderFor("+15875550123", "+15875550100")).toEqual({ messagingServiceSid: SID });
+    const r = await driveSender("staff communications", "+15874441234", { queryMock, createMock });
+    expect(r.payload?.messagingServiceSid).toBeUndefined();
+    expect(r.payload?.from).toBeTruthy();
   });
 
   it.each(BULK)("%s (marketing / bulk) does not", async (name) => {
