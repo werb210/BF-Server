@@ -182,7 +182,7 @@ export async function buildPgiRepAgreementPdf(data: PgiRepAgreementData): Promis
   ctx.page.drawLine({ start: { x: M, y: PH - ctx.y }, end: { x: M + sigW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawLine({ start: { x: M + sigW + 40, y: PH - ctx.y }, end: { x: M + CW, y: PH - ctx.y }, thickness: 0.8, color: rgb(0.3, 0.3, 0.3) });
   ctx.page.drawText(`{{t:s;r:y;o:"${ROLE}";w:170;h:20;}}`, { x: M + 2, y: PH - ctx.y + 22, size: 6, font: F, color: WHITE });
-  const today = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/Edmonton" }).format(new Date());
+  const today = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/Regina" }).format(new Date());
   ctx.page.drawText(today, { x: M + sigW + 42, y: PH - ctx.y + 3, size: 9, font: F, color: BLACK });
   ctx.y += 12;
   text(ctx, "Signature", 8, F, GREY);
@@ -195,7 +195,7 @@ export async function buildPgiRepAgreementPdf(data: PgiRepAgreementData): Promis
   ctx.y += 14;
   text(ctx, "Per: Todd Werboweski, Director", 8.5, F, BLACK);
   ctx.y += 12;
-  para(ctx, "Signed electronically for Boreal Risk Management on " + new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Edmonton" }).format(new Date()) + ".", 8, 0, GREY);
+  para(ctx, "Signed electronically for Boreal Risk Management on " + new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "America/Regina" }).format(new Date()) + ".", 8, 0, GREY);
   ctx.y += 10;
   text(ctx, "Boreal Risk Management | 450 Sparling Crt SW, Edmonton, AB T6X 1G9, Canada | Agreement version " + PGI_REP_AGREEMENT_VERSION, 7.5, F, GREY);
   return doc.save();
