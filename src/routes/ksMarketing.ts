@@ -21,7 +21,10 @@ const OPT_OUT_EVENTS = new Set(["unsubscribed", "email_bounced", "suppressed"]);
 export const KS_MARKETING_EVENT_TYPES = [
   "email_sent", "email_opened", "email_clicked", "email_bounced", "unsubscribed", "suppressed", "replied",
   "sequence_stopped", "consent_changed",
+  "flow_clicked", // BF_SERVER_v975_KS_FLOW_CALL_TASK - a broker clicked a link in the Keystone email flow: a call task follows
 ] as const;
+/** Who gets the call task when a broker clicks in the Keystone email flow (KS_FLOW_CALL_OWNER_EMAIL, else Todd). */
+export const ksFlowCallOwnerEmail = (): string => String(process.env.KS_FLOW_CALL_OWNER_EMAIL ?? "").trim().toLowerCase() || "todd.w@boreal.financial";
 
 const limiter = rateLimit({
   windowMs: 60_000,
@@ -141,6 +144,15 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       await client.query(`UPDATE ks_crm_timeline_keys SET crm_note_id = $2::uuid WHERE dedupe_key = $1`, [`mkt:${e.key}`, note.rows[0]?.id ?? null]);
       added++;
       if (OPT_OUT_EVENTS.has(e.type)) optOut = true;
+      if (e.type === "flow_clicked") {
+        await client.query(
+          `INSERT INTO tasks (silo, title, body, type, priority, due_at, assignee_user_id, contact_id, source)
+           VALUES ('KS', $1, $2, 'CALL', 'HIGH', now() + interval '1 day',
+                   COALESCE((SELECT id FROM users WHERE lower(email) = $3 LIMIT 1), (SELECT owner_id FROM contacts WHERE id = $4::uuid)),
+                   $4::uuid, 'SEQUENCE')`,
+          [`Call ${parsed.contact.name ?? parsed.email} - clicked the Keystone email`.slice(0, 200), e.summary.slice(0, 2000), ksFlowCallOwnerEmail(), contactId],
+        );
+      }
     }
     if (optOut) await client.query(`UPDATE contacts SET marketing_opt_out = true, updated_at = now() WHERE id = $1 AND silo = 'KS'`, [contactId]);
     await client.query("COMMIT");

@@ -92,6 +92,18 @@ describe("POST /events", () => {
     expect(callsMatching(h.query, /ks_stage = coalesce\(ks_stage, 'lead'\)/)).toHaveLength(1);
   });
 
+  // BF_SERVER_v975_KS_FLOW_CALL_TASK
+  it("a click in the Keystone email flow creates one call task, for Todd unless another owner is set", async () => {
+    db([[/SELECT id::text AS id FROM contacts/, { rows: [{ id: CONTACT }] }]]);
+    await send({ email: "jo@acme.example", contact: { name: "Jo Sample" }, events: [ev("click:1", "flow_clicked")] });
+    const tasks = callsMatching(h.query, /INSERT INTO tasks/);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]![0]).toContain("'KS'");
+    expect(tasks[0]![1]).toEqual(["Call Jo Sample - clicked the Keystone email", "flow_clicked summary", "todd.w@boreal.financial", CONTACT]);
+    await send({ email: "jo@acme.example", events: [ev("click:1", "flow_clicked")] });
+    expect(callsMatching(h.query, /INSERT INTO tasks/)).toHaveLength(1); // the same event never makes a second task
+  });
+
   it("an unsubscribe sets the contact's marketing opt-out", async () => {
     db([[/SELECT id::text AS id FROM contacts/, { rows: [{ id: CONTACT }] }]]);
     await send({ email: "jo@acme.example", events: [ev("unsub:1", "unsubscribed")] });
