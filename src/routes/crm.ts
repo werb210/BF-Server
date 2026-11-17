@@ -398,7 +398,7 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const hasStatus = availableColumns.has("status"); // BF_SERVER_CONTACTS_HIDE_ARCHIVED_v1
   // BF_SERVER_BLOCK_v81_CONTACTS_SORT — accept ?sort=col:dir from the portal.
   // Whitelist columns; unknown sort falls back to created_at desc.
-  const SORT_COLS = new Set(["name", "company_name", "lead_status", "owner_name", "created_at"]);
+  const SORT_COLS = new Set(["name", "company_name", "lead_status", "owner_name", "created_at", "tags", "marketing_contact"]); // v974: every column sorts
   const rawSort = typeof req.query.sort === "string" ? req.query.sort : "";
   const [sortCol, sortDir] = rawSort.split(":");
   const orderCol = SORT_COLS.has(sortCol) ? sortCol : "created_at";
@@ -410,6 +410,10 @@ router.get("/contacts", safeHandler(async (req: any, res: any) => {
   const orderColExpr = cfSort ??
     (orderCol === "company_name" ? "co.name"
     : orderCol === "owner_name" ? "u.first_name"
+    // BF_SERVER_v974_CRM_SORT_ALL_COLUMNS - Tags sorts by the tags as they read left to right (untagged last);
+    // Marketing sorts Yes/No.
+    : orderCol === "tags" ? (hasTags ? "NULLIF(lower(array_to_string(coalesce(c.tags, '{}'::text[]), ' ')), '')" : "c.created_at")
+    : orderCol === "marketing_contact" ? "COALESCE(c.marketing_contact, true)"
     : `c.${orderCol}`);
 
   const values: unknown[] = [silo];
@@ -1036,11 +1040,12 @@ router.get("/contacts/marketing-summary", safeHandler(async (req: any, res: any)
     `SELECT count(*)::int AS total,
             count(*) FILTER (WHERE COALESCE(c.marketing_contact, true))::int AS marketing,
             count(*) FILTER (WHERE COALESCE(c.marketing_opt_out, false))::int AS unsubscribed,
-            count(*) FILTER (WHERE ${EMAIL_BLAST_ELIGIBLE_SQL})::int AS emailable
+            count(*) FILTER (WHERE ${EMAIL_BLAST_ELIGIBLE_SQL})::int AS emailable,
+            count(*) FILTER (WHERE COALESCE(c.marketing_contact, true) AND (c.email IS NULL OR position('@' in c.email) < 2))::int AS no_email
        FROM contacts c WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived' AND c.merged_into_id IS NULL`,
     [silo]);
   const row = c.rows[0] ?? {};
-  res.json({ ok: true, total: Number(row.total ?? 0), marketing: Number(row.marketing ?? 0), unsubscribed: Number(row.unsubscribed ?? 0), emailable: Number(row.emailable ?? 0), budget: null });
+  res.json({ ok: true, total: Number(row.total ?? 0), marketing: Number(row.marketing ?? 0), unsubscribed: Number(row.unsubscribed ?? 0), emailable: Number(row.emailable ?? 0), no_email: Number(row.no_email ?? 0), budget: null });
 }));
 
 router.get("/contacts/dedupe-preview", safeHandler(async (req: any, res: any) => {
