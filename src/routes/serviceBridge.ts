@@ -232,6 +232,32 @@ router.get("/pgi-rep-agreement/:groupId/status", safeHandler(async (req, res) =>
   return res.json({ ok: true, signed: status.signed });
 }));
 
+// BF_SERVER_v976_SERVICE_MAIL_REPLIES - who has emailed a staff mailbox since a time, so BI-Server can stop an email
+// flow when a person replies. Read-only: sender address and time, never the message. The mailbox must be a staff
+// user whose Microsoft 365 is connected; otherwise { connected: false }.
+router.get("/mail/replies", safeHandler(async (req: any, res: any) => {
+  const mailbox = str(req.query.mailbox).toLowerCase();
+  const sinceRaw = new Date(str(req.query.since));
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailbox)) return res.status(400).json({ ok: false, error: "bad_mailbox" });
+  const since = Number.isNaN(sinceRaw.getTime()) ? new Date(Date.now() - 24 * 3_600_000) : sinceRaw;
+  const u = await pool.query<{ id: string }>(
+    `SELECT id::text AS id FROM users WHERE lower(email) = $1 AND o365_refresh_token IS NOT NULL LIMIT 1`, [mailbox]);
+  if (!u.rows[0]) return res.json({ ok: true, connected: false, replies: [] });
+  const { getGraphForUser } = await import("../modules/o365/graphClient.js");
+  const graph = await getGraphForUser(pool as any, u.rows[0].id);
+  if (!graph) return res.json({ ok: true, connected: false, replies: [] });
+  const select = encodeURIComponent("from,receivedDateTime");
+  const filter = encodeURIComponent(`receivedDateTime gt ${since.toISOString()}`);
+  const orderby = encodeURIComponent("receivedDateTime asc");
+  const resp = await graph.fetch(`/me/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=200`);
+  if (!resp.ok) return res.status(502).json({ ok: false, error: `graph_${resp.status}` });
+  const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string }> };
+  const replies = (data.value ?? [])
+    .map((m) => ({ from: String(m.from?.emailAddress?.address ?? "").trim().toLowerCase(), at: m.receivedDateTime ?? null }))
+    .filter((m) => m.from && m.from !== mailbox && m.at);
+  return res.json({ ok: true, connected: true, replies });
+}));
+
 router.get("/staff", async (_req, res) => {
   try {
     const rows = await pool.query(
