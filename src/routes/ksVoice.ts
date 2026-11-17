@@ -18,7 +18,7 @@ import { closeCallRecord, inboundRecordName, legStatusAttrs, recordingDialAttrs 
 import { openInboundRecord } from "../voice/staffRing.js";
 import { dialWasNotAnswered } from "../voice/watchCellFallback.js";
 import {
-  e164, isKsQueue, ksCallerCard, ksVoiceEnabled, loadQueueSettings, matchKsCallerSafe, queueAlertUserIds, queueIsOpen, ringGroup,
+  e164, isKsQueue, ksCallerCard, ksVoiceEnabled, loadQueueSettings, refreshKsLine, matchKsCallerSafe, queueAlertUserIds, queueIsOpen, ringGroup,
   type KsQueue,
 } from "../modules/ks/ksPhone.js";
 import { notifyStaff, recordSupportCall, recordSupportVoicemail } from "../modules/ks/ksSupport.js";
@@ -82,6 +82,7 @@ router.post("/voice", twilioWebhookValidation, safeHandler(async (req: Request, 
   // The end-of-call status callback can be pointed here by mistake: it is not a new call.
   const status = String(req.body?.CallStatus ?? "").toLowerCase();
   if (req.body?.CallbackSource || ["completed", "canceled", "busy", "failed", "no-answer"].includes(status)) return send(res, v);
+  await refreshKsLine(pool as any);
   if (!ksVoiceEnabled()) {
     console.warn(JSON.stringify({ event: "ks_voice_not_configured", callSid: callSidOf(req) || null }));
     v.say({ voice: VOICE }, KS_PHRASES.offline);

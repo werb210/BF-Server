@@ -41,8 +41,22 @@ export function last10(raw: unknown): string {
 
 /** The Keystone number, or null when the line is off. */
 export function ksVoiceNumber(env: NodeJS.ProcessEnv = process.env): string | null {
-  return e164(env.KS_VOICE_NUMBER);
+  return e164(env.KS_VOICE_NUMBER) ?? (env === process.env ? savedKsLine : null);
 }
+
+// BF_SERVER_v970_BUSINESS_LINE_INBOUND - the Keystone number can also be the saved business line (settings
+// `silo_line.KS`, Settings > business lines), so turning the line on needs no server variable. The variable wins.
+let savedKsLine: string | null = null;
+export async function refreshKsLine(q: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> }): Promise<string | null> {
+  try {
+    const { siloLineNumber } = await import("../../voice/directLines.js");
+    savedKsLine = await siloLineNumber(q, "KS");
+  } catch (err: any) {
+    console.warn("[ks] saved line lookup failed", { message: err?.message });
+  }
+  return ksVoiceNumber();
+}
+export const clearSavedKsLine = (): void => { savedKsLine = null; };
 
 export function ksVoiceEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return ksVoiceNumber(env) !== null;

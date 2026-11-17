@@ -21,7 +21,7 @@ import { safeHandler } from "../middleware/safeHandler.js";
 import { canUseKsCrm } from "../modules/ks/ksCrm.js";
 import { KS_OPS_KEY_MIN_LENGTH, opsKeyMatches } from "./ksCrm.js";
 import {
-  isKsQueue, KS_QUEUES, ksVoiceNumber, loadQueueSettings, parseQueueSettings, saveQueueSettings,
+  isKsQueue, KS_QUEUES, ksVoiceNumber, loadQueueSettings, refreshKsLine, parseQueueSettings, saveQueueSettings,
 } from "../modules/ks/ksPhone.js";
 import {
   addNote, createTicket, getTicket, ingestKsTicket, isKsStaff, isTicketChannel, isTicketPriority, isUuid, KS_SLA_POLICY,
@@ -186,6 +186,7 @@ router.get("/staff", safeHandler(async (_req: any, res: any) => {
 router.get("/phone", safeHandler(async (_req: any, res: any) => {
   const queues = [];
   for (const q of KS_QUEUES) queues.push(await loadQueueSettings(pool, q));
+  await refreshKsLine(pool as any);
   const base = (process.env.PUBLIC_BASE_URL || "https://server.boreal.financial").replace(/\/+$/, "");
   res.json({
     ok: true,
