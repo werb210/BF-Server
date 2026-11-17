@@ -81,8 +81,8 @@ describe("the bridge stays narrow", () => {
     queryMock.mockImplementation(answerBySql([[/INSERT INTO tasks/, { rows: [{ id: "t-1" }], rowCount: 1 }]]));
   });
 
-  it("exposes only applicant messages, sms, mail, tasks and the staff picker", () => {
-    expect(routes()).toEqual(["get /applicant-messages", "get /applicant-messages/unread", "get /bi-documents/:id/file", "get /pgi-rep-agreement/:groupId/status", "get /staff", "post /applicant-messages", "post /applicant-messages/read", "post /mail", "post /pgi-rep-agreement", "post /pgi-rep-agreement/link", "post /sms", "post /tasks"]); // BF_SERVER_BLOCK_v610_BI_THREAD
+  it("exposes only applicant messages, sms, mail, mail replies, tasks and the staff picker", () => {
+    expect(routes()).toEqual(["get /applicant-messages", "get /applicant-messages/unread", "get /bi-documents/:id/file", "get /mail/replies", "get /pgi-rep-agreement/:groupId/status", "get /staff", "post /applicant-messages", "post /applicant-messages/read", "post /mail", "post /pgi-rep-agreement", "post /pgi-rep-agreement/link", "post /sms", "post /tasks"]); // BF_SERVER_BLOCK_v610_BI_THREAD
   });
 
   it("guards every route with the service token", async () => {
@@ -110,5 +110,17 @@ describe("the bridge stays narrow", () => {
 
   it("is mounted at /api/service", () => {
     expect(API_ROUTE_MOUNTS.filter((m) => m.router === serviceBridgeRoutes).map((m) => m.path)).toEqual(["/service"]);
+  });
+});
+
+// BF_SERVER_v976_SERVICE_MAIL_REPLIES
+describe("mail replies for BI email flows", () => {
+  const app = () => { const a = express(); a.use(express.json()); a.use("/api/service", serviceBridgeRoutes); return a; };
+  beforeEach(() => { process.env.BACKEND_SERVICE_TOKEN = TOKEN; queryMock.mockReset(); });
+  it("says not connected when the mailbox is not a connected staff mailbox, and refuses a bad address", async () => {
+    queryMock.mockImplementation(answerBySql([[/FROM users WHERE lower\(email\) = \$1 AND o365_refresh_token IS NOT NULL/, { rows: [] }]]));
+    const r = await request(app()).get("/api/service/mail/replies?mailbox=staff@example.com&since=2026-11-17T00:00:00Z").set("X-Backend-Token", TOKEN);
+    expect(r.body).toEqual({ ok: true, connected: false, replies: [] });
+    expect((await request(app()).get("/api/service/mail/replies?mailbox=nope").set("X-Backend-Token", TOKEN)).status).toBe(400);
   });
 });
