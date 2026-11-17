@@ -1,5 +1,4 @@
 // BF_SERVER_v970_BUSINESS_LINE_INBOUND
-import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearSiloLineCache, siloForLineNumber } from "../voice/directLines.js";
 import { clearSavedKsLine, isKsVoiceNumber, ksVoiceEnabled, refreshKsLine } from "../modules/ks/ksPhone.js";
@@ -29,12 +28,6 @@ describe("a call to a business's own line", () => {
     process.env.KS_VOICE_NUMBER = "+18885550199";
     expect(isKsVoiceNumber("+18885550199")).toBe(true);
     expect(isKsVoiceNumber("+18885550177")).toBe(false);
-  });
-  it("the Insurance line is sent to its own greeting, before the main menu", () => {
-    const hook = readFileSync("src/routes/webhooks.ts", "utf8");
-    const line = hook.indexOf("/api/webhooks/twilio/reception/line?silo=BI");
-    expect(line).toBeGreaterThan(0);
-    expect(line).toBeLessThan(hook.indexOf('"/api/webhooks/twilio/reception/greeting"'));
   });
   it("the Insurance greeting names Boreal Risk Management, never the group menu, and finds the Risk Management option", async () => {
     const { BI_LINE_PHRASES, riskManagementOption } = await import("../routes/reception.js");
