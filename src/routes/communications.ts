@@ -12,6 +12,27 @@ import { isUndeliverableNumber } from "../lib/smsDeliverability.js"; // BF_SERVE
 import { logWarnSwallowed } from "../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 import { replayKey } from "../middleware/replayKey.js"; // BF_SERVER_v831_DIALER_POLISH
 
+// BF_SERVER_STAFF_NAME_ON_SEND_v1 - the JWT carries no name, so staff messages were stored with the
+// sender's email as staff_name and clients saw "todd.w@boreal.financial". Store "Todd W." instead.
+async function staffDisplayName(req: any): Promise<string | null> {
+  const u = req?.user ?? {};
+  if (typeof u.name === "string" && u.name.trim() && !u.name.includes("@")) return u.name.trim();
+  const id = u.id ?? u.userId ?? u.sub ?? null;
+  const email = typeof u.email === "string" ? u.email : null;
+  try {
+    const r = await pool.query<{ first_name: string | null; last_name: string | null }>(
+      `SELECT first_name, last_name FROM users WHERE ($1::text IS NOT NULL AND id::text = $1::text) OR ($2::text IS NOT NULL AND lower(email) = lower($2::text)) LIMIT 1`,
+      [id ? String(id) : null, email],
+    );
+    const first = String(r.rows[0]?.first_name ?? "").trim();
+    const last = String(r.rows[0]?.last_name ?? "").trim();
+    if (first) return last ? `${first} ${last.charAt(0)}.` : first;
+  } catch (err) {
+    console.warn("[messages] staff name lookup failed", { message: err instanceof Error ? err.message : String(err) });
+  }
+  return email ?? null;
+}
+
 const router = Router();
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
@@ -1426,7 +1447,7 @@ router.post("/sms", replayKey("sms"), safeHandler(async (req: any, res: any) => 
   // making it look like the send didn't happen. Log the error so the next
   // schema drift is visible; still return success because the user-facing
   // SMS has already gone out and there is no way to unsend it.
-  const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
+  const staffName = await staffDisplayName(req); // BF_SERVER_STAFF_NAME_ON_SEND_v1
   // BF_SERVER_BLOCK_BI_ROUND5_B_v1 -- silo source moved from
   // req.user.silo (JWT-pinned primary silo) to
   // resolveSiloFromRequest(req) (X-Silo header / ?silo / allowlist).
@@ -1695,7 +1716,7 @@ router.post(
       resolvedContactId = cr.rows[0]?.contact_id ?? null;
     }
     const __msgMerged = renderMergeTokensComm(body, await mergeCtxForContact({ contactId: resolvedContactId ?? contactId }));
-    const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
+    const staffName = await staffDisplayName(req); // BF_SERVER_STAFF_NAME_ON_SEND_v1
     const { getSilo } = await import("../middleware/silo.js");
     const silo = String(getSilo(res) ?? (req as any).user?.silo ?? "BF").toUpperCase();
 
@@ -2074,7 +2095,7 @@ router.post("/broadcast", safeHandler(async (req: any, res: any) => {
 
   const { resolveSiloFromRequest } = await import("../middleware/silo.js");
   const silo = resolveSiloFromRequest(req);
-  const staffName = (req as any).user?.name ?? (req as any).user?.email ?? null;
+  const staffName = await staffDisplayName(req); // BF_SERVER_STAFF_NAME_ON_SEND_v1
 
   const { rows: contacts } = await pool.query<{ id: string; phone: string | null; name: string | null }>(
     `SELECT id, phone, name FROM contacts WHERE id = ANY($1::uuid[])`, [ids],
