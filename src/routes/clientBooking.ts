@@ -6,7 +6,7 @@ import { brokerageTimeZone, zoneLabel } from "../settingsPack/boreal.js"; // BF_
 import { Router } from "express";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { bookingTeam, forwardTeamLead, repCode, teamHours } from "../booking/teams.js"; // BF_SERVER_BOOKING_TEAMS_v1
-import { openSlots, createBooking, bookingPhoneE164, BookingCalendarError, manageTokenHash, type MeetingType } from "../services/clientBooking.js";
+import { openSlots, createBooking, bookingPhoneE164, isStoreReviewBooking, BookingCalendarError, manageTokenHash, type MeetingType } from "../services/clientBooking.js";
 import { pool } from "../db.js";
 import { parseExpressCaslConsent, recordExpressCaslConsent } from "../services/smsConsent.js"; // BF_SERVER_v789_CASL_EXPRESS_CONSENT
 import { brandName, supportPhone } from "../settingsPack/boreal.js";
@@ -108,6 +108,12 @@ async function book(req: any, res: any, b: BookBody, opts: { staffId?: string | 
   const settings = await bookingSettings(db());
   const rep = team ? repCode(b.rep) : null;
   const staffId = team ? null : opts.staffId !== undefined ? opts.staffId : (typeof b.staffId === "string" && b.staffId !== "any" ? b.staffId : null);
+  // BF_SERVER_BOOKING_SKIP_REVIEW_v1 - a store reviewer's booking writes and sends nothing.
+  if (isStoreReviewBooking(email, phoneE164)) {
+    console.info("[booking] store review account: nothing booked or sent", { source: opts.source });
+    const { randomUUID } = await import("node:crypto");
+    return { ok: true as const, booking: { id: randomUUID(), startsAt: startsAt.toISOString(), staffFirstName: "your advisor", kind, joinUrl: null, manageToken: null, contactId: null, contactCreated: false, durationMin: type.duration_min } };
+  }
   try {
     const out = await createBooking({
       kind, startsAt, staffId, name, email, phone: phoneE164, notes: [String(b.notes ?? "").trim().slice(0, 1000), rep ? `Referred by rep ${rep}` : ""].filter(Boolean).join(" | ") || null,

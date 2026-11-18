@@ -1,3 +1,5 @@
+import { REVIEW_DEMO_EMAIL } from "./reviewDemoData.js"; // BF_SERVER_BOOKING_SKIP_REVIEW_v1
+import { isReviewPhone } from "./reviewLogin.js";
 import { ALBERTA_TZ } from "../lib/albertaTime.js"; // BF_SERVER_ALBERTA_TIME_v743 - Alberta is UTC-6 all year
 // BF_SERVER_CLIENT_BOOKING_v738 - clients book a 30-minute phone call or Teams meeting.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -148,6 +150,15 @@ type BookingResult = { ok: true; booking: { id: string; startsAt: string; staffF
 
 export class BookingCalendarError extends Error {
   constructor(message: string, readonly bookingId: string) { super(message); this.name = "BookingCalendarError"; }
+}
+
+// BF_SERVER_BOOKING_SKIP_REVIEW_v1 - App Store / Google Play reviewers sign in as the demo client (Alex Morgan,
+// review@example.com, the REVIEW_LOGIN_PHONE number) and sometimes book a call. That booking must not reach Outlook,
+// the CRM or a confirmation email: the invite bounces from example.com and a fake booking lands in a staff calendar.
+// The caller answers as if it worked so the reviewer sees the normal confirmation.
+export function isStoreReviewBooking(email: string, phone: string | null): boolean {
+  if (String(email ?? "").trim().toLowerCase() === REVIEW_DEMO_EMAIL) return true;
+  return Boolean(phone) && isReviewPhone(String(phone));
 }
 
 // BF_SERVER_v786_BOOKING_CRM - CRM first, Outlook second. The contact (found by email or the
