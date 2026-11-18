@@ -66,6 +66,6 @@ describe("BF_SERVER_ACCOUNTANT_INVITE_GRAPH_v2 copy", () => {
     const { subject, html } = buildAccountantInvite(base);
     expect(subject).toContain("Carter Haulage Ltd.");
     expect(html).toContain("authorised to release these documents");
-    expect(html).toContain("+15875551234");
+    expect(html).toContain("(587) 555-1234");
   });
 });

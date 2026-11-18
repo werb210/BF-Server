@@ -95,7 +95,11 @@ export async function findOrCreateContactByEmailAndCompany(
   // stable identifiers (email OR phone) within the silo, independent of company.
   // Each submission creates a fresh company, so the old email+company match never
   // hit and every test produced a duplicate CRM contact. Match email/phone instead.
-  const normPhone = String(fullInput.phone ?? "").replace(/\D/g, "");
+  // BF_SERVER_CONTACT_MATCH_PHONE10_v1 - compare the last 10 digits (stored "+15555550123"
+  // never equalled the typed "(555) 555-0123"), and when several contacts match prefer the
+  // one with this phone: the client signs in by phone, and an email-only match (LIMIT 1 with
+  // no order) attached applications to a contact the client portal could not see.
+  const normPhone = String(fullInput.phone ?? "").replace(/\D/g, "").slice(-10);
   if (trimmedEmail || normPhone.length >= 7) {
     const { rows: idMatch } = await client.query<ContactRow>(
       `SELECT id, name, first_name, last_name, email, phone, dob, address_street, address_city, address_state,
@@ -103,7 +107,10 @@ export async function findOrCreateContactByEmailAndCompany(
        FROM contacts
        WHERE silo = $1
          AND ( ($2 <> '' AND lower(email) = lower($2))
-            OR ($3 <> '' AND regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = $3) )
+            OR ($3 <> '' AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $3) )
+       ORDER BY CASE WHEN $3 <> '' AND right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10) = $3 THEN 0 ELSE 1 END,
+                CASE WHEN $2 <> '' AND lower(email) = lower($2) THEN 0 ELSE 1 END,
+                id
        LIMIT 1`,
       [silo, trimmedEmail, normPhone]
     );

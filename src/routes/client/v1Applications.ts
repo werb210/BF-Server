@@ -483,6 +483,45 @@ router.post(
     if (!application) {
       return res.status(404).json({ error: { message: "application_not_found" } });
     }
+    // BF_SERVER_COMPANION_SUBMIT_GUARD_v1 - a closing-costs companion (or a
+    // capital-and-equipment leg) is created and submitted by the server alongside its
+    // parent. Re-submitting it through the wizard overwrote its category and amount
+    // with the parent's equipment answers and spawned a duplicate equipment deal.
+    // Leave the row alone and answer as if the submit succeeded.
+    try {
+      const linked = await pool.query<{ id: string; kind: string | null }>(
+        `SELECT id,
+                CASE
+                  WHEN source = 'closing_costs_companion'
+                    OR metadata->>'closing_cost_companion' = 'true'
+                    OR metadata->>'kind' = 'closing_costs' THEN 'closing_costs'
+                  WHEN source = 'capital_and_equipment_leg'
+                    OR metadata->>'capital_and_equipment_leg' = 'true' THEN 'equipment_leg'
+                  ELSE NULL
+                END AS kind
+           FROM applications
+          WHERE id::text = ($1)::text
+            AND parent_application_id IS NOT NULL
+          LIMIT 1`,
+        [application.id],
+      );
+      const kind = linked?.rows?.[0]?.kind ?? null;
+      if (kind) {
+        await pool.query(
+          `UPDATE applications
+              SET submitted_at = COALESCE(submitted_at, now()), updated_at = now()
+            WHERE id::text = ($1)::text`,
+          [application.id],
+        );
+        logInfo("client_submit_linked_application_skipped", { applicationId: application.id, kind });
+        return res.status(200).json({ status: "ok", data: { applicationId: application.id, linked: kind } });
+      }
+    } catch (err) {
+      console.warn("[client-submit] linked-application check failed; continuing", {
+        applicationId: application.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
     // BF_SERVER_v791_SUBMIT_COMPLETENESS - re-check the wizard's Step 1/3/4 required
     // answers (payload merged with what is already stored) before anything is written.
     {
@@ -1000,6 +1039,9 @@ router.post(
               await pool.query(
                 `UPDATE applications
                     SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb,
+                        -- BF_SERVER_COMPANION_SUBMITTED_v1 - submitted with its parent, so it
+                        -- no longer shows to the client as an unfinished draft.
+                        submitted_at = COALESCE(submitted_at, now()),
                         updated_at = now()
                   WHERE id::text = ($2)::text
                     AND COALESCE(metadata->>'_v127a_backfilled', '') <> 'true'`,
@@ -1068,7 +1110,7 @@ router.post(
                VALUES
                  ($1, $2, $3, $4, $5,
                   (SELECT contact_id FROM applications WHERE id::text = ($5)::text),
-                  $6, $7, 'Received', 'received',
+                  $6, $7, 'Received', 'RECEIVED',
                   $8, $9, 'closing_costs_companion',
                   $10::jsonb,
                   now(), now(), now())`,
@@ -1151,6 +1193,45 @@ router.post(
             error: cleanupErr instanceof Error ? cleanupErr.message : "unknown",
           });
         }
+      }
+      // BF_SERVER_LINKED_STAGE_SYNC_v1 - linked applications (equipment leg, closing
+      // costs) were left at 'Received' with no documents while their parent moved to
+      // 'Documents Required'. They share the parent's documents request, so follow it
+      // until something has actually been uploaded to them.
+      try {
+        await pool.query(
+          `UPDATE applications c
+              SET pipeline_state = 'Documents Required',
+                  status = $2,
+                  submitted_at = COALESCE(c.submitted_at, now()),
+                  updated_at = now()
+             FROM applications p
+            WHERE p.id::text = ($1)::text
+              AND c.parent_application_id::text = p.id::text
+              AND p.pipeline_state = 'Documents Required'
+              AND c.pipeline_state IN ('Received','received')
+              AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.application_id::text = c.id::text)`,
+          [application.id, statusFromPipeline(ApplicationStage.DOCUMENTS_REQUIRED)],
+        );
+        // BF_SERVER_SUBMITTED_NOT_DRAFT_v1 - the wizard's metadata carries isDraft:true
+        // and it was never cleared, so staff lists that hide drafts (GET /api/applications,
+        // Maya's "newest application") skipped submitted applications.
+        await pool.query(
+          `UPDATE applications
+              SET metadata = (COALESCE(metadata, '{}'::jsonb) - 'client_removed' - 'client_removed_at')
+                             || jsonb_build_object('isDraft', false),
+                  updated_at = now()
+            WHERE (id::text = ($1)::text OR parent_application_id::text = ($1)::text)
+              AND (lower(COALESCE(metadata->>'isDraft', 'false')) = 'true'
+                   OR metadata ? 'client_removed')`,
+          [application.id],
+        );
+      } catch (syncErr) {
+        logError("linked_stage_sync_failed", {
+          code: "linked_stage_sync_failed",
+          parentApplicationId: application.id,
+          error: syncErr instanceof Error ? syncErr.message : "unknown",
+        });
       }
       if (primaryCategory) {
         try {

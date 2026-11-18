@@ -10,6 +10,17 @@ import { sendViaGraph } from "./email/graphSendService.js";
 
 const BOREAL_ADDRESS = "450 Sparling Crt SW, Edmonton, AB T6X 1G9";
 
+// BF_SERVER_ACCOUNTANT_INVITE_TIDY_v1 - "7805550188" read as a raw number; show (780) 555-0188.
+export function displayPhone(raw: string): string {
+  const d = String(raw ?? "").replace(/\D/g, "");
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(raw ?? "");
+}
+
+function cap(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
 function esc(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -34,9 +45,9 @@ export function buildAccountantInvite(vars: {
 
   const html = [
     `<p>Hello ${esc(vars.accountantName)},</p>`,
-    `<p>${esc(vars.applicantName)} at ${esc(vars.businessName)} has applied for business financing through Boreal Financial and asked us to contact you directly for the financial documents supporting the application.</p>`,
+    `<p>${esc(cap(vars.applicantName))} at ${esc(vars.businessName)} has applied for business financing through Boreal Financial and asked us to contact you directly for the financial documents supporting the application.</p>`,
     `<p>Before we proceed, please confirm with ${esc(vars.applicantName)} that you are authorised to release these documents to us. You can forward this email to them for that confirmation.</p>`,
-    `<p>Once confirmed, you can upload everything through our secure client portal. Sign in with this phone number &mdash; ${esc(vars.accountantPhone)} &mdash; and we'll text you a one-time code. No password to set up.</p>`,
+    `<p>Once confirmed, you can upload everything through our secure client portal. Sign in with this phone number &mdash; ${esc(displayPhone(vars.accountantPhone))} &mdash; and we'll text you a one-time code. No password to set up.</p>`,
     `<p><a href="${esc(vars.portalLink)}">${esc(vars.portalLink)}</a></p>`,
     "<p>You'll see only the documents we need from you, nothing else on the file.</p>",
     `<p>${contactLine}</p>`,
@@ -56,6 +67,9 @@ export async function sendAccountantInvite(opts: {
   // BF_SERVER_ACCOUNTANT_INVITE_SCOPE_v1 - supplied by the wizard, which is the
   // only place the business name exists at Step 5.
   businessName?: string | null;
+  // BF_SERVER_ACCOUNTANT_INVITE_TIDY_v1 - the applicant's name from the wizard: at Step 5 the
+  // application has no contact yet, so the email said "your client" instead of their name.
+  applicantName?: string | null;
 }): Promise<{ sent: boolean; reason?: string }> {
   const suppliedBusinessName = String(opts.businessName ?? "").trim() || null;
   const claim = await pool.query(
@@ -86,7 +100,10 @@ export async function sendAccountantInvite(opts: {
     suppliedBusinessName ||
     String(row.business_name ?? "").trim() ||
     "your client";
-  const applicantName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || "your client";
+  const applicantName =
+    String(opts.applicantName ?? "").trim() ||
+    [row.first_name, row.last_name].filter(Boolean).join(" ").trim() ||
+    "your client";
 
   const portalBase = (process.env.CLIENT_PORTAL_URL || "https://client.boreal.financial").replace(/\/+$/, "");
   const { subject, html } = buildAccountantInvite({
@@ -101,11 +118,11 @@ export async function sendAccountantInvite(opts: {
   const bodyText = [
     `Hello ${opts.accountantName || "there"},`,
     "",
-    `${applicantName} at ${businessName} has applied for business financing through Boreal Financial and asked us to contact you directly for the financial documents supporting the application.`,
+    `${cap(applicantName)} at ${businessName} has applied for business financing through Boreal Financial and asked us to contact you directly for the financial documents supporting the application.`,
     "",
     `Before we proceed, please confirm with ${applicantName} that you are authorised to release these documents to us. You can forward this email to them for that confirmation.`,
     "",
-    `Once confirmed, you can upload everything through our secure client portal. Sign in with this phone number - ${opts.accountantPhone} - and we'll text you a one-time code. No password to set up.`,
+    `Once confirmed, you can upload everything through our secure client portal. Sign in with this phone number - ${displayPhone(opts.accountantPhone)} - and we'll text you a one-time code. No password to set up.`,
     "",
     `${portalBase}/accountant`,
     "",
