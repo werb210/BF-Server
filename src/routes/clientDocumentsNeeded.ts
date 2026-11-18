@@ -9,6 +9,7 @@
 import { Router, type Request, type Response } from "express";
 import { canonicalDocKey } from "../services/documentKinds.js"; // BF_SERVER_DOC_SHARING_v635
 import { pool } from "../db.js";
+import { prettyDocLabel } from "../lib/docDisplay.js"; // BF_SERVER_DOC_LABELS_v2
 import { loadSbaContext } from "../signnow/sba/sbaOwners.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 import { logInfo } from "../observability/logger.js"; // BF_SERVER_SBA_1919_ATTACH_GATE_v162
 
@@ -171,7 +172,8 @@ const SBA_DOC_LABELS: Readonly<Record<string, string>> = {
 };
 
 function labelFor(docType: string): string {
-  return SBA_DOC_LABELS[docType.trim().toLowerCase()] ?? humanize(docType);
+  // BF_SERVER_DOC_LABELS_v2 - "A/P", "A/R", "PnL – Interim financials" shown in plain words.
+  return SBA_DOC_LABELS[docType.trim().toLowerCase()] ?? prettyDocLabel(humanize(docType));
 }
 
 // BF_SERVER_SBA_DOC_LIST_v113 - `required` added so the client can distinguish

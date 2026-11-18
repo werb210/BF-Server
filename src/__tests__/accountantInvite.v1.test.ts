@@ -29,7 +29,7 @@ describe("BF_SERVER_ACCOUNTANT_INVITE_v1 copy", () => {
 
   it("tells them which number to sign in with", () => {
     const { html } = buildAccountantInvite(base);
-    expect(html).toContain("+15875551234");
+    expect(html).toContain("(587) 555-1234"); // BF_SERVER_ACCOUNTANT_INVITE_TIDY_v1 - shown formatted
     expect(html).toContain("one-time code");
   });
 

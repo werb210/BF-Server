@@ -104,6 +104,7 @@ describe("v635 documents follow the client", () => {
   it("a different business gets the personal ID but must upload its own bank statements", async () => {
     await request(app).post("/api/applications/" + otherBiz + "/request-steps")
       .set("Authorization", "Bearer " + staffToken).send({ forms: [], documents: ["Government ID"] });
-    expect(await todo(otherBiz)).toEqual([BANK]);
+    // BF_SERVER_DOC_LABELS_v2 - the client reads it in plain words.
+    expect(await todo(otherBiz)).toEqual(["Business bank statements (last 6 months)"]);
   });
 });

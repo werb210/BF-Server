@@ -819,6 +819,17 @@ export function safePrefillFields(obj: unknown): Record<string, unknown> | null 
   return Object.keys(out).length ? out : null;
 }
 
+// BF_SERVER_PREFILL_NO_STALE_ASK_v1 - the business name a client used on their last application.
+function lastBusinessName(business: unknown): string | null {
+  if (!business || typeof business !== "object") return null;
+  const b = business as Record<string, unknown>;
+  for (const k of ["businessName", "companyName", "legalName", "dba", "name"]) {
+    const v = typeof b[k] === "string" ? (b[k] as string).trim() : "";
+    if (v) return v;
+  }
+  return null;
+}
+
 router.get(
   "/readiness-prefill",
   safeHandler(async (req: any, res: any) => {
@@ -913,20 +924,23 @@ router.get(
       );
       const c = appResult.rows[0];
       if (c) {
+        // BF_SERVER_PREFILL_NO_STALE_ASK_v1 - this is a NEW application: the amount, purpose and
+        // "looking for" of the last one are not this one's, and the business name comes from
+        // that application, not an older CRM company name.
         res.status(200).json({
           found: true,
           source: "crm",
           prefill: {
-            companyName: c.company_name ?? null,
+            companyName: lastBusinessName(c.business) ?? c.company_name ?? null,
             // BF_SERVER_v851_APPLICANT_NAME - never the OTP placeholder ("Unknown (application started)").
             fullName: realName(c.full_name) ?? contactNameFrom({ first_name: c.first_name, last_name: c.v851_last_name })?.full ?? null,
             email: c.email ?? null,
             phone: c.phone ?? phone,
             industry: c.industry ?? null,
             businessLocation: c.business_location ?? null,
-            fundingType: c.funding_type ?? null,
-            requestedAmount: c.requested_amount ?? null,
-            purposeOfFunds: c.purpose_of_funds ?? null,
+            fundingType: null,
+            requestedAmount: null,
+            purposeOfFunds: null,
             salesHistoryYears: c.sales_history_years ?? null,
             annualRevenueRange: c.annual_revenue_range ?? null,
             avgMonthlyRevenueRange: c.avg_monthly_revenue_range ?? null,
@@ -970,10 +984,10 @@ router.get(
 
     // BF_SERVER_v947_PREFILL_SIGNED_IN - a client who once did the readiness check got only those answers back, and
     // never the business and owner details from their last application. Add them (phone path only: own number).
-    let lastApp: { business: unknown; applicant: unknown } | undefined;
+    let lastApp: { business: unknown; applicant: unknown; submitted_at?: unknown } | undefined;
     if (!token && phone) {
       const prior = await dbQuery(
-        `SELECT a.metadata->'business' AS business, a.metadata->'applicant' AS applicant
+        `SELECT a.metadata->'business' AS business, a.metadata->'applicant' AS applicant, a.submitted_at
            FROM applications a JOIN contacts c ON c.id = a.contact_id
           WHERE right(regexp_replace(coalesce(c.phone, ''), '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)
             AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
@@ -981,25 +995,31 @@ router.get(
           ORDER BY a.updated_at DESC NULLS LAST, a.created_at DESC LIMIT 1`,
         [phone]
       );
-      lastApp = prior.rows[0] as { business: unknown; applicant: unknown } | undefined;
+      lastApp = prior.rows[0] as { business: unknown; applicant: unknown; submitted_at?: unknown } | undefined;
     }
+    // BF_SERVER_PREFILL_NO_STALE_ASK_v1 - a readiness check older than the client's last sent
+    // application is not this application's ask: every new application came up with the old
+    // amount, purpose, industry and company name. Keep its answers only when it is newer.
+    const lastSentAt = lastApp?.submitted_at ? Date.parse(String(lastApp.submitted_at)) : NaN;
+    const readinessAt = row.created_at ? Date.parse(String(row.created_at)) : NaN;
+    const staleReadiness = !token && Number.isFinite(lastSentAt) && (!Number.isFinite(readinessAt) || readinessAt < lastSentAt);
 
     res.status(200).json({
       found: true,
       prefill: {
         ...(lastApp ? { business: safePrefillFields(lastApp.business), applicant: withoutPlaceholderNames(safePrefillFields(lastApp.applicant)) } : {}),
         // Identity
-        companyName: row.company_name ?? null,
+        companyName: (staleReadiness ? lastBusinessName(lastApp?.business) : null) ?? row.company_name ?? null,
         fullName: realName(row.full_name), // BF_SERVER_v851_APPLICANT_NAME
         email: row.email ?? null,
         phone: row.phone ?? null,
         // Business profile
-        industry: row.industry ?? null,
+        industry: staleReadiness ? null : row.industry ?? null,
         businessLocation: row.business_location ?? null,
         // Funding profile
-        fundingType: row.funding_type ?? null,
-        requestedAmount: row.requested_amount ?? null,
-        purposeOfFunds: row.purpose_of_funds ?? null,
+        fundingType: staleReadiness ? null : row.funding_type ?? null,
+        requestedAmount: staleReadiness ? null : row.requested_amount ?? null,
+        purposeOfFunds: staleReadiness ? null : row.purpose_of_funds ?? null,
         // Financial profile (V1 14-field bucket strings)
         salesHistoryYears: row.sales_history_years ?? null,
         annualRevenueRange: row.annual_revenue_range ?? null,
@@ -1163,12 +1183,37 @@ router.get(
       v778_rows = v778_rows.filter((r: any) => !(typeof r.body === "string" && /few quick steps to finish/i.test(r.body)));
     }
 
+    // BF_SERVER_CLIENT_STAFF_NAME_v1 - older staff messages stored the sender's email as
+    // staff_name, so the client saw "todd.w@boreal.financial" over the bubble. Show the
+    // staff member's name instead (first name + last initial), never an email address.
+    const v1_emails = Array.from(new Set(v778_rows
+      .map((r: any) => String(r.staff_name ?? "").trim().toLowerCase())
+      .filter((n: string) => n.includes("@"))));
+    const v1_names = new Map<string, string>();
+    if (v1_emails.length) {
+      const u = await dbQuery(
+        `SELECT lower(email) AS email, first_name, last_name FROM users WHERE lower(email) = ANY($1::text[])`,
+        [v1_emails],
+      ).catch((err: any) => { console.warn("[silent-query] routes/client/index.ts staff names", { message: err?.message }); return { rows: [] as any[] }; });
+      for (const row of u.rows as any[]) {
+        const first = String(row.first_name ?? "").trim();
+        const last = String(row.last_name ?? "").trim();
+        if (first) v1_names.set(row.email, last ? `${first} ${last.charAt(0)}.` : first);
+      }
+    }
+    const v1_staffName = (raw: unknown): string | null => {
+      const n = String(raw ?? "").trim();
+      if (!n) return null;
+      if (!n.includes("@")) return n;
+      return v1_names.get(n.toLowerCase()) ?? "Boreal Financial";
+    };
+
     res.status(200).json({
       status: "ok",
       data: v778_rows.map((r: any) => ({
         id: r.id,
         direction: r.direction,
-        staff_name: r.staff_name ?? null,
+        staff_name: v1_staffName(r.staff_name),
         cta_label: r.cta_label ?? null,
         cta_action: r.cta_action ?? null,
         // BF_SERVER_v819_CLIENT_MMS - a picture the client texted in is a row with media_url and a "[media]"

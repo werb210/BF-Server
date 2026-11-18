@@ -66,7 +66,9 @@ describe("readiness-prefill CRM fallback", () => {
     answer([[/from readiness_sessions/, { rows: [] }], [APP_SQL, { rows: [appRow] }]]);
     const crm = await request(app).get(`/api/client/readiness-prefill?phone=${encodeURIComponent(PHONE)}`).set("Authorization", token(PHONE));
     expect(crm.body.source).toBe("crm");
-    expect(crm.body.prefill).toMatchObject({ annualRevenueRange: "$1M-$3M", businessLocation: "AB", requestedAmount: "50000", fullName: "Pat Lee" });
+    expect(crm.body.prefill).toMatchObject({ annualRevenueRange: "$1M-$3M", businessLocation: "AB", fullName: "Pat Lee" });
+    // BF_SERVER_PREFILL_NO_STALE_ASK_v1 - a new application does not inherit the last one's amount.
+    expect(crm.body.prefill.requestedAmount).toBeNull();
 
     answer([[/from readiness_sessions/, { rows: [{ full_name: "Pat Lee", annual_revenue_range: "x", business_location: "y", requested_amount: "z" }] }]]);
     const session = await request(app).get("/api/client/readiness-prefill?token=rs-1");
