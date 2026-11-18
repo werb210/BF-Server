@@ -51,6 +51,15 @@ describe("a reply from Communications lands in the thread the client is reading"
     expect(inserted()?.[1]).toBe(APP_PORTAL_GUESSED);
   });
 
+  // BF_SERVER_STAFF_MSG_OPEN_APP_v1
+  it("also weighs the application the client last had open in the app, not only the one they wrote from", async () => {
+    await request(app).post("/api/communications/messages/send").set("Authorization", AUTH()).send({ contactId: CONTACT, body: "Hi" });
+    const pick = callsMatching(h.query, /direction = 'inbound' AND type = 'message' AND application_id IS NOT NULL/)[0];
+    expect(String(pick?.[0])).toMatch(/last_portal_seen_at/);
+    expect(pick?.[1]).toEqual([CONTACT]);
+    expect(inserted()?.[1]).toBe(APP_CLIENT_WROTE_FROM);
+  });
+
   it("a message sent from one application's own card stays on that application", async () => {
     await request(app).post("/api/communications/messages/send").set("Authorization", AUTH()).send({ applicationId: APP_PORTAL_GUESSED, body: "From the card" });
     expect(inserted()?.[1]).toBe(APP_PORTAL_GUESSED);
