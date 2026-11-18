@@ -1697,15 +1697,24 @@ router.post(
     // it thinks is the contact's latest. The client's app shows one application's thread, so a reply stamped with a
     // different application never appeared (the client saw "typing" and then nothing). A reply to a contact goes to
     // the application the client last wrote from.
+    // BF_SERVER_STAFF_MSG_OPEN_APP_v1 - the client app shows the thread of the application the client has open, and
+    // that is often not the one they last wrote from (a client with several applications opens the newest). Pick the
+    // application the client touched most recently: the latest of "last seen in the portal" and "last wrote from".
+    // Neither known = keep what the portal sent.
     if (contactId) {
       try {
         const last = await pool.query<{ application_id: string | null }>(
-          `SELECT application_id::text AS application_id FROM communications_messages
-            WHERE contact_id::text = $1 AND direction = 'inbound' AND type = 'message' AND application_id IS NOT NULL
-            ORDER BY created_at DESC LIMIT 1`, [contactId]);
+          `SELECT id::text AS application_id FROM (
+             SELECT a.id, a.last_portal_seen_at AS touched FROM applications a
+              WHERE a.contact_id::text = $1 AND a.last_portal_seen_at IS NOT NULL
+             UNION ALL
+             SELECT application_id AS id, created_at AS touched FROM communications_messages
+              WHERE contact_id::text = $1 AND direction = 'inbound' AND type = 'message' AND application_id IS NOT NULL
+           ) t
+           ORDER BY touched DESC NULLS LAST LIMIT 1`, [contactId]);
         const from = last.rows[0]?.application_id ?? null;
         if (from && from !== applicationId) applicationId = from;
-      } catch (err) { console.warn("[messages/send] last client application not read", { message: err instanceof Error ? err.message : String(err) }); }
+      } catch (err) { console.warn("[messages/send] client's open application not read", { message: err instanceof Error ? err.message : String(err) }); }
     }
     let resolvedContactId: string | null = contactId || null;
     if (!resolvedContactId && applicationId) {
