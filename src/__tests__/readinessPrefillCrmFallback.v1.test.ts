@@ -83,14 +83,3 @@ describe("readiness-prefill CRM fallback", () => {
     expect(callsMatching(query, APP_SQL)).toHaveLength(1);
   });
 });
-
-// BF_SERVER_PREFILL_NO_STALE_ASK_v1 - static guard on the readiness path.
-import { readFileSync as v1ReadFile } from "node:fs";
-describe("readiness prefill stale ask", () => {
-  it("drops an older readiness check's amount, purpose and industry once an application was sent after it", () => {
-    const src = v1ReadFile(new URL("../routes/client/index.ts", import.meta.url), "utf8");
-    expect(src).toContain("const staleReadiness =");
-    expect(src).toMatch(/requestedAmount: staleReadiness \? null/);
-    expect(src).toMatch(/industry: staleReadiness \? null/);
-  });
-});

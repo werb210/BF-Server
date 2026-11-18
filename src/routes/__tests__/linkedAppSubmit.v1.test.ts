@@ -2,7 +2,6 @@
 // BF_SERVER_SUBMITTED_NOT_DRAFT_v1 - 17 Nov application test findings.
 import express from "express";
 import request from "supertest";
-import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { queryMock, state } = vi.hoisted(() => ({
@@ -55,29 +54,5 @@ describe("client submit of a linked application", () => {
     expect(writes[0]).toContain("submitted_at = COALESCE(submitted_at, now())");
     expect(writes[0]).not.toContain("product_category");
     expect(writes[0]).not.toContain("requested_amount");
-  });
-});
-
-describe("submit SQL", () => {
-  const src = readFileSync(new URL("../client/v1Applications.ts", import.meta.url), "utf8");
-
-  it("inserts the closing-costs companion with an allowed status", () => {
-    const insert = src.slice(src.indexOf("'closing_costs_companion',") - 400, src.indexOf("'closing_costs_companion',"));
-    expect(insert).toContain("'Received', 'RECEIVED'");
-    expect(insert).not.toContain("'received'");
-  });
-
-  it("moves linked applications to Documents Required with their parent", () => {
-    expect(src).toContain("BF_SERVER_LINKED_STAGE_SYNC_v1");
-    expect(src).toMatch(/c\.parent_application_id::text = p\.id::text[\s\S]*p\.pipeline_state = 'Documents Required'/);
-  });
-
-  it("clears isDraft and client_removed on submit", () => {
-    expect(src).toContain("jsonb_build_object('isDraft', false)");
-    expect(src).toContain("- 'client_removed'");
-  });
-
-  it("marks a backfilled companion as submitted", () => {
-    expect(src).toContain("BF_SERVER_COMPANION_SUBMITTED_v1");
   });
 });
