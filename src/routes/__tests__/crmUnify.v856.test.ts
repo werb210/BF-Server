@@ -140,6 +140,18 @@ describe("company people", () => {
     expect(callsMatching(h.query, /insert into audit_events/).map((c) => (c[1] as unknown[])[4])).toContain("crm.company_person_removed");
   });
 
+  it("adding a removed person back clears both hide keys (contact and email)", async () => {
+    db([
+      [/SELECT id, name FROM companies/, { rows: [{ id: COMPANY, name: "PGI Cover" }] }],
+      [/SELECT id FROM contacts WHERE id/, { rows: [{ id: OTHER }], rowCount: 1 }],
+      [/SELECT lower\(email\) AS email FROM contacts/, { rows: [{ email: "craig@pgicover.com" }] }],
+    ]);
+    const add = await request(await app()).post(`/api/crm/unified/companies/${COMPANY}/people`).set(auth("Staff")).send({ role: "partner", contactId: OTHER });
+    expect(add.status).toBe(201);
+    const del = callsMatching(h.query, /DELETE FROM crm_company_people_hidden/)[0]!;
+    expect((del[1] as unknown[])[1]).toEqual([`contact:${OTHER}`, "email:craig@pgicover.com"]);
+  });
+
   it("refuses an unknown role", async () => {
     const r = await request(await app()).post(`/api/crm/unified/companies/${COMPANY}/people`).set(auth()).send({ role: "boss", contactId: CONTACT });
     expect(r.status).toBe(400);

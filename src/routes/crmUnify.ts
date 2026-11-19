@@ -180,7 +180,13 @@ router.post("/companies/:id/people", requireWrite, safeHandler(async (req: any, 
       WHERE id = $1::uuid AND company_id IS NULL`,
     [contactId, companyId, company.name ?? null],
   );
-  await pool.query(`DELETE FROM crm_company_people_hidden WHERE company_id = $1::uuid AND person_key = $2`, [companyId, `contact:${contactId}`]);
+  // BF_SERVER_PEOPLE_READD_v1 - "Remove" hides the person by contact AND by email; adding them back must clear both,
+  // or the person stays invisible (Craig Arnatt on PGI Cover, 2026-11-19).
+  const em = (await pool.query(`SELECT lower(email) AS email FROM contacts WHERE id = $1::uuid`, [contactId])).rows[0]?.email ?? null;
+  await pool.query(
+    `DELETE FROM crm_company_people_hidden WHERE company_id = $1::uuid AND person_key = ANY($2::text[])`,
+    [companyId, [`contact:${contactId}`, ...(em ? [`email:${em}`] : [])]],
+  );
   await audit(req, "crm.company_person_added", "company", companyId, { contactId, role, created });
   res.status(201).json({ ok: true, data: { contactId, role, created } });
 }));
