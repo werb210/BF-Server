@@ -43,6 +43,11 @@ export async function forwardToBi(raw: Buffer, sig: string, ts: string, fetchImp
         "X-Twilio-Email-Event-Webhook-Signature": sig,
         "X-Twilio-Email-Event-Webhook-Timestamp": ts,
         "X-Boreal-Forwarded-By": "bf-server",
+        // BF_SERVER_BI_SENDGRID_FORWARD_AUTH_v1 - BI-Server's SendGrid key is not this webhook's key (every forward got
+        // 403), so the batch is also signed with the secret both servers share, after SendGrid's signature passed here.
+        ...(process.env.JWT_SECRET
+          ? { "X-Boreal-Forward-Signature": crypto.createHmac("sha256", process.env.JWT_SECRET).update(`${ts}.${raw.toString("utf8")}`).digest("hex") }
+          : {}),
       },
       body: raw.toString("utf8"), // the same bytes SendGrid signed (the signature covers the UTF-8 text)
       signal: AbortSignal.timeout(10_000),
