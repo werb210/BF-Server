@@ -191,6 +191,22 @@ router.post("/companies/:id/people", requireWrite, safeHandler(async (req: any, 
   res.status(201).json({ ok: true, data: { contactId, role, created } });
 }));
 
+// BF_SERVER_COMPANY_ARCHIVE_v1 - a company that cannot be deleted (its files are kept for 7 years) can be archived:
+// hidden from the company list and count, still on record. POST /companies/:id/archive {archived: false} brings it back.
+router.post("/companies/:id/archive", requireWrite, safeHandler(async (req: any, res: any) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: "invalid_id" });
+  const silo = resolveSiloFromRequest(req);
+  const back = req.body?.archived === false;
+  const { rows } = await pool.query(
+    `UPDATE companies SET status = $3, updated_at = NOW() WHERE id = $1::uuid AND silo = $2 RETURNING id, name, status`,
+    [id, silo, back ? "prospect" : "archived"],
+  );
+  if (!rows[0]) return res.status(404).json({ error: "not_found" });
+  await audit(req, back ? "crm.company_unarchived" : "crm.company_archived", "company", id, { name: rows[0].name });
+  res.json({ data: rows[0] });
+}));
+
 router.post("/companies/:id/people/remove", requireWrite, safeHandler(async (req: any, res: any) => {
   const companyId = String(req.params.id);
   if (!isUuid(companyId)) return res.status(400).json({ ok: false, error: "invalid_id" });
