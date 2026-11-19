@@ -1437,7 +1437,7 @@ router.post(
                 const v650_existingMsg = await pool.query<{ id: string }>(
                   `SELECT id FROM communications_messages
                     WHERE application_id = $1
-                      AND staff_name = 'Boreal Insurance'
+                      AND staff_name IN ('Boreal Insurance', 'Boreal Risk Management')
                       AND body LIKE $2
                     LIMIT 1`,
                   [v330_t.bfApplicationId, `%${r.completionUrl}%`]
@@ -1450,7 +1450,7 @@ router.post(
                        $1, 'message', 'outbound', 'sent', $2,
                        (SELECT contact_id FROM applications WHERE id = $2 LIMIT 1),
                        COALESCE((SELECT silo FROM applications WHERE id = $2 LIMIT 1), 'BF'),
-                       $3, 'Boreal Insurance', $4, $5, NOW()
+                       $3, 'Boreal Risk Management', $4, $5, NOW()
                      )`,
                     [
                       biRandomUUID(),
@@ -1494,7 +1494,7 @@ router.post(
                   const { sendSms } = await import("../../modules/notifications/sms.service.js");
                   await sendSms({
                     to: v650_to,
-                    message: `Boreal Insurance: your PGI application for the ${v777_label} funding portion is ready to complete: ${r.completionUrl}`,
+                    message: `Boreal Risk Management: your PGI application for the ${v777_label} funding portion is ready to complete: ${r.completionUrl}`,
                   }).catch((smsErr) => {
                     logError("bi_handoff_sms_failed_nonfatal", {
                       code: "bi_handoff_sms_failed_nonfatal",

@@ -30,7 +30,7 @@ export async function sendPgiLinkAfterTermSheet(applicationId: string): Promise<
   const { notifyClient } = await import("./notifications/notifyClient.js");
   const r = await notifyClient({
     phone: row.phone, applicationId, kind: "pgi_ready", categoryId: "APPLICATION_UPDATE",
-    sms: `Boreal Insurance: your term sheet is signed. Please complete your PGI application here: ${row.url}`,
+    sms: `Boreal Risk Management: your term sheet is signed. Please complete your PGI application here: ${row.url}`,
     title: "Complete your PGI application", body: "Your term sheet is signed - one last step.",
   });
   return r.channel === "none" ? "none" : "sent";

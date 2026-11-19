@@ -240,7 +240,7 @@ describe("website kit", () => {
     expect(r.status).toBe(200);
     expect(r.headers["content-type"]).toMatch(/javascript/);
     expect(r.text).toContain(FORM);
-    expect(r.text).toContain(kitConsentText("Boreal Insurance"));
+    expect(r.text).toContain(kitConsentText("Boreal Risk Management"));
     expect(r.text).not.toContain("innerHTML");
     expect(r.text).not.toMatch(/checked\s*[:=]\s*true|"checked"/);
     expect((await request(app).get(`/api/kit/${"0".repeat(24)}/kit.js`)).status).toBe(404);
@@ -274,7 +274,7 @@ describe("website kit", () => {
     expect((await request(app).get("/api/website-kit").set("Authorization", bearer("Staff"))).status).toBe(403);
     const r = await request(app).get("/api/website-kit").set("Authorization", bearer("Admin")).set("X-Silo", "BI");
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ silo: "BI", brand: "Boreal Insurance" });
+    expect(r.body).toMatchObject({ silo: "BI", brand: "Boreal Risk Management" });
     expect(r.body.snippet.script).toBe(`<script src="https://server.boreal.financial/api/kit/${KEY}/kit.js" async></script>`);
     expect(r.body.snippet.forms[0].html).toBe(`<div data-boreal-form="${FORM}"></div>`);
     const bad = await request(app).put("/api/website-kit/settings").set("Authorization", bearer("Admin")).set("X-Silo", "BI").send({ allowed_origins: ["ftp://nope"] });
