@@ -152,6 +152,14 @@ describe("company people", () => {
     expect((del[1] as unknown[])[1]).toEqual([`contact:${OTHER}`, "email:craig@pgicover.com"]);
   });
 
+  it("archives a company (kept on record, hidden from the list) and audits it", async () => {
+    db([[/UPDATE companies SET status = \$3/, { rows: [{ id: COMPANY, name: "TEST COMPANY", status: "archived" }], rowCount: 1 }]]);
+    const r = await request(await app()).post(`/api/crm/unified/companies/${COMPANY}/archive`).set(auth("Staff")).send({});
+    expect(r.status).toBe(200);
+    expect(callsMatching(h.query, /UPDATE companies SET status = \$3/)[0]![1]).toEqual([COMPANY, "BF", "archived"]);
+    expect(callsMatching(h.query, /insert into audit_events/).map((c) => (c[1] as unknown[])[4])).toContain("crm.company_archived");
+  });
+
   it("refuses an unknown role", async () => {
     const r = await request(await app()).post(`/api/crm/unified/companies/${COMPANY}/people`).set(auth()).send({ role: "boss", contactId: CONTACT });
     expect(r.status).toBe(400);

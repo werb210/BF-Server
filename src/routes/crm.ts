@@ -361,7 +361,7 @@ router.get("/counts", safeHandler(async (req: any, res: any) => {
   const cp: unknown[] = [silo];
   const c = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contacts c WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived' AND ${ownerFilterSql(scope, "contact", "c", cp)}`, cp);
   const cop: unknown[] = [silo];
-  const co = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM companies co WHERE co.silo = $1 AND ${ownerFilterSql(scope, "company", "co", cop)}`, cop);
+  const co = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM companies co WHERE co.silo = $1 AND coalesce(co.status, '') <> 'archived' AND ${ownerFilterSql(scope, "company", "co", cop)}`, cop);
   res.json({ data: { contacts: c.rows[0]?.n ?? 0, companies: co.rows[0]?.n ?? 0 } });
 }));
 
@@ -1333,7 +1333,8 @@ router.get("/companies", safeHandler(async (req: any, res: any) => {
   const cfSort = customFieldSortExpr(companyDefs, sortColRaw ?? "", "co");
 
   const params: unknown[] = [silo];
-  let where = "co.silo = $1";
+  // BF_SERVER_COMPANY_ARCHIVE_v1 - archived companies (kept for the 7-year file rule) are not listed.
+  let where = "co.silo = $1 AND coalesce(co.status, '') <> 'archived'";
   // BF_SERVER_v870_CRM_DATA_MODEL - only the companies this user may see.
   where += ` AND ${ownerFilterSql(await scopeForRequest(req, pool as any), "company", "co", params)}`;
   for (const cond of customFieldFilters(companyDefs, req.query ?? {}, "co", params)) where += ` AND ${cond}`;
