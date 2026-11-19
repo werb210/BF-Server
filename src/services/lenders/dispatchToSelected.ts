@@ -10,6 +10,7 @@ import { buildApplicationPackage } from "./buildApplicationPackage.js";
 import { loadPackageInputs } from "./loadPackageInputs.js"; // BF_SERVER_v76_BLOCK_1_9
 import { prepareEmailDelivery } from "./packageLink.js"; // BF_SERVER_BLOCK_v456_LENDER_PACKAGE_LINK
 import { lenderEmailSubject } from "./lenderEmail.js"; // BF_SERVER_BLOCK_v458_LENDER_EMAIL
+import { assertPublicUrl } from "../../security/ssrfGuard.js"; // SECURITY_SWEEP_2026_11_19
 import { logWarnSwallowed } from "../../lib/logWarnSwallowed.js"; // BF_SERVER_SILENT_QUERIES_v678
 
 // No shared decrypt helper exists yet in this codebase for lender API keys;
@@ -374,6 +375,9 @@ export async function dispatchToSelected(
         const timeout = setTimeout(() => controller.abort(), 30_000);
         let resp: Response | null = null;
         try {
+          // SECURITY_SWEEP_2026_11_19 - a lender API endpoint must be a public https address (no internal hosts or the
+          // cloud metadata service): the request carries the whole application file.
+          await assertPublicUrl(new URL(endpoint), { httpsOnly: true });
           for (let attempt = 1; attempt <= 2; attempt++) {
             try {
               resp = await fetch(endpoint, {

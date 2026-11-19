@@ -7,6 +7,7 @@ import { createContact } from "../../services/contacts.js";
 import { logCrmEvent } from "../crm/crmTimeline.service.js";
 import { sendSms } from "../notifications/sms.service.js";
 import { AzureBlobBackend } from "../../lib/storage/azureBlob.js";
+import { isTwilioApiUrl } from "../../lib/twilioUrl.js"; // SECURITY_SWEEP_2026_11_19
 import { sharedOpenAI } from "../../lib/sharedClients.js"; // BF_SERVER_SNAT_REUSE_v784
 
 const VM_CONTAINER = process.env.VOICEMAIL_BLOB_CONTAINER || "voicemails";
@@ -23,6 +24,7 @@ function blobBackend(): AzureBlobBackend | null {
 async function downloadRecording(recordingUrl: string): Promise<Buffer | null> {
   try {
     const url = recordingUrl.endsWith(".mp3") ? recordingUrl : `${recordingUrl}.mp3`;
+    if (!isTwilioApiUrl(url)) return null; // SECURITY_SWEEP_2026_11_19
     const sid = config.twilio.accountSid;
     const tok = config.twilio.authToken;
     const headers: Record<string, string> = {};

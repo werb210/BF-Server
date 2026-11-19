@@ -2460,50 +2460,9 @@ router.post(
   })
 );
 
-// BF_MINI_PORTAL_NOTES_v47 — client-facing offer disposition (accept / decline).
-// Public on purpose: the offer id is the bearer credential, mirroring /public-upload.
-router.post(
-  "/offers/:id/accept",
-  portalLimiter,
-  safeHandler(async (req: any, res: any) => {
-    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
-    if (!id) throw new AppError("validation_error", "offer id required.", 400);
-    const upd = await runQuery<{ application_id: string }>(
-      `UPDATE offers SET status='accepted', updated_at=now()
-        WHERE id=$1 AND coalesce(is_archived,false)=false AND status IN ('pending','created','sent')
-        RETURNING application_id`,
-      [id]
-    );
-    if (!upd.rows[0]) throw new AppError("not_found", "Offer not available for acceptance.", 404);
-    const appId = upd.rows[0].application_id;
-    await runQuery(
-      `UPDATE applications SET pipeline_state='Accepted', updated_at=now()
-        WHERE id::text = ($1)::text AND pipeline_state IN ('Offer','Off to Lender')`,
-      [appId]
-    ).catch(() => {});
-    eventBus.emit("offer_accepted", { offerId: id, applicationId: appId });
-    res.status(200).json({ ok: true, offer_id: id, status: "accepted" });
-  })
-);
-
-router.post(
-  "/offers/:id/decline",
-  portalLimiter,
-  safeHandler(async (req: any, res: any) => {
-    const id = typeof req.params.id === "string" ? req.params.id.trim() : "";
-    if (!id) throw new AppError("validation_error", "offer id required.", 400);
-    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : null;
-    const upd = await runQuery<{ application_id: string }>(
-      `UPDATE offers SET status='changes_requested', notes=COALESCE($2, notes), updated_at=now()
-        WHERE id=$1 AND coalesce(is_archived,false)=false AND status IN ('pending','created','sent')
-        RETURNING application_id`,
-      [id, reason]
-    );
-    if (!upd.rows[0]) throw new AppError("not_found", "Offer not available for decline.", 404);
-    eventBus.emit("offer_declined", { offerId: id, applicationId: upd.rows[0].application_id, reason });
-    res.status(200).json({ ok: true, offer_id: id, status: "changes_requested", reason });
-  })
-);
+// SECURITY_SWEEP_2026_11_19 - the public POST /api/portal/offers/:id/accept and /decline were removed: anyone holding
+// an offer id could accept or decline it with no sign-in. Clients accept and decline through /api/offers/:id/accept
+// and /decline, which check that the signed-in client owns the application.
 
 router.patch(
   "/offers/:id/status",

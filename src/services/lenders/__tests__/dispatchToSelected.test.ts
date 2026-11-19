@@ -7,6 +7,8 @@ vi.mock("../../../modules/submissions/adapters/GoogleSheetSubmissionAdapter", ()
   GoogleSheetSubmissionAdapter: GoogleSheetSubmissionAdapterMock,
 }));
 vi.mock("../../../modules/lenderSubmissions/adapters/EmailAdapter", () => ({ sendLenderEmail: vi.fn() }));
+// SECURITY_SWEEP_2026_11_19 - the lender endpoint public-address check does a DNS lookup; the tests use fake hosts.
+vi.mock("../../../security/ssrfGuard.js", async (orig) => ({ ...(await orig<any>()), assertPublicUrl: async () => undefined }));
 vi.mock("../buildApplicationPackage", () => ({ buildApplicationPackage: vi.fn().mockResolvedValue({ zipBuffer: Buffer.from("zip") }) }));
 vi.mock("../loadPackageInputs", () => ({ loadPackageInputs: vi.fn().mockResolvedValue({ signedApplicationPdf: Buffer.from("signed"), creditSummaryPdf: Buffer.from("credit"), documents: [{ category: "bank", files: [{ filename: "stmt.pdf", content: Buffer.from("doc") }] }], fields: [{ label: "Business Name", value: "Acme LLC" }] }) }));
 

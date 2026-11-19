@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ send: vi.fn() }));
 vi.mock("../../../modules/lenderSubmissions/adapters/EmailAdapter", () => ({ sendLenderEmail: h.send }));
+// SECURITY_SWEEP_2026_11_19 - the lender endpoint public-address check does a DNS lookup; the tests use fake hosts.
+vi.mock("../../../security/ssrfGuard.js", async (orig) => ({ ...(await orig<any>()), assertPublicUrl: async () => undefined }));
 vi.mock("../buildApplicationPackage", () => ({ buildApplicationPackage: vi.fn().mockResolvedValue({ zipBuffer: Buffer.from("zip") }) }));
 vi.mock("../loadPackageInputs", () => ({ loadPackageInputs: vi.fn().mockResolvedValue({ signedApplicationPdf: Buffer.from("signed"), creditSummaryPdf: null, documents: [], fields: [{ label: "Application Name", value: "Sample Co" }] }) }));
 
