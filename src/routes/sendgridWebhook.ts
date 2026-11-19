@@ -21,6 +21,40 @@ export const SENDGRID_TRIGGERS: Record<string, string> = {
   open: "email.opened", click: "email.clicked", bounce: "email.bounced",
   unsubscribe: "email.unsubscribed", group_unsubscribe: "email.unsubscribed",
 };
+// BF_SERVER_BI_SENDGRID_FORWARD_v1 - Boreal Risk Management (BI-Server) mail shares this SendGrid account and its one
+// Event Webhook points here, so BI's opens, clicks and bounces never reached BI-Server: its email flows showed 0 opened
+// and 0 clicked, never moved anyone on, and never made a call task. BI events carry bi_mkt=1 (or a BI flow job id).
+// The batch is passed on to BI-Server byte for byte with SendGrid's signature headers (BI verifies the same key), and
+// BF skips those events itself, the same as Keystone's.
+export function isBiEvent(ev: any): boolean {
+  return ev?.bi_mkt === "1" || /^flow:[0-9a-f-]{36}:/i.test(String(ev?.job_id ?? ""));
+}
+export async function forwardToBi(raw: Buffer, sig: string, ts: string, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  const base = String(process.env.BI_SERVER_URL || "").replace(/\/+$/, "");
+  if (!base) {
+    console.error("[sendgrid-webhook] BI events in batch but BI_SERVER_URL is unset - not forwarded");
+    return null;
+  }
+  try {
+    const r = await fetchImpl(`${base}/api/v1/bi/webhooks/sendgrid`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Twilio-Email-Event-Webhook-Signature": sig,
+        "X-Twilio-Email-Event-Webhook-Timestamp": ts,
+        "X-Boreal-Forwarded-By": "bf-server",
+      },
+      body: raw.toString("utf8"), // the same bytes SendGrid signed (the signature covers the UTF-8 text)
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) console.error("[sendgrid-webhook] BI forward answered", r.status);
+    return r.status;
+  } catch (err: any) {
+    console.error("[sendgrid-webhook] BI forward failed", err?.message ?? String(err));
+    return null;
+  }
+}
+
 function isSuppressEvent(event: string, ev: any): boolean {
   if (SUPPRESS.has(event)) return true;
   if (event === "bounce" && String(ev?.type ?? "bounce") === "bounce") return true; // hard bounce only
@@ -82,12 +116,15 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   // events that cannot be associated with a contact.
   const unresolvedEmails = new Set<string>();
   const seenTypes = new Set<string>();
+  const biEvents = (Array.isArray(events) ? events : []).filter(isBiEvent).length;
+  if (biEvents > 0) await forwardToBi(raw, sig, ts);
   for (const ev of Array.isArray(events) ? events : []) {
     try {
       // BF_SERVER_v865_KS_MARKETING - Keystone marketing email (KS-Ops) shares this SendGrid account. Its events carry
       // ks_mkt / ks_mkt_send_id and are handled by KS-Ops; matching them here by email could opt out, or log activity
       // on, a Boreal contact who happens to share the address.
       if (ev?.ks_mkt_send_id || ev?.ks_mkt === "1" || ev?.ks_mkt_test === "1") continue;
+      if (isBiEvent(ev)) continue; // BF_SERVER_BI_SENDGRID_FORWARD_v1 - handled by BI-Server
       const email = String(ev?.email || "").toLowerCase();
       const event = String(ev?.event || "");
       if (event) seenTypes.add(event);
@@ -188,6 +225,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
     events: Array.isArray(events) ? events.length : 0,
     contactsResolved: resolved,
     contactsUnresolved: unresolvedEmails.size,
+    forwardedToBi: biEvents,
     suppressed,
     unresolvedSample: Array.from(unresolvedEmails).slice(0, 5).join(",") || "none",
     types: Array.from(seenTypes).join(",") || "none",
