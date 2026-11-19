@@ -21,6 +21,9 @@ export function isAllCapsOrLower(s: string): boolean {
 
 function capWord(word: string): string {
   if (!word) return word;
+  // CRM_CLEANUP_INITIALS_v1 - initials stay as typed: "R.J." stays "R.J.", "JP" stays "JP" (not "R.j." / "Jp").
+  if (/^([a-z]\.){1,3}[a-z]?\.?$/i.test(word)) return word.toUpperCase();
+  if (/^[A-Z]{2,3}$/.test(word) && !/[AEIOUY]/.test(word)) return word;
   const lower = word.toLowerCase();
   // O'Brien, D'Angelo
   const apos = /^([a-z])'([a-z].*)$/.exec(lower);
