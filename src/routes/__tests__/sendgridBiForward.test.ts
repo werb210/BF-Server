@@ -31,6 +31,7 @@ describe("BI email events are passed to BI-Server", () => {
   beforeEach(() => {
     process.env.SENDGRID_WEBHOOK_PUBLIC_KEY = PUBLIC_KEY;
     process.env.BI_SERVER_URL = "https://bi.example.test/";
+    process.env.JWT_SECRET = "jwt-secret-for-tests";
     queryMock.mockReset();
     queryMock.mockImplementation(answerBySql([[/SELECT id FROM contacts/, () => ({ rows: [{ id: "c-bf" }] })]]));
     fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
@@ -51,6 +52,8 @@ describe("BI email events are passed to BI-Server", () => {
     expect(String(init.body)).toBe(body);
     expect(init.headers["X-Twilio-Email-Event-Webhook-Signature"]).toBe(signature);
     expect(init.headers["X-Twilio-Email-Event-Webhook-Timestamp"]).toBe(ts);
+    // BF_SERVER_BI_SENDGRID_FORWARD_AUTH_v1
+    expect(init.headers["X-Boreal-Forward-Signature"]).toBe(crypto.createHmac("sha256", "jwt-secret-for-tests").update(`${ts}.${body}`).digest("hex"));
     const timeline = callsMatching(queryMock, TIMELINE);
     expect(timeline).toHaveLength(1); // only the BF event
     expect((timeline[0]![1] as unknown[])[0]).toBe("c-bf");
