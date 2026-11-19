@@ -561,8 +561,14 @@ router.post("/twilio/voice/twiml", twilioWebhookValidation, safeHandler(async (r
   // the caller's own direct number, else the 866 main line. callerIdForUser never throws.
   const sdkIdentity = rawFrom.startsWith("client:") ? rawFrom.slice("client:".length).trim() : "";
   const isStaffSdkCall = Boolean(isSdkOutbound) && sdkIdentity !== "" && !sdkIdentity.startsWith("client-");
+  // BF_SERVER_DIALLER_LINE_PER_BUSINESS_v1 - the dialler sends the line (business) it is calling from as the
+  // "silo" parameter (iOS line switcher, portal's active business). That business's own line is shown when it has
+  // one (BI, SLF, KS), else the caller's direct number, else the 866. No silo, or BF, keeps the old rule.
+  const sdkCallSilo = String(params.silo ?? params.Silo ?? "").trim().toUpperCase();
   const effectiveCallerId = isStaffSdkCall
-    ? await (await import("../voice/directLines.js")).callerIdForUser(pool, sdkIdentity)
+    ? (sdkCallSilo && sdkCallSilo !== "BF"
+        ? await (await import("../voice/directLines.js")).callerIdForCall(pool, sdkIdentity, sdkCallSilo)
+        : await (await import("../voice/directLines.js")).callerIdForUser(pool, sdkIdentity))
     : callerId;
   if (isSdkOutbound) {
     const callSid = String(params.CallSid ?? params.callSid ?? "").trim() || null;
