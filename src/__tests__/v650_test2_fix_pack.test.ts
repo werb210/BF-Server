@@ -90,8 +90,8 @@ describe("v650 - bfBuildWizardMetadata promotes Step 6 fields (C+D+E)", () => {
 });
 
 describe("v650 - PGI handoff SMS + idempotent ready-message (A + J)", () => {
-  const EXISTING = /SELECT id FROM communications_messages\s+WHERE application_id = \$1\s+AND staff_name = 'Boreal Insurance'/;
-  const READY_INSERT = /INSERT INTO communications_messages[\s\S]+'Boreal Insurance', \$4, \$5/;
+  const EXISTING = /SELECT id FROM communications_messages\s+WHERE application_id = \$1\s+AND staff_name IN \('Boreal Insurance', 'Boreal Risk Management'\)/;
+  const READY_INSERT = /INSERT INTO communications_messages[\s\S]+'Boreal Risk Management', \$4, \$5/;
 
   it("ready-message INSERT is gated by existence check", async () => {
     await submit({ pgi_opt_in: "yes", business: { companyName: "Acme" } });
@@ -107,7 +107,7 @@ describe("v650 - PGI handoff SMS + idempotent ready-message (A + J)", () => {
 
   it("Twilio sendSms call per leg once the term sheet is signed", async () => {
     await submit({ pgi_opt_in: "yes", business: { companyName: "Acme" } }, [PHONE_RULE]);
-    expect(h.sendSms).toHaveBeenCalledWith({ to: "+15875550100", message: expect.stringMatching(/^Boreal Insurance: your PGI application .* https:\/\/bi\.test\/c\/1$/) });
+    expect(h.sendSms).toHaveBeenCalledWith({ to: "+15875550100", message: expect.stringMatching(/^Boreal Risk Management: your PGI application .* https:\/\/bi\.test\/c\/1$/) });
   });
 
   it("an SMS failure is logged and does not fail the submit", async () => {

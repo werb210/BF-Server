@@ -20,7 +20,7 @@ export const KIT_SILOS: readonly KitSilo[] = ["BF", "BI", "SLF"];
 export const kitSettingKey = (silo: KitSilo) => `website_kit:${silo}`;
 
 /** The name a silo's kit shows visitors (consent wording, the cookie banner, the chat header). */
-export const KIT_BRAND: Record<KitSilo, string> = { BF: "Boreal Financial", BI: "Boreal Insurance", SLF: "Site Level Financial" };
+export const KIT_BRAND: Record<KitSilo, string> = { BF: "Boreal Financial", BI: "Boreal Risk Management", SLF: "Site Level Financial" };
 
 export type KitSettings = {
   key: string;
