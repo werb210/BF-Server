@@ -12,12 +12,12 @@ describe("resolveCallContactId", () => {
     expect(q).not.toHaveBeenCalled();
   });
   it("falls back to application's crm_contact_id", async () => {
-    const q = vi.fn(answerBySql([[/SELECT crm_contact_id FROM applications/, { rows: [{ crm_contact_id: "c2" }] }]])); // BF_SERVER_v789_SQL_CONTENT_MOCKS
+    const q = vi.fn(answerBySql([[/SELECT contact_id AS crm_contact_id FROM applications/, { rows: [{ crm_contact_id: "c2" }] }]])); // BF_SERVER_v789_SQL_CONTENT_MOCKS
     expect(await resolveCallContactId(q as any, { ...base, applicationId: "a1" })).toBe("c2");
   });
   it("falls back to phone match when no contact/app contact", async () => {
     const q = vi.fn(answerBySql([
-      [/SELECT crm_contact_id FROM applications/, { rows: [{ crm_contact_id: null }] }],
+      [/SELECT contact_id AS crm_contact_id FROM applications/, { rows: [{ crm_contact_id: null }] }],
       [/SELECT id FROM contacts/, { rows: [{ id: "c3" }] }],
     ]));
     expect(await resolveCallContactId(q as any, { ...base, applicationId: "a1", toPstn: "+16475326400" })).toBe("c3");

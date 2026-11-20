@@ -23,7 +23,7 @@ export async function resolveCallContactId(
   if (args.contactId) return args.contactId;
   if (args.applicationId) {
     const ar = await q(
-      `SELECT crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`,
+      `SELECT contact_id AS crm_contact_id FROM applications WHERE id::text = ($1)::text LIMIT 1`, // applications has contact_id (production log)
       [args.applicationId],
     ).catch((err: any) => { console.warn("[silent-query] routes/voiceCalls.ts", { message: err?.message }); return { rows: [] as any[] }; });
     const cid = (ar.rows[0]?.crm_contact_id as string | null | undefined) ?? null;
