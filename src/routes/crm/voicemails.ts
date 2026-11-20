@@ -5,6 +5,7 @@ import express from "express";
 import { pool } from "../../db.js";
 import { safeHandler } from "../../middleware/safeHandler.js";
 import { respondOk } from "../../utils/respondOk.js";
+import { isTwilioApiUrl } from "../../lib/twilioUrl.js"; // SECURITY_SWEEP_2026_11_19
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 
 const router = express.Router();
@@ -74,6 +75,7 @@ router.get("/:id/audio", safeHandler(async (req: any, res: any) => {
   const tok = process.env.TWILIO_AUTH_TOKEN;
   if (!sid || !tok) return res.status(503).end();
   const mp3 = url.endsWith(".mp3") ? url : `${url}.mp3`;
+  if (!isTwilioApiUrl(mp3)) return res.status(404).end(); // SECURITY_SWEEP_2026_11_19
   const auth = Buffer.from(`${sid}:${tok}`).toString("base64");
   const tw = await fetch(mp3, { headers: { Authorization: `Basic ${auth}` } });
   if (!tw.ok) return res.status(502).end();

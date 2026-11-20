@@ -44,10 +44,15 @@ export function createApp() {
   // and local dev preview (localhost / 127.0.0.1 / RFC1918 LAN on any port) in
   // addition to the configured allowlist. Non-browser and same-origin requests
   // (no Origin header) are allowed. Public origins still require the allowlist.
+  // SECURITY_SWEEP_2026_11_19 - the mobile apps' own origins are always allowed; any localhost port or private-network
+  // address (dev servers, LAN previews) only outside production, so a page on a staff member's network cannot make
+  // credentialed calls to the live server.
   const isLocalPreviewOrigin = (origin: string): boolean =>
     origin === "capacitor://localhost" ||
     origin === "http://localhost" ||
-    /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
+    origin === "https://localhost" ||
+    (process.env.NODE_ENV !== "production" &&
+      /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin));
   const corsOptions: cors.CorsOptions = {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
