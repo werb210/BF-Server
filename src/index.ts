@@ -264,6 +264,11 @@ export async function start(): Promise<void> {
     await workerStagger();
     try { const w = startBookingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] booking-reminders worker started"); }
     catch (err) { console.error("[startup] booking-reminders worker failed to start:", err); }
+    // BF_SERVER_TEAMS_ATTENDEE_REMINDERS_v1 - Teams meeting attendees get Boreal's own reminder emails.
+    const { startTeamsMeetingRemindersWorker } = await import("./workers/teamsMeetingRemindersWorker.js");
+    await workerStagger();
+    try { const w = startTeamsMeetingRemindersWorker(pool); workerStops.push(w.stop); console.log("[startup] teams-meeting-reminders worker started"); }
+    catch (err) { console.error("[startup] teams-meeting-reminders worker failed to start:", err); }
 
     // BF_SERVER_v871_CALL_QUEUES - call queues: offers nobody answered, callers past the longest wait, dispatch.
     const { startCallQueueWorker } = await import("./workers/callQueueWorker.js");

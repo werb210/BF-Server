@@ -301,6 +301,7 @@ router.post("/events", safeHandler(async (req: any, res: any) => {
       ...(body.location ? { location: { displayName: body.location } } : {}),
       ...(graphAttendees.length ? { attendees: graphAttendees } : {}),
       ...(wantsTeams ? { isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness" } : {}), // BF_SERVER_v962_CALENDAR_TEAMS
+      isReminderOn: true, reminderMinutesBeforeStart: 15, // BF_SERVER_TEAMS_ATTENDEE_REMINDERS_v1
       }),
     });
     if (wantsTeams) await registerCalendarTeamsMeeting(graph, event, body, req, res);
