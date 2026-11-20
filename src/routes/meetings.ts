@@ -134,7 +134,7 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
     const me = await staffIdentity(String(req.user?.userId ?? req.user?.id ?? ""));
     const mail = me.email || String(req.user?.email ?? "");
     if (mail) void import("../services/teams/autoRecord.js").then((m) => m.openLobbyForOrganizer(mail, joinUrl)).catch((err) => console.warn("[teams-in-app] lobby open failed", { message: err instanceof Error ? err.message : String(err) }));
-    if (!(typeof b.teamsToken === "string" && b.teamsToken)) console.warn("[teams-in-app] staff joining as a guest: the portal sent no Microsoft token", { who });
+    if (!(typeof b.teamsToken === "string" && b.teamsToken)) console.warn("[teams-in-app] the portal sent no Microsoft token; trying the stored sign-in", { who });
   }
   if (cPhone === null && typeof b.teamsToken === "string" && b.teamsToken) {
     try {
@@ -143,7 +143,24 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
       res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
       return;
     } catch (err) {
-      console.warn("[teams-in-app] teams identity token failed; joining as a guest", { message: err instanceof Error ? err.message : String(err) });
+      console.warn("[teams-in-app] teams identity token failed; trying the stored sign-in", { message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  // BF_SERVER_TEAMS_SERVER_IDENTITY_v1 - no usable token from the device (the iPad app): use the staff member's
+  // stored Microsoft sign-in so they still join as themselves instead of waiting in the lobby as a guest.
+  if (cPhone === null) {
+    try {
+      const staffId = String(req.user?.userId ?? req.user?.id ?? "");
+      const { teamsAadTokenForStaff } = await import("../services/teams/serverTeamsToken.js");
+      const aadToken = await teamsAadTokenForStaff(pool, staffId);
+      if (aadToken) {
+        const me = await staffIdentity(staffId);
+        const t = await issueTeamsUserToken(aadToken, me.email || String(req.user?.email ?? ""));
+        res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+        return;
+      }
+    } catch (err) {
+      console.warn("[teams-in-app] stored-sign-in Teams identity failed; joining as a guest", { message: err instanceof Error ? err.message : String(err) });
     }
   }
   try {
