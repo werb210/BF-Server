@@ -148,24 +148,33 @@ router.post("/acs-token", staffOrClient, safeHandler(async (req: any, res: any) 
   }
   // BF_SERVER_TEAMS_SERVER_IDENTITY_v1 - no usable token from the device (the iPad app): use the staff member's
   // stored Microsoft sign-in so they still join as themselves instead of waiting in the lobby as a guest.
+  let signInIssue: string | null = null;
   if (cPhone === null) {
     try {
       const staffId = String(req.user?.userId ?? req.user?.id ?? "");
-      const { teamsAadTokenForStaff } = await import("../services/teams/serverTeamsToken.js");
-      const aadToken = await teamsAadTokenForStaff(pool, staffId);
-      if (aadToken) {
-        const me = await staffIdentity(staffId);
-        const t = await issueTeamsUserToken(aadToken, me.email || String(req.user?.email ?? ""));
-        res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
-        return;
+      const { teamsAadTokenForStaff, lastTeamsSignInIssue } = await import("../services/teams/serverTeamsToken.js");
+      const aad = await teamsAadTokenForStaff(pool, staffId);
+      if (aad) {
+        try {
+          const me = await staffIdentity(staffId);
+          const t = await issueTeamsUserToken(aad.token, me.email || String(req.user?.email ?? ""), { oid: aad.oid });
+          res.status(200).json({ ...t, displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+          return;
+        } catch (err) {
+          signInIssue = "Teams identity exchange failed: " + (err instanceof Error ? err.message : String(err)).slice(0, 220);
+          console.warn("[teams-in-app] stored-sign-in Teams identity failed; joining as a guest", { message: signInIssue });
+        }
+      } else {
+        signInIssue = lastTeamsSignInIssue.get(staffId) ?? "unknown";
       }
     } catch (err) {
-      console.warn("[teams-in-app] stored-sign-in Teams identity failed; joining as a guest", { message: err instanceof Error ? err.message : String(err) });
+      signInIssue = "stored sign-in failed: " + (err instanceof Error ? err.message : String(err)).slice(0, 220);
+      console.warn("[teams-in-app] stored-sign-in Teams identity failed; joining as a guest", { message: signInIssue });
     }
   }
   try {
     const t = await issueAcsToken();
-    res.status(200).json({ ...t, identity: "guest", displayName: displayName.slice(0, 120), joinUrl, subject, startsAt });
+    res.status(200).json({ ...t, identity: "guest", displayName: displayName.slice(0, 120), joinUrl, subject, startsAt, ...(signInIssue ? { signInIssue } : {}) });
   } catch (err) {
     console.error("[teams-in-app] acs token failed", { message: err instanceof Error ? err.message : String(err) });
     res.status(503).json({ error: "video_unavailable", message: "Video is unavailable right now. Use Open in Teams instead.", joinUrl });

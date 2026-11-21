@@ -64,6 +64,22 @@ describe("Teams identity from the stored Microsoft sign-in", () => {
     expect(h.query.mock.calls.some((c) => /UPDATE users SET o365_refresh_token/.test(String(c[0])) && c[1][1] === "rotated-rt")).toBe(true);
   });
 
+  it("joins as themselves when Microsoft's token is encrypted, using the id_token's user id", async () => {
+    const jwe = "eyJhbGciOiJSU0EtT0FFUCJ9.a.b.c.d";
+    h.fetch.mockResolvedValue(new Response(JSON.stringify({ access_token: jwe, id_token: aad({ oid: OID }), refresh_token: "stored-rt" }), { status: 200 }));
+    const r = await request(await app()).post("/api/meetings/acs-token").send({ joinUrl: JOIN });
+    expect(r.body).toMatchObject({ token: "teams-token", identity: "teams", acsUserId: "teams:" + OID });
+    expect(h.getTokenForTeamsUser).toHaveBeenCalledWith({ teamsUserAadToken: jwe, clientId: APP_ID, userObjectId: OID });
+    expect(decodeURIComponent(String(h.fetch.mock.calls[0]![1].body))).toContain("openid");
+  });
+
+  it("says why it fell back to a guest", async () => {
+    h.fetch.mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant", error_description: "AADSTS70000 bad grant" }), { status: 400 }));
+    const r = await request(await app()).post("/api/meetings/acs-token").send({ joinUrl: JOIN });
+    expect(r.body.identity).toBe("guest");
+    expect(r.body.signInIssue).toMatch(/Microsoft refused \(400 invalid_grant\)/);
+  });
+
   it("falls back to a guest when there is no stored sign-in", async () => {
     refreshToken = null;
     const r = await request(await app()).post("/api/meetings/acs-token").send({ joinUrl: JOIN });
