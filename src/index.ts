@@ -378,7 +378,7 @@ export async function start(): Promise<void> {
     // BF_SERVER_ADS_WEEKLY_EMAIL_v708
     const { startAdsWeeklyEmailWorker } = await import("./workers/adsWeeklyEmailWorker.js");
     await workerStagger();
-    try { const w = startAdsWeeklyEmailWorker(pool); workerStops.push(w.stop); console.log("[startup] ads-weekly-email worker started"); }
+    try { const w = startAdsWeeklyEmailWorker(pool); workerStops.push(w.stop); console.log(`[startup] ads-weekly-email worker started${(await import("./workers/adsWeeklyEmailWorker.js")).weeklyEmailsOn() ? "" : " (paused: set BF_WEEKLY_EMAILS=on to send)"}`); }
     catch (err) { console.error("[startup] ads-weekly-email worker failed to start:", err); }
 
     // BF_SERVER_ADS_WAREHOUSE_v1 - own Google Ads history locally.

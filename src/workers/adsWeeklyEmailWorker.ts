@@ -3,10 +3,18 @@ import type { Pool } from "pg";
 import { maybeSendWeeklyAdsEmail } from "../services/adsWeeklyEmail.js";
 import { claimedTick } from "./claim.js"; // BF_SERVER_v789_WORKER_CLAIM
 
+// BF_SERVER_WEEKLY_EMAILS_PAUSED_v1 (2026-11-22) - Todd: turn off the BF weekly reporting emails for now (the Google
+// Ads weekly and the weekly business summary). Paused unless BF_WEEKLY_EMAILS=on. Keystone's weekly email runs on
+// the Keystone server and is not affected.
+export function weeklyEmailsOn(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.BF_WEEKLY_EMAILS ?? "").trim().toLowerCase() === "on";
+}
+
 export function startAdsWeeklyEmailWorker(_pool: Pool): { stop: () => void } {
   let running = false;
   const tickUnclaimed = async () => {
     if (running) return;
+    if (!weeklyEmailsOn()) return;
     running = true;
     try {
       const r = await maybeSendWeeklyAdsEmail();
