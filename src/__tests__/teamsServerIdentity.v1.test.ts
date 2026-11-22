@@ -18,7 +18,10 @@ vi.mock("../middleware/auth.js", () => ({
 vi.mock("@azure/communication-identity", () => ({
   CommunicationIdentityClient: class { createUserAndToken = h.createUserAndToken; getTokenForTeamsUser = h.getTokenForTeamsUser; },
 }));
-vi.mock("../modules/o365/graphClient.js", () => ({ getGraphForUser: vi.fn() }));
+const graphMe = vi.hoisted(() => ({ id: null as string | null }));
+vi.mock("../modules/o365/graphClient.js", () => ({
+  getGraphForUser: vi.fn(async () => (graphMe.id ? { fetch: async () => new Response(JSON.stringify({ id: graphMe.id }), { status: 200 }) } : null)),
+}));
 vi.mock("../modules/automation/automationEngine.js", () => ({ emitAutomationEvent: vi.fn(async () => undefined) }));
 
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -71,6 +74,16 @@ describe("Teams identity from the stored Microsoft sign-in", () => {
     expect(r.body).toMatchObject({ token: "teams-token", identity: "teams", acsUserId: "teams:" + OID });
     expect(h.getTokenForTeamsUser).toHaveBeenCalledWith({ teamsUserAadToken: jwe, clientId: APP_ID, userObjectId: OID });
     expect(decodeURIComponent(String(h.fetch.mock.calls[0]![1].body))).toContain("openid");
+  });
+
+  it("asks Graph for the user id when Microsoft's answer has none (BF_SERVER_TEAMS_OID_FROM_GRAPH_v1)", async () => {
+    const jwe = "eyJhbGciOiJSU0EtT0FFUCJ9.a.b.c.d";
+    graphMe.id = OID;
+    h.fetch.mockResolvedValue(new Response(JSON.stringify({ access_token: jwe, refresh_token: "stored-rt" }), { status: 200 }));
+    const r = await request(await app()).post("/api/meetings/acs-token").send({ joinUrl: JOIN });
+    graphMe.id = null;
+    expect(r.body).toMatchObject({ identity: "teams", acsUserId: "teams:" + OID });
+    expect(h.getTokenForTeamsUser).toHaveBeenCalledWith({ teamsUserAadToken: jwe, clientId: APP_ID, userObjectId: OID });
   });
 
   it("says why it fell back to a guest", async () => {
