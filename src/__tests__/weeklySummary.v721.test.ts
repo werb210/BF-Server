@@ -94,6 +94,7 @@ describe("Monday week-in-review email", () => {
       return realSetTimeout(fn, ms);
     }) as any);
     vi.spyOn(console, "log").mockImplementation(() => {});
+    process.env.BF_WEEKLY_EMAILS = "on"; // BF_SERVER_WEEKLY_EMAILS_PAUSED_v1 - paused by default
     const { startAdsWeeklyEmailWorker } = await import("../workers/adsWeeklyEmailWorker.js");
     const worker = startAdsWeeklyEmailWorker({} as any);
     try {
@@ -104,6 +105,7 @@ describe("Monday week-in-review email", () => {
       expect(String(h.send.mock.calls[0][0].subject)).toContain("Boreal week in review");
     } finally {
       worker.stop();
+      delete process.env.BF_WEEKLY_EMAILS;
       vi.useRealTimers();
     }
   });
