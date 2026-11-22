@@ -27,6 +27,21 @@ function oidFromIdToken(idToken: unknown): string | undefined {
   } catch { return undefined; }
 }
 
+async function oidFromGraph(db: Pick<Pool, "query">, userId: string): Promise<string | undefined> {
+  try {
+    const { getGraphForUser } = await import("../../modules/o365/graphClient.js");
+    const graph = await getGraphForUser(db as any, userId);
+    if (!graph) { console.warn("[teams-in-app] no Graph sign-in for this staff member"); return undefined; }
+    const r = await graph.fetch("/me?$select=id");
+    if (!r.ok) { console.warn("[teams-in-app] Graph /me refused", { status: r.status }); return undefined; }
+    const me: any = await r.json();
+    return typeof me?.id === "string" && /^[0-9a-f-]{36}$/i.test(me.id) ? me.id : undefined;
+  } catch (err) {
+    console.warn("[teams-in-app] Graph /me failed", { message: err instanceof Error ? err.message : String(err) });
+    return undefined;
+  }
+}
+
 export async function teamsAadTokenForStaff(db: Pick<Pool, "query">, userId: string, doFetch: Fetch = fetch): Promise<{ token: string; oid?: string } | null> {
   const tenant = String(process.env.MSAL_TENANT_ID ?? "").trim();
   const client = String(process.env.ACS_TEAMS_CLIENT_ID ?? process.env.MSAL_CLIENT_ID ?? "").trim();
@@ -65,7 +80,12 @@ export async function teamsAadTokenForStaff(db: Pick<Pool, "query">, userId: str
         console.warn("[teams-in-app] could not save the rotated Microsoft sign-in", { message: err instanceof Error ? err.message : String(err) }));
     }
     lastTeamsSignInIssue.delete(userId);
-    return { token: tok.access_token, oid: oidFromIdToken(tok.id_token) };
+    let oid = oidFromIdToken(tok.id_token);
+    // BF_SERVER_TEAMS_OID_FROM_GRAPH_v1 - production: the refresh answer carried no readable user id, so ask Microsoft
+    // Graph who this is (/me id is the Microsoft user id), with the same stored sign-in.
+    if (!oid) oid = await oidFromGraph(db, userId);
+    console.warn("[teams-in-app] stored sign-in gave a Teams token", { hasIdToken: !!tok.id_token, hasUserId: !!oid });
+    return { token: tok.access_token, oid };
   } catch (err) {
     console.warn("[teams-in-app] Microsoft token request failed", { message: err instanceof Error ? err.message : String(err) });
     return issue(userId, "Microsoft token request failed: " + (err instanceof Error ? err.message : String(err)));
