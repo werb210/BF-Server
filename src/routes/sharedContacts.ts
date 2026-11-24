@@ -10,7 +10,7 @@ import { pool } from "../db.js";
 import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
-import { importSharedList, listPeople, KINDS, type Brand, type Kind } from "../services/directory/sharedContacts.js";
+import { getPerson, importSharedList, listPeople, listSources, previewSharedList, KINDS, type Brand, type Kind } from "../services/directory/sharedContacts.js";
 import { syncFromSilos } from "../services/directory/siloSync.js";
 
 const router = Router();
@@ -28,6 +28,8 @@ router.post("/import", ...staff, safeHandler(async (req: any, res: any) => {
   if (!companies.length && !contacts.length) return res.status(400).json({ error: "empty_list", message: "The list has no companies or people." });
   if (companies.length + contacts.length > SHARED_IMPORT_MAX) return res.status(400).json({ error: "too_many", message: `At most ${SHARED_IMPORT_MAX} rows a call.` });
   const only = Array.isArray(b.only) ? (b.only.filter((x: unknown) => ["BF", "BI", "KS"].includes(String(x))) as Brand[]) : null;
+  // BF_SHARED_CONTACTS_STAGE3_v1 - preview: what the import would do, nothing written.
+  if (b.preview === true) return res.json(await previewSharedList(pool, { list_name: listName, kind: kind as Kind, only, companies, contacts }));
   const auth = String(req.headers?.authorization ?? "");
   const result = await importSharedList(pool, {
     fetch: (url, init) => fetch(url, init) as any,
@@ -42,8 +44,19 @@ router.get("/people", ...staff, safeHandler(async (req: any, res: any) => {
   const q = req.query ?? {};
   res.json(await listPeople(pool, {
     kind: q.kind ? String(q.kind) : undefined, country: q.country ? String(q.country) : undefined, brand: q.brand ? String(q.brand) : undefined,
+    region: q.region ? String(q.region) : undefined, source: q.source ? String(q.source) : undefined, not_brand: q.not_brand ? String(q.not_brand) : undefined,
     status: q.status ? String(q.status) : undefined, q: q.q ? String(q.q) : undefined, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined,
   }));
+}));
+
+router.get("/people/:id", ...staff, safeHandler(async (req: any, res: any) => {
+  const p = await getPerson(pool, String(req.params.id));
+  if (!p) return res.status(404).json({ error: "not_found" });
+  res.json({ person: p });
+}));
+
+router.get("/sources", ...staff, safeHandler(async (_req: any, res: any) => {
+  res.json({ sources: await listSources(pool) });
 }));
 
 router.post("/sync", ...staff, safeHandler(async (req: any, res: any) => {

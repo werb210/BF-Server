@@ -92,3 +92,23 @@ describe("loading a list", () => {
     expect(err).toHaveBeenCalled();
   });
 });
+
+// BF_SHARED_CONTACTS_STAGE3_v1
+describe("import preview", () => {
+  it("counts new versus on file and the routing, and writes nothing", async () => {
+    const { previewSharedList } = await import("../directory/sharedContacts.js");
+    const calls: string[] = [];
+    const db = { query: vi.fn(async (sql: string) => { calls.push(sql); return /FROM directory_people/.test(sql) ? { rows: [{ email: "evan@chosencapital.ca" }] } : { rows: [] }; }) };
+    const out = await previewSharedList(db as any, {
+      list_name: "L", kind: "broker", only: null,
+      companies: [{ name: "Chosen Capital", website: "chosencapital.ca", address_country: "Canada", address_state: "AB" }, { name: "Laval Leasing", address_country: "CA", address_state: "QC" }],
+      contacts: [
+        { name: "Evan", company_name: "Chosen Capital", email: "evan@chosencapital.ca" },
+        { name: "Nora", company_name: "Chosen Capital", email: "nora@chosencapital.ca" },
+        { name: "Luc", company_name: "Laval Leasing", email: "luc@laval.example" },
+      ],
+    });
+    expect(out).toMatchObject({ rows: 3, with_email: 3, people_new: 2, people_on_file: 1, routed: { KS: 3, BI: 2, BF: 0 } });
+    expect(calls.every((s) => !/INSERT|UPDATE/.test(s))).toBe(true);
+  });
+});
