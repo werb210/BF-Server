@@ -495,6 +495,17 @@ export async function start(): Promise<void> {
       console.error("[startup] bi-handoff-retry worker failed to start:", err);
     }
 
+    // BF_SHARED_CONTACTS_STAGE2_v1 - read the silos into the shared contact list about once a night.
+    try {
+      const { startSharedContactsSyncWorker } = await import("./services/directory/siloSync.js");
+      await workerStagger();
+      const w = startSharedContactsSyncWorker(pool);
+      workerStops.push(w.stop);
+      console.log("[startup] shared-contacts-sync worker started");
+    } catch (err) {
+      console.error("[startup] shared-contacts-sync worker failed to start:", err);
+    }
+
     // BF_SERVER_PGI_MIRROR_LABELS_v357 - one catch-up pass a minute after boot.
     const pgiBackfill = setTimeout(() => {
       void import("./services/biDocMirror.js")

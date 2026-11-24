@@ -130,7 +130,7 @@ export function toRows(companies: InCompany[], contacts: InContact[], listKind: 
   return { rows, skipped };
 }
 
-async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
+export async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
   const found = r.domain
     ? (await db.query(`SELECT id FROM directory_orgs WHERE lower(domain) = lower($1) LIMIT 1`, [r.domain])).rows[0]
     : (await db.query(`SELECT id FROM directory_orgs WHERE name_key = $1 AND coalesce(country, '') = coalesce($2, '') LIMIT 1`, [nameKey(r.company), r.country])).rows[0];
@@ -152,7 +152,7 @@ async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
   return String(ins.rows[0].id);
 }
 
-async function upsertPerson(db: Q, orgId: string, r: Row, listName: string): Promise<{ id: string; created: boolean }> {
+export async function upsertPerson(db: Q, orgId: string, r: Row, listName: string): Promise<{ id: string; created: boolean }> {
   const p = r.person!;
   const found = p.email
     ? (await db.query(`SELECT id FROM directory_people WHERE lower(email) = $1 LIMIT 1`, [p.email])).rows[0]
@@ -325,8 +325,50 @@ export async function importSharedList(db: Q, deps: SiloDeps, input: ImportInput
   return result;
 }
 
+/** BF_SHARED_CONTACTS_STAGE3_v1 - what an import would do, without writing anything: rows read, skipped, how many
+ *  people are new or already on file, and how many go to each silo. */
+export async function previewSharedList(db: Q, input: Omit<ImportInput, "created_by">) {
+  const { rows, skipped } = toRows(input.companies, input.contacts, input.kind);
+  const emails = [...new Set(rows.map((r) => r.person?.email).filter((e): e is string => !!e))];
+  const known = emails.length
+    ? new Set((await db.query(`SELECT lower(email) AS email FROM directory_people WHERE lower(email) = ANY($1::text[])`, [emails])).rows.map((r: any) => String(r.email)))
+    : new Set<string>();
+  const routed: Record<Brand, number> = { BF: 0, BI: 0, KS: 0 };
+  for (const r of rows) if (r.person?.email) for (const b of brandsFor(r.kind, r.country, r.region, input.only)) routed[b]++;
+  const firms = new Set(rows.map((r) => r.domain ?? nameKey(r.company)));
+  return {
+    rows: rows.length, firms: firms.size, with_email: emails.length,
+    people_new: emails.filter((e) => !known.has(e)).length, people_on_file: emails.filter((e) => known.has(e)).length,
+    routed, skipped,
+  };
+}
+
+/** One person: their firm, every brand's state, and where they came from. */
+export async function getPerson(db: Q, id: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  const r = await db.query(
+    `SELECT p.id, p.name, p.email, p.phone, p.title, p.kind, p.country, p.region, p.sources, p.research, p.all_brands_opt_out, p.bad_address,
+            p.created_at, p.updated_at, o.id AS firm_id, o.name AS firm, o.domain, o.website, o.phone AS firm_phone, o.city, o.address, o.research AS firm_research
+       FROM directory_people p LEFT JOIN directory_orgs o ON o.id = p.org_id WHERE p.id = $1`,
+    [id],
+  );
+  if (!r.rows[0]) return null;
+  const b = await db.query(
+    `SELECT brand, status, consent_basis, consent_source, silo_record_id, last_activity, last_activity_at, updated_at
+       FROM directory_brand_status WHERE person_id = $1 ORDER BY brand`,
+    [id],
+  );
+  return { ...r.rows[0], brands: b.rows };
+}
+
+/** The lists people came from, for the filter. */
+export async function listSources(db: Q): Promise<Array<{ source: string; people: number }>> {
+  const r = await db.query(`SELECT src AS source, count(*)::int AS people FROM directory_people, unnest(sources) src GROUP BY src ORDER BY src`);
+  return r.rows.map((x: any) => ({ source: String(x.source), people: Number(x.people) }));
+}
+
 /** People in the shared list, with where they are in each brand. */
-export async function listPeople(db: Q, f: { kind?: string; country?: string; brand?: string; status?: string; q?: string; limit?: number; offset?: number }) {
+export async function listPeople(db: Q, f: { kind?: string; country?: string; region?: string; brand?: string; status?: string; not_brand?: string; source?: string; q?: string; limit?: number; offset?: number }) {
   const params: unknown[] = [];
   const where: string[] = [];
   const add = (sql: string, v: unknown) => { params.push(v); where.push(sql.replace("$?", `$${params.length}`)); };
@@ -336,6 +378,9 @@ export async function listPeople(db: Q, f: { kind?: string; country?: string; br
     if (f.status) { params.push(f.brand, f.status); where.push(`EXISTS (SELECT 1 FROM directory_brand_status s WHERE s.person_id = p.id AND s.brand = $${params.length - 1} AND s.status = $${params.length})`); }
     else add(`EXISTS (SELECT 1 FROM directory_brand_status s WHERE s.person_id = p.id AND s.brand = $?)`, f.brand);
   }
+  if (f.region) add(`upper(p.region) = upper($?)`, String(f.region).slice(0, 60));
+  if (f.source) add(`$? = ANY(p.sources)`, String(f.source).slice(0, 120));
+  if (f.not_brand && ["BF", "BI", "KS"].includes(f.not_brand)) add(`NOT EXISTS (SELECT 1 FROM directory_brand_status s WHERE s.person_id = p.id AND s.brand = $?)`, f.not_brand);
   if (f.q) { params.push(`%${String(f.q).slice(0, 100)}%`); const i = params.length; where.push(`(p.name ILIKE $${i} OR p.email ILIKE $${i} OR o.name ILIKE $${i})`); }
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const limit = Math.min(Math.max(Number(f.limit) || 100, 1), 1000), offset = Math.max(Number(f.offset) || 0, 0);
