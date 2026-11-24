@@ -819,7 +819,7 @@ router.post(
             applicationId: appId,
             biLinked: false,
             readOnly: true,
-            blockers: ["This application has no linked PGI / Boreal Insurance submission."],
+            blockers: ["This application has no linked PGI / Boreal Risk Management submission."],
           },
         });
       }

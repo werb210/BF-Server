@@ -62,13 +62,13 @@ export const REPORTS: ReportDef[] = [
   { key: "missed_calls", title: "Missed calls", silo: "BF", group: "operations", size: "full", source: "reports", description: "Missed incoming calls and how long until someone called back." },
   { key: "monthly_cohorts", title: "Monthly cohorts", silo: "BF", group: "marketing", size: "half", source: "reports", description: "Applications started each month and how many submitted and funded." },
   { key: "renewal_opportunities", title: "Renewal opportunities", silo: "BF", group: "operations", size: "full", source: "reports", description: "Clients funded about a year ago - a call list for repeat business." },
-  { key: "insurance_cross_sell", title: "Insurance cross-sell", silo: "BF", group: "operations", size: "half", source: "reports", description: "Funded Financial deals that also have a Boreal Insurance application." },
+  { key: "insurance_cross_sell", title: "Insurance cross-sell", silo: "BF", group: "operations", size: "half", source: "reports", description: "Funded Financial deals that also have a Boreal Risk Management application." },
   // Cards that show the existing portal panels. The v714 catalog listed keys the
   // portal board cannot draw; these four are the ones it renders.
   { key: "ads_story", title: "Ads: the story", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Ad spend to applications, funded deals and return." },
   { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "full", source: "portal", description: "The step unfinished applications stopped at, and why." },
   { key: "ads_visitors", title: "Website visitors", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Who came, from where, and what they did." },
-  { key: "bi_dashboard", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "portal", description: "Boreal Insurance open pipeline and what needs attention." },
+  { key: "bi_dashboard", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "portal", description: "Boreal Risk Management open pipeline and what needs attention." },
   // BF_SERVER_v819_MOBILE_REPORT - the client app usage report (Marketing > Mobile apps) as a Dashboard card;
   // the duplicate ads_story / ads_dropoff entries that listed both reports twice are removed.
   { key: "mobile_apps", title: "Mobile apps", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Client app use: active users, app vs web, devices, notifications and quick sign-in." },
