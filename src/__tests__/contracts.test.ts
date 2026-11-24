@@ -12,8 +12,9 @@ describe("contracts", () => {
     expect(me.status).toBe(401);
     expect(me.body).toMatchObject({ error: "Unauthorized" });
 
+    // BF_SERVER_REMOVE_CALL_STATS_STUB_v1 - the placeholder call stats (made-up numbers, no sign-in) are gone.
     const callStats = await request(app).get("/api/call/stats");
-    expect(callStats.status).toBe(200);
+    expect(callStats.status).not.toBe(200);
 
     const health = await request(app).get("/api/health");
     expect(health.status).toBe(200);
