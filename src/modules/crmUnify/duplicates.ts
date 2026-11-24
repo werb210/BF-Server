@@ -34,13 +34,19 @@ export function companyNamesSimilar(a: unknown, b: unknown): boolean {
 }
 
 /** "Unknown (application started)", "Unknown", or no name at all. */
+// BF_SERVER_DUP_NAMES_v2 - list research placeholders ("(name not found)", "(CEO not identified)") count as no name.
 export function isPlaceholderName(name: unknown): boolean {
   const t = String(name ?? "").trim().toLowerCase();
-  return !t || t === "unknown" || t.includes("application started");
+  return !t || t === "unknown" || t.includes("application started") || /^\(?[^)]*\bnot (found|identified|known|available)\)?$/.test(t);
 }
 
 const PLACEHOLDER_SQL = (col: string) =>
-  `(btrim(coalesce(${col}, '')) = '' OR ${col} ILIKE '%application started%' OR lower(btrim(${col})) = 'unknown')`;
+  `(btrim(coalesce(${col}, '')) = '' OR ${col} ILIKE '%application started%' OR lower(btrim(${col})) = 'unknown'
+     OR lower(btrim(${col})) ~ '^\\(?[^)]*\\m(not found|not identified|not known|not available)\\)?$')`;
+// A shared phone only means the same person when the names agree (or one has no real name): two people at one
+// office share its main line (Jocelyn Parker-Whalley / Larry Hachey).
+const PHONE_NAMES_AGREE_SQL = (a: string, b: string) =>
+  `(${PLACEHOLDER_SQL(a)} OR ${PLACEHOLDER_SQL(b)} OR bf_same_person_name(${a}, ${b}))`;
 const SAME_NAME_SQL = (a: string, b: string) =>
   `(NOT ${PLACEHOLDER_SQL(a)} AND NOT ${PLACEHOLDER_SQL(b)}
      AND lower(regexp_replace(btrim(${a}), '\\s+', ' ', 'g')) = lower(regexp_replace(btrim(${b}), '\\s+', ' ', 'g')))`;
@@ -64,7 +70,8 @@ const CONTACT_MATCH_SQL = `
      AND lower(regexp_replace(c.email, '\\s', '', 'g')) = lower(regexp_replace(me.email, '\\s', '', 'g'))) AS m_email,
   (length(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g')) >= 10
      AND right(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), 10) = right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)
-     AND NOT ${PHONE_SHARED_SQL("right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)", "$2")}) AS m_phone,
+     AND NOT ${PHONE_SHARED_SQL("right(regexp_replace(coalesce(me.phone, ''), '[^0-9]', '', 'g'), 10)", "$2")}
+     AND ${PHONE_NAMES_AGREE_SQL("c.name", "me.name")}) AS m_phone,
   ${SAME_NAME_SQL("c.name", "me.name")} AS m_same_name,
   (c.company_id IS NOT NULL AND c.company_id = me.company_id
      AND bf_same_person_name(c.name, me.name)
@@ -191,7 +198,8 @@ export async function duplicateGroups(db: Q, silo: string, entity: "contact" | "
        SELECT * FROM (
          SELECT p.a::text AS a, p.b::text AS b,
                 (x.em <> '' AND x.em = y.em) AS m_email,
-                (x.p10 IS NOT NULL AND x.p10 = y.p10 AND x.p10 NOT IN (SELECT p10 FROM shared)) AS m_phone,
+                (x.p10 IS NOT NULL AND x.p10 = y.p10 AND x.p10 NOT IN (SELECT p10 FROM shared)
+                  AND (x.nm IS NULL OR y.nm IS NULL OR bf_same_person_name(x.name, y.name))) AS m_phone,
                 (x.nm IS NOT NULL AND x.nm = y.nm) AS m_same_name,
                 (x.company_id IS NOT NULL AND x.company_id = y.company_id AND bf_same_person_name(x.name, y.name)
                   AND x.nm IS NOT NULL AND y.nm IS NOT NULL) AS m_name
