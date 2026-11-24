@@ -29,8 +29,10 @@ export async function lenderScorecard(windowDays: unknown) {
          FROM lender_submissions ls WHERE COALESCE(ls.submitted_at, ls.created_at) >= now() - ($1 || ' days')::interval
           AND ls.lender_id IS NOT NULL AND ls.lender_id <> 'default'
      ), s AS (
-       SELECT COALESCE(l.id::text, p.lender_id::text, s0.raw_id) AS lender_id,
-              COALESCE(l.name, lp.name, CASE WHEN s0.raw_id ~* '^[0-9a-f-]{32,36}$' THEN NULL ELSE s0.raw_id END, 'Unknown lender') AS lender,
+       -- BF_SERVER_SCORECARD_UNKNOWN_ONE_ROW_v1 - files sent to lenders that were since deleted showed as many separate
+       -- "Unknown lender" rows (one per old id); they are now one row.
+       SELECT COALESCE(l.id::text, lp.id::text, CASE WHEN s0.raw_id ~* '^[0-9a-f-]{32,36}$' THEN 'removed' ELSE s0.raw_id END) AS lender_id,
+              COALESCE(l.name, lp.name, CASE WHEN s0.raw_id ~* '^[0-9a-f-]{32,36}$' THEN NULL ELSE s0.raw_id END, 'Lender no longer on file') AS lender,
               s0.application_id, s0.sent_at
          FROM s0
          LEFT JOIN lenders l ON l.id::text = s0.raw_id

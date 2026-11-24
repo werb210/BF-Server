@@ -19,6 +19,7 @@ import { pool } from "../db.js";
 import type { Q } from "../settingsPack/common.js";
 import { brokerageTimeZone } from "../settingsPack/boreal.js";
 import { lendingPipeline, saveLendingProbabilities } from "../pipelines/pipelines.js";
+const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export type Db = Q;
 const defaultDb = (): Db => pool as unknown as Db;
@@ -252,14 +253,15 @@ export async function forecast(q: ForecastQuery, viewer: Viewer, db: Db = defaul
     console.warn("[forecast] teams not loaded", { message: (err as Error)?.message });
   }
   const reps = result.byOwner
-    .map((o) => ({ user_id: o.owner === "unassigned" ? null : o.owner, name: o.owner === "unassigned" ? "Unassigned" : nameOf.get(o.owner) ?? "Former staff", periods: o.periods }))
+    // BF_SERVER_FORECAST_CLIENT_APP_v1 - files the client app opened (system user) show as "Client app (unassigned)", not "client-submission".
+    .map((o) => ({ user_id: o.owner === "unassigned" ? null : o.owner, name: o.owner === "unassigned" ? "Unassigned" : o.owner === SYSTEM_USER_ID ? "Client app (unassigned)" : nameOf.get(o.owner) ?? "Former staff", periods: o.periods }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const teamRows = own ? [] : teams
     .filter((t) => !teamId || t.id === teamId)
     .map((t) => ({ team_id: t.id, name: t.name, periods: periods.map((_, i) => sumBuckets(reps.filter((r) => r.user_id && t.members.includes(r.user_id)).map((r) => r.periods[i]!))) }))
     .filter((t) => t.periods.some((b) => b.pipeline > 0 || b.closed > 0 || b.goal_commission !== null));
   const total = periods.map((_, i) => sumBuckets(reps.map((r) => r.periods[i]!)));
-  const nameFor = (o: string | null) => (o ? nameOf.get(o) ?? "Former staff" : "Unassigned");
+  const nameFor = (o: string | null) => (o ? (o === SYSTEM_USER_ID ? "Client app (unassigned)" : nameOf.get(o) ?? "Former staff") : "Unassigned");
   return {
     granularity, from, periods, currency: "CAD", silo, own, team_id: teamId, probabilities, reps, teams: teamRows, total,
     unscheduled: result.unscheduled, overdue_files: result.overdue,

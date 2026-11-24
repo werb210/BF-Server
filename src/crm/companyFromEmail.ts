@@ -31,6 +31,15 @@ export function companyNameFromDomain(domain: string): string {
 
 const HOST_SQL = (col: string) => `lower(regexp_replace(regexp_replace(coalesce(${col}, ''), '^https?://(www\\.)?', ''), '[/:?#].*$', ''))`;
 
+// BF_SERVER_COMPANY_NAME_MATCH_v2 (2026-11-24) - "Merchant Growth" and "Merchant Growth Ltd." are one company: names
+// match with case, punctuation, spaces and legal suffixes (Ltd, Inc, Corp, LLC...) ignored.
+export const NORM_NAME_SQL = (expr: string) =>
+  `regexp_replace(regexp_replace(regexp_replace(lower(coalesce(${expr}, '')), '[^a-z0-9 ]+', ' ', 'g'), '\\m(inc|incorporated|ltd|limited|llc|llp|lp|corp|corporation|co|company|ltee|plc|ulc|the)\\M', ' ', 'g'), '\\s+', '', 'g')`;
+export function normCompanyName(name: unknown): string {
+  return String(name ?? "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b(inc|incorporated|ltd|limited|llc|llp|lp|corp|corporation|co|company|ltee|plc|ulc|the)\b/g, " ").replace(/\s+/g, "");
+}
+
 export async function linkCompaniesFromEmail(db: Q, limit = 500): Promise<{ linked: number; created: number }> {
   const r = await db.query(
     `SELECT c.id::text AS id, c.silo, c.email, nullif(btrim(c.company_name), '') AS company_name
@@ -49,10 +58,10 @@ export async function linkCompaniesFromEmail(db: Q, limit = 500): Promise<{ link
     const found = await db.query(
       `SELECT id::text AS id, coalesce(name, legal_name) AS name FROM companies
         WHERE silo = $1 AND (lower(coalesce(domain, '')) = $2 OR ${HOST_SQL("website")} = $2
-              OR ($3::text IS NOT NULL AND lower(btrim(coalesce(name, ''))) = lower($3)))
+              OR ($3::text IS NOT NULL AND $3::text <> '' AND (${NORM_NAME_SQL("name")} = $3::text OR ${NORM_NAME_SQL("legal_name")} = $3::text)))
         ORDER BY (lower(coalesce(domain, '')) = $2 OR ${HOST_SQL("website")} = $2) DESC, created_at ASC
         LIMIT 1`,
-      [c.silo, domain, c.company_name],
+      [c.silo, domain, c.company_name ? normCompanyName(c.company_name) : null],
     );
     let company = found.rows[0] as { id: string; name: string } | undefined;
     if (!company) {
