@@ -140,11 +140,11 @@ export function startAbandonedApplicationWorker(pool: Pool): { stop: () => void 
             title: "Finish your application", body: "You're almost done - pick up where you left off.",
             sms: ABANDON_SMS_BODY, categoryId: "APPLICATION_UPDATE",
           });
-          // BF_SERVER_v809_SMS_UPDATES_CONSENT - the reminder text goes only to applicants who ticked "Text me updates".
+          // BF_SERVER_ABANDON_TEXT_ALL_v1 (Todd, 2026-11-24) - the reminder text goes to everyone who abandons, not only
+          // those who ticked "Text me updates": starting an application is an inquiry (CASL implied consent, six months,
+          // enforced by CONSENT_WINDOW_MONTHS). Anyone who replied STOP is still excluded (contacts.sms_opt_out).
           if (!viaApp) {
-            const { smsUpdatesAllowed } = await import("../services/smsUpdatesConsent.js");
-            if (await smsUpdatesAllowed(String(row.phone))) await sendSMS(String(row.phone), ABANDON_SMS_BODY);
-            else console.info("[abandoned-application] reminder text skipped: no sms updates consent", { applicationId: row.id });
+            await sendSMS(String(row.phone), ABANDON_SMS_BODY);
           }
           // Stamped only after the send succeeds, so a Twilio outage retries on
           // the next tick instead of silently skipping the applicant.
