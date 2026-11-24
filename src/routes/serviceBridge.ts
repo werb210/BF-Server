@@ -23,6 +23,32 @@ router.use(requireServiceToken);
 
 const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 
+// BF_SERVER_SERVICE_COLLATERAL_v1 - BI-Server attaches collateral PDFs (Settings > Content > Collateral) to its
+// marketing flow emails. Read-only: the list (names and sizes) and one file at a time.
+router.get("/collateral", safeHandler(async (_req: any, res: any) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, content_type, size_bytes, silo, created_at FROM collateral_assets ORDER BY created_at DESC`,
+  );
+  res.json({ ok: true, items: rows });
+}));
+
+router.get("/collateral/:id/file", safeHandler(async (req: any, res: any) => {
+  const id = str(req.params.id);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return res.status(400).json({ ok: false, error: "invalid_collateral_id" });
+  }
+  const { rows } = await pool.query(`SELECT name, content_type, blob_name FROM collateral_assets WHERE id::text = $1 LIMIT 1`, [id]);
+  const row = rows[0];
+  if (!row) return res.status(404).json({ ok: false, error: "not_found" });
+  const file = await getStorage().get(row.blob_name);
+  if (!file) return res.status(404).json({ ok: false, error: "file_unavailable" });
+  const name = String(row.name ?? "document").replace(/[^ -~]/g, "").replace(/"/g, "");
+  res.setHeader("Content-Type", row.content_type || file.contentType || "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${name}"`);
+  res.setHeader("Cache-Control", "private, no-store");
+  return res.send(file.buffer);
+}));
+
 // BF_SERVER_BI_DOC_FILE_v701 - BI-Server shows staff, and sends the carrier, documents it copied
 // from BF; it only holds BF's storage pointer, so it fetches the file here. Read-only, one document,
 // and only when the document's application is linked to BI (bi_public_id set).
