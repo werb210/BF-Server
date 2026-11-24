@@ -181,6 +181,7 @@ import retentionRoutes from "./retention.js"; // BF_SERVER_v855_RETENTION
 import activeContractsRoutes from "./activeContracts.js"; // BF_SERVER_v864_ACTIVE_CONTRACTS
 import ksCrmRoutes from "./ksCrm.js"; // BF_SERVER_v850_KS_CRM
 import ksMarketingRoutes from "./ksMarketing.js"; // BF_SERVER_v865_KS_MARKETING
+import sharedContactRoutes from "./sharedContacts.js"; // BF_SERVER_SHARED_CONTACTS_v1
 import quickbooksRoutes from "./quickbooks.js"; // BF_SERVER_v852_CALC_QBO
 import vendorKeysRoutes from "./vendorKeys.js"; // BF_SERVER_v898_YOUR_SERVICES
 import chatgptAdsRoutes from "./chatgptAds.js"; // BF_SERVER_v913_CHATGPT_ADS
@@ -439,6 +440,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/retention", router: retentionRoutes }, // BF_SERVER_v855_RETENTION - staff status; Admin holds and report
   { path: "/active-contracts", router: activeContractsRoutes }, // BF_SERVER_v864_ACTIVE_CONTRACTS - contracts, renewals, compensation
   { path: "/ks/crm", router: ksCrmRoutes }, // BF_SERVER_v850_KS_CRM - KS-Ops ingest (X-KS-Ops-Key) + Keystone pipeline
+  { path: "/directory", router: sharedContactRoutes }, // BF_SERVER_SHARED_CONTACTS_v1 - one list of brokers, lenders and banks for every silo
   { path: "/ks/marketing", router: ksMarketingRoutes }, // BF_SERVER_v865_KS_MARKETING - KS-Ops prospect marketing: CRM contacts out, timeline events in (X-KS-Ops-Key)
   { path: "/chatgpt-ads", router: chatgptAdsRoutes }, // BF_SERVER_v913_CHATGPT_ADS - Marketing > Ads > ChatGPT (Admin, Marketing)
   { path: "/vendor-keys", router: vendorKeysRoutes }, // BF_SERVER_v898_YOUR_SERVICES - Boreal's own verification-service keys (Admin)
