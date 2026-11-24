@@ -63,7 +63,7 @@ describe("v653 CRM context", () => {
     });
     const text = (await contactContextSections(contact, apps, deps)).join("\n\n");
     expect(text).not.toContain("Website journey");
-    expect(text).not.toContain("Boreal Insurance side");
+    expect(text).not.toContain("Boreal Risk Management side");
     expect(text).toContain("Client still has to do: nothing");
     expect(text).toContain("How they found us");
   });

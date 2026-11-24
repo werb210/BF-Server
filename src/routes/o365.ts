@@ -10,6 +10,7 @@ import { pullOutlookContactsForUser } from "../modules/o365/contactPull.js"; // 
 import { planOutOfOffice, isPlanError, recordBorealOutOfOffice, readBorealOutOfOffice } from "../modules/o365/outOfOffice.js"; // BF_SERVER_v864_OOO_UNTIL
 import { getStorage } from "../lib/storage/index.js"; // v693
 import { resolveSiloFromRequest } from "../middleware/silo.js";
+import { personalSignatureHtml, savePersonalSignatureHtml } from "../services/email/personalSignature.js"; // BF_SERVER_SILO_SIGNATURES_v1
 import { randomUUID } from "node:crypto";
 import staffLibraryPlus from "./staffLibraryPlus.js"; // BF_SERVER_v810_LIBRARY_PLUS
 
@@ -299,11 +300,7 @@ router.post("/mail/send", safeHandler(async (req: any, res: any) => {
 
   if (sendingAsSelf) {
     try {
-      const sigRes = await pool.query<{ email_signature_html: string | null }>(
-        `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`,
-        [userId]
-      );
-      const sig = sigRes.rows[0]?.email_signature_html;
+      const sig = await personalSignatureHtml(userId, resolveSiloFromRequest(req)); // BF_SERVER_SILO_SIGNATURES_v1
       if (sig && typeof sig === "string" && sig.trim()) {
         bodyWithSig = `${bodyWithSig}<br/><br/>${sig}`;
       }
@@ -681,22 +678,16 @@ router.delete("/mail/scheduled/:id", safeHandler(async (req: any, res: any) => {
 router.get("/me/signature", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
-  const r = await pool.query<{ email_signature_html: string | null }>(
-    `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`, [userId]
-  ).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return { rows: [] as any[] }; });
-  res.json({ signatureHtml: r.rows[0]?.email_signature_html ?? "" });
+  // BF_SERVER_SILO_SIGNATURES_v1 - the signature for the business the request is in (X-Silo).
+  const silo = resolveSiloFromRequest(req);
+  const html = await personalSignatureHtml(userId, silo).catch((err: any) => { console.warn("[silent-query] routes/o365.ts", { message: err?.message }); return ""; });
+  res.json({ signatureHtml: html, silo });
 }));
 router.put("/me/signature", safeHandler(async (req: any, res: any) => {
   const userId = req.user?.id ?? req.user?.userId;
   if (!userId) return res.status(401).json({ error: "unauthenticated" });
   const html = String(req.body?.signatureHtml ?? "").slice(0, 20000); // cap at 20KB
-  await pool.query(
-    `INSERT INTO user_settings (user_id, email_signature_html, updated_at)
-     VALUES ($1, $2, now())
-     ON CONFLICT (user_id) DO UPDATE
-       SET email_signature_html = EXCLUDED.email_signature_html, updated_at = now()`,
-    [userId, html]
-  );
+  await savePersonalSignatureHtml(userId, resolveSiloFromRequest(req), html); // BF_SERVER_SILO_SIGNATURES_v1
   res.json({ ok: true });
 }));
 

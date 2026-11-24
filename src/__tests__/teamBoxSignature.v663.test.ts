@@ -10,7 +10,7 @@ describe("v663 team-box signature", () => {
     expect(s).toContain("if (sendingAsSelf) {");
     // signature query must sit inside the sendingAsSelf guard, after from-resolution
     const guardIdx = s.indexOf("if (sendingAsSelf) {");
-    const sigIdx = s.indexOf("email_signature_html FROM user_settings", guardIdx);
+    const sigIdx = s.indexOf("personalSignatureHtml(userId", guardIdx); // BF_SERVER_SILO_SIGNATURES_v1 - per-business signature
     expect(sigIdx).toBeGreaterThan(guardIdx);
   });
 });

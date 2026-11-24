@@ -34,6 +34,20 @@ router.get("/email/logo.png", (_req, res) => {
   res.end(buf);
 });
 
+// BF_SERVER_KS_BRAND_v1 (2026-11-24) - Keystone logos for Keystone email signatures and templates. Public (they are in
+// sent emails), whitelisted names only.
+const KS_BRAND_FILES = new Set(["signature-logo.png", "header.png", "logo.png", "logo-white.png", "mark.png"]);
+router.get("/email/keystone/:file", (req, res) => {
+  const file = String(req.params.file ?? "");
+  if (!KS_BRAND_FILES.has(file)) { res.status(404).end(); return; }
+  const full = path.join(process.cwd(), "assets", "email", "keystone", file);
+  if (!fs.existsSync(full)) { res.status(404).end(); return; }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  fs.createReadStream(full).pipe(res);
+});
+
 // BF_SERVER_v903_YE26_TEMPLATES - header images for the year-end 2026 email templates. Public (they are in sent
 // emails), filename-whitelisted so nothing else in assets/ can be read.
 // BF_SERVER_v905_APP_LAUNCH - also the app launch campaign's images.
