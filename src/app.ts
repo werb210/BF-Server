@@ -8,7 +8,6 @@ import helmet from "helmet";
 import { Router } from "express";
 
 import authRoutes, { resetOtpStateForTests as resetAuthOtpStateForTests } from "./routes/auth.js";
-import callRoutes from "./routes/call.js";
 import healthRoutes from "./routes/health.js";
 import publicRoutes from "./routes/public.js";
 import { applySiloMiddleware, registerApiRouteMounts } from "./routes/routeRegistry.js";
@@ -198,7 +197,6 @@ export function createApp() {
   }));
 
   apiRouter.use("/auth", authRoutes);
-  apiRouter.use("/call", callRoutes);
   apiRouter.use("/health", healthRoutes);
   apiRouter.use("/public", publicRoutes);
 
