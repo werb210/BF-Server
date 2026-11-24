@@ -19,7 +19,7 @@ describe("v921 shared office phone (real Postgres)", () => {
         [id, `Main${tag} Person${i} Surname${i}`, `main${i}-${tag}@example.com`, MAIN]);
     }
     await pool.query(`INSERT INTO contacts (id, name, email, phone, silo) VALUES ($1, $2, $3, $4, 'SLF'), ($5, $6, $7, $8, 'SLF')`,
-      [pair[0], `Pair${tag} Alpha One`, `pa-${tag}@example.com`, PAIR, pair[1], `Pair${tag} Beta Two`, `pb-${tag}@example.com`, PAIR]);
+      [pair[0], `Pair${tag} Alpha One`, `pa-${tag}@example.com`, PAIR, pair[1], "Unknown (application started)", `pb-${tag}@example.com`, PAIR]);
   });
   afterAll(async () => {
     await pool.query(`DELETE FROM contacts WHERE id = ANY($1::uuid[])`, [all]).catch((e) => console.warn("cleanup", String(e)));
@@ -36,5 +36,14 @@ describe("v921 shared office phone (real Postgres)", () => {
   it("the contact banner agrees", async () => {
     expect((await contactDuplicates(pool as any, main[0]!, "SLF")).filter((c) => all.includes(c.id))).toEqual([]);
     expect((await contactDuplicates(pool as any, pair[0]!, "SLF")).map((c) => c.id)).toEqual([pair[1]]);
+  });
+
+  // BF_SERVER_DUP_NAMES_v2
+  it("names: a shared first letter is not the same person; nicknames and initials still are", async () => {
+    const q = async (a: string, b: string) => (await pool.query(`SELECT bf_same_person_name($1, $2) AS v`, [a, b])).rows[0].v;
+    expect(await q("Dolly Myerson", "Dylan Myerson")).toBe(false);
+    expect(await q("Mike Cotic", "MICHAEL COTIC")).toBe(true);
+    expect(await q("J Smith", "John Smith")).toBe(true);
+    expect(await q("Mike Cotic", "Mike Jones")).toBe(false);
   });
 });
