@@ -3,7 +3,7 @@
 // people by email (else name at the same firm). Each person is then sent to the silos the routing table picks:
 //   KS  Keystone prospects and call list (KS-Ops outreach import, with the consent basis for their country)
 //   BI  Boreal Risk Management (PGI) broker and lender lists (BI-Server list import)
-//   BF  the Boreal Financial CRM (silo BF contacts, tagged; records only)
+//   BF  the Boreal Financial CRM (silo BF contacts, tagged; records only) - lenders and banks only
 // Quebec is left out of PGI (the program is not available to Quebec residents). Nothing is emailed or enrolled here.
 import type { Pool, PoolClient } from "pg";
 import { signServiceToken } from "../../auth/serviceTokens.js";
@@ -62,17 +62,18 @@ export function kindOf(v: unknown, fallback: Kind): Kind {
   return fallback;
 }
 
-/** The default routing table (Shared Contact List design, 2026-11-24). */
+/** The default routing table (Shared Contact List design; Todd 2026-11-24: no brokers in the Boreal Financial CRM, every
+ *  lender and bank in it). Brokers go to Keystone and PGI; lenders and banks to PGI and the Boreal Financial CRM. */
 export function defaultBrands(kind: Kind, country: string | null, region: string | null): Brand[] {
   const out: Brand[] = [];
   const ca = country === "CA", us = country === "US";
+  const pgi = (ca && !isQuebec(region)) || us;
   if (kind === "broker") {
     if (ca || us) out.push("KS");
-    if ((ca && !isQuebec(region)) || us) out.push("BI");
-    if (ca) out.push("BF");
+    if (pgi) out.push("BI");
   } else {
-    if ((ca && !isQuebec(region)) || us) out.push("BI");
-    if (ca) out.push("BF");
+    if (pgi) out.push("BI");
+    out.push("BF");
   }
   return out;
 }

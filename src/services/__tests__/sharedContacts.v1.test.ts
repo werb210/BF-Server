@@ -4,18 +4,19 @@ import { brandsFor, consentFor, defaultBrands, domainOf, importSharedList, toRow
 
 describe("default routing", () => {
   it("sends brokers and lenders to the silos in the design", () => {
-    expect(defaultBrands("broker", "CA", "AB")).toEqual(["KS", "BI", "BF"]);
+    expect(defaultBrands("broker", "CA", "AB")).toEqual(["KS", "BI"]);
     expect(defaultBrands("broker", "US", "TX")).toEqual(["KS", "BI"]);
     expect(defaultBrands("lender", "CA", "ON")).toEqual(["BI", "BF"]);
-    expect(defaultBrands("bank", "US", "NY")).toEqual(["BI"]);
+    expect(defaultBrands("bank", "US", "NY")).toEqual(["BI", "BF"]);
   });
   it("keeps Quebec out of PGI", () => {
-    expect(defaultBrands("broker", "CA", "QC")).toEqual(["KS", "BF"]);
+    expect(defaultBrands("broker", "CA", "QC")).toEqual(["KS"]);
     expect(defaultBrands("lender", "CA", "Quebec")).toEqual(["BF"]);
   });
   it("a list override only narrows the default", () => {
     expect(brandsFor("broker", "US", "TX", ["BI"])).toEqual(["BI"]);
     expect(brandsFor("bank", "US", "NY", ["KS"])).toEqual([]);
+    expect(brandsFor("bank", "US", "NY", ["BF"])).toEqual(["BF"]);
   });
   it("records the consent basis for the country", () => {
     expect(consentFor("CA", "L")?.consent_type).toBe("implied_publication");
@@ -59,7 +60,7 @@ describe("loading a list", () => {
       }),
     };
   }
-  it("fills PGI and Keystone and the Boreal Financial CRM, and records where each person went", async () => {
+  it("fills PGI and Keystone (no brokers in the Boreal Financial CRM), and records where each person went", async () => {
     const db = fakeDb();
     const fetch = vi.fn(async (url: string) => ({
       ok: true, status: 200,
@@ -70,12 +71,12 @@ describe("loading a list", () => {
       companies: [{ name: "Chosen Capital", website: "chosencapital.ca", address_country: "Canada", address_state: "AB" }],
       contacts: [{ name: "Evan Sinclair", company_name: "Chosen Capital", email: "evan@chosencapital.ca" }],
     });
-    expect(out).toMatchObject({ rows: 1, firms: 1, people_added: 1, routed: { KS: 1, BI: 1, BF: 1 } });
+    expect(out).toMatchObject({ rows: 1, firms: 1, people_added: 1, routed: { KS: 1, BI: 1, BF: 0 } });
     const urls = fetch.mock.calls.map((c) => c[0]);
     expect(urls).toEqual(["https://bi/api/v1/bi/crm/list-import", "https://ks/api/ops/auth/exchange", "https://ks/api/ops/outreach/import"]);
     const ksBody = JSON.parse((fetch.mock.calls[2] as any)[1].body);
     expect(ksBody.consent.consent_type).toBe("implied_publication");
-    expect(db.calls.filter((s) => s.includes("INSERT INTO directory_brand_status"))).toHaveLength(3);
+    expect(db.calls.filter((s) => s.includes("INSERT INTO directory_brand_status"))).toHaveLength(2);
     expect(db.calls.some((s) => s.includes("INSERT INTO directory_imports"))).toBe(true);
   });
   it("keeps going when one silo fails, and says which", async () => {
