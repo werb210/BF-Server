@@ -6,6 +6,7 @@ import { getGraphForUser } from "../../modules/o365/graphClient.js";
 // BF_SERVER_BLOCK_BI_ROUND5_CRM_SILO_RESOLVE_v1
 import { resolveSiloFromRequest } from "../../middleware/silo.js";
 import { randomUUID } from "node:crypto"; // BF_SERVER_BLOCK_v797_EMAIL_OPEN_TRACKING
+import { personalSignatureHtml } from "../../services/email/personalSignature.js"; // BF_SERVER_SILO_SIGNATURES_v1
 
 const router = express.Router({ mergeParams: true });
 
@@ -72,11 +73,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       );
       signatureHtml = (sigRow.rows[0]?.signature_html ?? "").toString();
     } else {
-      const sigRow = await pool.query<{ email_signature_html: string | null }>(
-        `SELECT email_signature_html FROM user_settings WHERE user_id = $1 LIMIT 1`,
-        [userId],
-      );
-      signatureHtml = (sigRow.rows[0]?.email_signature_html ?? "").toString();
+      signatureHtml = await personalSignatureHtml(userId, silo); // BF_SERVER_SILO_SIGNATURES_v1
     }
   } catch { signatureHtml = ""; }
 

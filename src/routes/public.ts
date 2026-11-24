@@ -1,5 +1,19 @@
 import { Router } from "express";
-import fs from "node:fs"; // BF_SERVER_v903_YE26_TEMPLATES
+import fs from "node:fs"; // BF_SERVER_KS_BRAND_v1 (2026-11-24) - Keystone logos for Keystone email signatures and templates. Public (they are in
+// sent emails), whitelisted names only.
+const KS_BRAND_FILES = new Set(["signature-logo.png", "header.png", "logo.png", "logo-white.png", "mark.png"]);
+router.get("/email/keystone/:file", (req, res) => {
+  const file = String(req.params.file ?? "");
+  if (!KS_BRAND_FILES.has(file)) { res.status(404).end(); return; }
+  const full = path.join(process.cwd(), "assets", "email", "keystone", file);
+  if (!fs.existsSync(full)) { res.status(404).end(); return; }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  fs.createReadStream(full).pipe(res);
+});
+
+// BF_SERVER_v903_YE26_TEMPLATES
 import path from "node:path"; // BF_SERVER_v903_YE26_TEMPLATES
 import { randomUUID } from "node:crypto"; // BF_SERVER_v791_LEAD_SCHEMA
 import { dbQuery } from "../db.js";
