@@ -46,6 +46,8 @@ describe("BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1 — buildBiPayload", () => {
   });
 });
 
+const CONSENTED = { pgi_fee_disclosure_ack: true, pgi_consent_share: true };
+
 describe("BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1 — postBiHandoff", () => {
   beforeEach(() => {
     process.env.JWT_SECRET = "test-shared-secret-min-10";
@@ -66,7 +68,7 @@ describe("BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1 — postBiHandoff", () => {
       }),
       text: async () => "",
     }) as any;
-    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: {} });
+    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: CONSENTED });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.biPublicId).toBe("pub-xyz");
@@ -78,14 +80,36 @@ describe("BF_SERVER_BLOCK_v213_BF_TO_BI_HANDOFF_v1 — postBiHandoff", () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: false, status: 500, json: async () => ({}), text: async () => "boom",
     }) as any;
-    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: {} });
+    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: CONSENTED });
     expect(r.ok).toBe(false);
   });
 
   it("returns ok=false when JWT_SECRET is missing", async () => {
     delete process.env.JWT_SECRET;
-    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: {} });
+    const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: CONSENTED });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe("no_jwt_secret");
+  });
+});
+
+describe("BF_SERVER_PGI_CONSENT_GATE_v1", () => {
+  beforeEach(() => { process.env.JWT_SECRET = "test-shared-secret-min-10"; });
+  afterEach(() => { global.fetch = ORIG_FETCH; });
+  it("sends nothing to BI without the fee disclosure and consent", async () => {
+    const f = vi.fn();
+    global.fetch = f as any;
+    for (const legacyApp of [{}, { pgi_opt_in: "yes" }, { pgi_consent_share: true }, { pgi_fee_disclosure_ack: true }]) {
+      const r = await postBiHandoff({ bfApplicationId: "bf-1", legacyApp });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toBe("no_pgi_consent");
+    }
+    expect(f).not.toHaveBeenCalled();
+  });
+  it("carries the consent wording to BI", () => {
+    const p: any = buildBiPayload({ bfApplicationId: "bf-1", legacyApp: { ...CONSENTED, pgi_consent_text: "I consent", pgi_consent_version: "2026-11-24" } });
+    expect(p.consent_share_pgi).toBe(true);
+    expect(p.fee_disclosure_ack).toBe(true);
+    expect(p.consent_text).toBe("I consent");
+    expect(p.consent_version).toBe("2026-11-24");
   });
 });

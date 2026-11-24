@@ -29,6 +29,7 @@ async function findPending(limit: number): Promise<PendingHandoff[]> {
         AND metadata->>'submittedAt' IS NOT NULL
         AND jsonb_typeof(metadata->'formData') = 'object'
         AND lower(COALESCE(metadata->'formData'->>'pgi_opt_in', metadata->>'pgi_opt_in', '')) = 'yes'
+        AND metadata->'formData'->>'pgi_consent_share' = 'true' -- BF_SERVER_PGI_CONSENT_GATE_v1
         AND COALESCE((metadata->>'bi_handoff_attempts')::int, 0) < $2
         AND (metadata->>'bi_handoff_last_attempt_at' IS NULL
              OR (metadata->>'bi_handoff_last_attempt_at')::timestamptz < now() - interval '30 minutes')

@@ -63,7 +63,7 @@ async function runAllBiCallers(): Promise<void> {
   const { submitBiToCarrier } = await import("../services/biCarrierSubmit.js");
   await fetchBiPerson("a@b.co", null);
   await fetchBiCompaniesByIds(["c1"]);
-  await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: {} } as any);
+  await postBiHandoff({ bfApplicationId: "bf-1", legacyApp: { pgi_fee_disclosure_ack: true, pgi_consent_share: true } } as any);
   await mirrorDocToBi({ bfApplicationId: "bf-1", bfDocumentId: "d1", documentType: "bank_statements", fileName: "a.pdf", mimeType: "application/pdf", fileSize: 1, storageUrl: "u", uploadedByName: null });
   await submitBiToCarrier("bf-1");
 }
