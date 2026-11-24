@@ -82,7 +82,7 @@ describe("the bridge stays narrow", () => {
   });
 
   it("exposes only applicant messages, sms, mail, mail replies, tasks and the staff picker", () => {
-    expect(routes()).toEqual(["get /applicant-messages", "get /applicant-messages/unread", "get /bi-documents/:id/file", "get /mail/replies", "get /pgi-rep-agreement/:groupId/status", "get /staff", "post /applicant-messages", "post /applicant-messages/read", "post /mail", "post /pgi-rep-agreement", "post /pgi-rep-agreement/link", "post /sms", "post /tasks"]); // BF_SERVER_BLOCK_v610_BI_THREAD
+    expect(routes()).toEqual(["get /applicant-messages", "get /applicant-messages/unread", "get /bi-documents/:id/file", "get /collateral", "get /collateral/:id/file", "get /mail/replies", "get /pgi-rep-agreement/:groupId/status", "get /staff", "post /applicant-messages", "post /applicant-messages/read", "post /mail", "post /pgi-rep-agreement", "post /pgi-rep-agreement/link", "post /sms", "post /tasks"]); // BF_SERVER_BLOCK_v610_BI_THREAD
   });
 
   it("guards every route with the service token", async () => {
