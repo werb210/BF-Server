@@ -124,16 +124,19 @@ export async function tagCatalogue(db: Q, silo: string) {
   const custom = await customTags(db, silo);
   const customSet = new Set(custom.map((c) => c.slug));
   const used = await db.query(
+    // BF_SERVER_TAG_COUNTS_v1 (2026-11-24) - count each record once per tag, and only the contacts the list shows:
+    // merged duplicates (merged_into_id) and archived contacts are left out, and "Broker list Nov 2026" and
+    // "broker list nov 2026" on one contact count once. Before, a tag could show more contacts than the whole list.
     `SELECT tag, sum(contacts)::int AS contacts, sum(companies)::int AS companies FROM (
-       SELECT t AS tag, count(*) AS contacts, 0 AS companies
+       SELECT bf_norm_tag(t) AS tag, count(DISTINCT c.id) AS contacts, 0 AS companies
          FROM contacts c, unnest(coalesce(c.tags, '{}'::text[])) AS t
-        WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived'
-        GROUP BY t
+        WHERE c.silo = $1 AND coalesce(c.status, 'active') <> 'archived' AND c.merged_into_id IS NULL
+        GROUP BY 1
        UNION ALL
-       SELECT t AS tag, 0 AS contacts, count(*) AS companies
+       SELECT bf_norm_tag(t) AS tag, 0 AS contacts, count(DISTINCT co.id) AS companies
          FROM companies co, unnest(coalesce(co.tags, '{}'::text[])) AS t
         WHERE co.silo = $1
-        GROUP BY t
+        GROUP BY 1
      ) x GROUP BY tag ORDER BY tag`,
     [silo],
   );
