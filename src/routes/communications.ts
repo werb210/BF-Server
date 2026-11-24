@@ -33,6 +33,8 @@ async function staffDisplayName(req: any): Promise<string | null> {
   return email ?? null;
 }
 
+const noIdentity = (col: string) => `CASE WHEN ${col} ILIKE 'client:%' THEN NULL ELSE ${col} END`;
+
 const router = Router();
 import { smsFromFor, smsSenderFor } from "../lib/smsFrom.js"; // BF_SERVER_US_SMS_TOLLFREE_v755
 
@@ -550,7 +552,8 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
       SELECT
         COALESCE(m.contact_id::text, m.application_id::text) AS thread_key,
         m.contact_id AS contact_id,
-        COALESCE(c.name, c.email, c.phone, m.to_number, m.from_number, m.application_id::text) AS display_name,
+        -- BF_SERVER_THREAD_NAME_NO_IDENTITY_v1 - a Twilio app identity ("client:client-<uuid>") is not a name.
+        COALESCE(c.name, c.email, ${noIdentity("c.phone")}, ${noIdentity("m.to_number")}, ${noIdentity("m.from_number")}, 'App user') AS display_name,
         COALESCE(c.phone, m.from_number, m.to_number) AS phone,
         c.email AS email,
         m.created_at,
@@ -607,7 +610,7 @@ router.get("/messages-list", safeHandler(async (req: any, res: any) => {
               COALESCE(t.unread_count, 0) AS unread_count
          FROM threads t
        UNION ALL
-       SELECT ct.id::text, ct.id, COALESCE(ct.name, ct.email, ct.phone, 'Unknown'), ct.phone, ct.email,
+       SELECT ct.id::text, ct.id, COALESCE(ct.name, ct.email, ${noIdentity("ct.phone")}, 'Unknown'), ct.phone, ct.email,
               NULL, NULL, 0
          FROM contacts ct
         WHERE COALESCE(ct.status, 'active') <> 'archived'

@@ -48,7 +48,7 @@ function column(headline: string, body: string, imageUrl: string, imageLink: str
 }
 
 export function renderBrandedEmail(f: BrandedEmailFields): string {
-  const logo = (process.env.PUBLIC_SERVER_URL || "https://server.boreal.financial") + "/api/public/email/logo.png";
+  const logo = (process.env.PUBLIC_SERVER_URL || "https://server.boreal.financial") + "/api/public/email/logo.png?v=2";
   const headline = f.headline ? `<tr><td style="padding:28px 28px 0;"><h1 style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:24px;line-height:1.3;color:${BRAND};">${esc(f.headline)}</h1></td></tr>` : "";
   const hero = img(f.heroUrl, f.heroLink);
   const body = f.body ? `<tr><td style="padding:20px 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#333333;">${bodyHtml(f.body)}</td></tr>` : "";

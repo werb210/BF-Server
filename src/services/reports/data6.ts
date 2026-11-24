@@ -30,6 +30,16 @@ export async function pipelineMovement(q: Record<string, unknown>) {
   return { days: d, rows: rows.map((r: any) => ({ label: r.label, files: r.files, amount: num(r.amount) })) };
 }
 
+export const PRODUCT_LABEL_SQL = (col: string) => `CASE
+    WHEN NULLIF(btrim(${col}), '') IS NULL THEN 'Other'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('equipment', 'equipment finance', 'equipment financing', 'equipment loan') THEN 'Equipment finance'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('term', 'term loan', 'term loans') THEN 'Term loan'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('loc', 'line of credit', 'lines of credit') THEN 'Line of credit'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('mca', 'merchant cash advance') THEN 'Merchant cash advance'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('sba', 'sba / government', 'government', 'sba loan') THEN 'SBA / Government'
+    WHEN lower(regexp_replace(${col}, '[_-]+', ' ', 'g')) IN ('abl', 'asset based lending', 'asset based') THEN 'Asset based lending'
+    ELSE initcap(lower(regexp_replace(btrim(${col}), '[_-]+', ' ', 'g'))) END`;
+
 /** 7. Average and median requested amount, by product and by lead source. */
 export async function averageDealSize(q: Record<string, unknown>) {
   const d = days(q.days, 365);
@@ -38,7 +48,8 @@ export async function averageDealSize(q: Record<string, unknown>) {
   const cols = `count(*)::int AS files, avg(a.requested_amount) AS average,
                 percentile_cont(0.5) WITHIN GROUP (ORDER BY a.requested_amount) AS median,
                 avg(a.requested_amount) FILTER (WHERE a.funded_at IS NOT NULL) AS funded_average`;
-  const byProduct = (await pool.query(`SELECT COALESCE(NULLIF(a.product_category, ''), 'Other') AS label, ${cols} ${base} GROUP BY 1 ORDER BY 2 DESC`, [d])).rows.map(shape);
+  // BF_SERVER_PRODUCT_LABELS_v1 - "MEDIA", "media" and "Media", "EQUIPMENT" and "Equipment finance" were separate rows.
+  const byProduct = (await pool.query(`SELECT ${PRODUCT_LABEL_SQL("a.product_category")} AS label, ${cols} ${base} GROUP BY 1 ORDER BY 2 DESC`, [d])).rows.map(shape);
   const bySource = (await pool.query(`SELECT COALESCE(NULLIF(a.source, ''), 'Direct') AS label, ${cols} ${base} GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, [d])).rows.map(shape);
   return { days: d, byProduct, bySource };
 }
@@ -58,6 +69,7 @@ export async function goals(_q: Record<string, unknown>, ctx: Ctx) {
        LEFT JOIN report_goals g ON g.user_id = u.id AND g.month = (SELECT month FROM m)
        LEFT JOIN done ON done.user_id = u.id
       WHERE COALESCE(u.is_active, true) = true AND u.role IN ('Admin', 'Staff')
+        AND u.id <> '00000000-0000-0000-0000-000000000001'::uuid -- the client app system user is not a person
         AND ($1::boolean OR u.id::text = $2)
       ORDER BY name`,
     [ctx.role === "Admin", ctx.userId],

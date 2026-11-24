@@ -6,8 +6,8 @@ import { linkCompaniesFromEmail } from "../crm/companyFromEmail.js";
 
 const t = randomUUID().slice(0, 8);
 const existingCo = randomUUID();
-const cMatch = randomUUID(), cNew = randomUUID(), cFree = randomUUID(), cNamed = randomUUID();
-const contacts = [cMatch, cNew, cFree, cNamed];
+const cMatch = randomUUID(), cNew = randomUUID(), cFree = randomUUID(), cNamed = randomUUID(), cSuffix = randomUUID();
+const contacts = [cMatch, cNew, cFree, cNamed, cSuffix];
 
 describe("v925 company from email", () => {
   beforeAll(async () => {
@@ -17,6 +17,8 @@ describe("v925 company from email", () => {
     await pool.query(q, [cNew, `New ${t}`, `kat@sign-now${t}.com`, null]);
     await pool.query(q, [cFree, `Free ${t}`, `free${t}@gmail.com`, null]);
     await pool.query(q, [cNamed, `Named ${t}`, `lee@lee${t}.ca`, `Lee${t} Holdings Inc`]);
+    // BF_SERVER_COMPANY_NAME_MATCH_v2 - another domain, same company once the legal suffix is ignored.
+    await pool.query(q, [cSuffix, `Suffix ${t}`, `sam@acmegroup${t}.com`, `ACME${t}`]);
   });
   afterAll(async () => {
     const ids = (await pool.query(`SELECT company_id FROM contacts WHERE id = ANY($1::uuid[])`, [contacts])).rows.map((r: any) => r.company_id).filter(Boolean);
@@ -34,6 +36,7 @@ describe("v925 company from email", () => {
     expect(rows[cNew].domain).toBe(`sign-now${t}.com`);
     expect(rows[cFree].company_id).toBeNull();
     expect(rows[cNamed].name).toBe(`Lee${t} Holdings Inc`);
+    expect(rows[cSuffix].company_id).toBe(existingCo);
   });
 
   it("is safe to run again (no duplicates)", async () => {
