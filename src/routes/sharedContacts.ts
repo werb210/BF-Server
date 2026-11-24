@@ -3,6 +3,7 @@
 //        Loads a list once and fills each silo from it (see services/directory/sharedContacts.ts). Never emails anyone.
 //   GET  /api/directory/people?kind=&country=&brand=&status=&q=&limit=&offset=
 //   GET  /api/directory/imports   the last 50 list loads and what each did
+//   POST /api/directory/sync      read every silo (BI CRM, Keystone prospects) into the list now (BF_SHARED_CONTACTS_STAGE2_v1)
 // Staff (Admin or Staff) only.
 import { Router } from "express";
 import { pool } from "../db.js";
@@ -10,6 +11,7 @@ import { requireAuth, requireAuthorization } from "../middleware/auth.js";
 import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { importSharedList, listPeople, KINDS, type Brand, type Kind } from "../services/directory/sharedContacts.js";
+import { syncFromSilos } from "../services/directory/siloSync.js";
 
 const router = Router();
 const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -42,6 +44,17 @@ router.get("/people", ...staff, safeHandler(async (req: any, res: any) => {
     kind: q.kind ? String(q.kind) : undefined, country: q.country ? String(q.country) : undefined, brand: q.brand ? String(q.brand) : undefined,
     status: q.status ? String(q.status) : undefined, q: q.q ? String(q.q) : undefined, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined,
   }));
+}));
+
+router.post("/sync", ...staff, safeHandler(async (req: any, res: any) => {
+  const auth = String(req.headers?.authorization ?? "");
+  const result = await syncFromSilos(pool, {
+    fetch: (url, init) => fetch(url, init) as any,
+    biUrl: process.env.BI_SERVER_URL || "https://bi-server-cse0apamgkheb9d5.canadacentral-01.azurewebsites.net",
+    ksOpsUrl: process.env.KS_OPS_URL || "https://ops.keystonecrm.online",
+    staffToken: auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null,
+  }, req.user?.id ? String(req.user.id) : "staff");
+  res.json(result);
 }));
 
 router.get("/imports", ...staff, safeHandler(async (_req: any, res: any) => {

@@ -130,7 +130,7 @@ export function toRows(companies: InCompany[], contacts: InContact[], listKind: 
   return { rows, skipped };
 }
 
-async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
+export async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
   const found = r.domain
     ? (await db.query(`SELECT id FROM directory_orgs WHERE lower(domain) = lower($1) LIMIT 1`, [r.domain])).rows[0]
     : (await db.query(`SELECT id FROM directory_orgs WHERE name_key = $1 AND coalesce(country, '') = coalesce($2, '') LIMIT 1`, [nameKey(r.company), r.country])).rows[0];
@@ -152,7 +152,7 @@ async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {
   return String(ins.rows[0].id);
 }
 
-async function upsertPerson(db: Q, orgId: string, r: Row, listName: string): Promise<{ id: string; created: boolean }> {
+export async function upsertPerson(db: Q, orgId: string, r: Row, listName: string): Promise<{ id: string; created: boolean }> {
   const p = r.person!;
   const found = p.email
     ? (await db.query(`SELECT id FROM directory_people WHERE lower(email) = $1 LIMIT 1`, [p.email])).rows[0]
