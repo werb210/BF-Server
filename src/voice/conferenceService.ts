@@ -185,11 +185,25 @@ export async function addParticipantRow(args: any): Promise<string> {
 }
 
 // ── State notifications (variadic to tolerate Codex's extra args) ─────────
+/** BF_SERVER_QUICK_CALL_NAMES_v1 - conference_participants has no name column, so the dialers showed a colleague as their
+ *  user id. Each participant goes out with a display_name: a staff member's name, a contact's name, or the number. */
+export async function withDisplayNames<T extends { kind?: string | null; identity?: string | null; phone_number?: string | null }>(parts: T[]): Promise<Array<T & { display_name: string | null }>> {
+  const { pool } = await import("../db.js");
+  const { resolveDisplayName } = await import("../modules/voice/callerDisplay.js");
+  return Promise.all(parts.map(async (p) => {
+    const ref = p.kind === "pstn" ? p.phone_number : p.identity;
+    let display_name: string | null = null;
+    try { display_name = ref ? await resolveDisplayName(pool as any, ref) : null; }
+    catch (err) { console.warn("[voice] participant name lookup failed", { message: err instanceof Error ? err.message : String(err) }); }
+    return { ...p, display_name };
+  }));
+}
+
 export async function notifyConferenceState(conferenceId: string, ..._extras: any[]): Promise<void> {
   void _extras;
   const c = await getConference(conferenceId);
   if (!c) return;
-  const parts = await listParticipants(conferenceId);
+  const parts = await withDisplayNames(await listParticipants(conferenceId));
   if (c.created_by_user_id) __pub(c.created_by_user_id, "conference.update", { conference: c, participants: parts });
   const staffIds = parts.filter(p => p.kind === "staff" && p.identity).map(p => p.identity as string);
   if (staffIds.length > 0) __pubMany(staffIds, "conference.update", { conference: c, participants: parts });

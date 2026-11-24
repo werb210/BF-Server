@@ -21,8 +21,10 @@ export function parseIdentity(raw: string | null | undefined): ParsedIdentity {
     const ref = value.slice("client-".length);
     return { kind: "client_application", ref: UUID_RE.test(ref) ? ref : null, fallback: "Applicant" };
   }
-  if (value.startsWith("+") || /^[0-9()\-\s]{7,}$/.test(value)) return { kind: "pstn", ref: null, fallback: formatPhoneForDisplay(value) };
+  // BF_SERVER_QUICK_CALL_NAMES_v1 - a user id before a phone number: the seeded staff ids (00000000-...-000000000099) are
+  // all digits and dashes, so they were read as phone numbers and a colleague showed as their raw id.
   if (UUID_RE.test(value)) return { kind: "staff", ref: value, fallback: "Boreal staff" };
+  if (value.startsWith("+") || /^[0-9()\-\s]{7,}$/.test(value)) return { kind: "pstn", ref: null, fallback: formatPhoneForDisplay(value) };
   return { kind: "unknown", ref: null, fallback: value };
 }
 
@@ -61,7 +63,7 @@ export async function resolveDisplayName(db: Queryable, identity: string | null 
       if (digits.length === 10) {
         // BF_SERVER_VOICE_AUDIT_v686 - a colleague's number names the colleague before any contact does.
         const staff = await db.query(`SELECT first_name, last_name, email FROM users
-            WHERE active = true AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1 LIMIT 1`, [digits]);
+            WHERE active = true AND $1 IN (right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(direct_number, ''), '[^0-9]', '', 'g'), 10)) /* BF_SERVER_QUICK_CALL_NAMES_v1 - a colleague's direct line names them too */ LIMIT 1`, [digits]);
         const staffName = staff.rows[0] ? nameFromParts({ firstName: staff.rows[0].first_name, lastName: staff.rows[0].last_name, email: staff.rows[0].email }) : null;
         if (staffName) return staffName;
         const { rows } = await db.query(`SELECT first_name, last_name FROM contacts
