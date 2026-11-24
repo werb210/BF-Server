@@ -32,7 +32,7 @@ describe("staff caller resolution", () => {
     expect(contactsAt).toBeGreaterThan(-1);
     expect(fallbackAt).toBeGreaterThan(contactsAt);
     const [, fallback] = callsMatching(queryMock, STAFF_DIRECTORY);
-    expect(String(fallback[0])).toContain("coalesce(phone_number, phone, '')");
+    expect(String(fallback[0])).toMatch(/coalesce\(phone_number, ''\)[\s\S]*coalesce\(direct_number, ''\)/); // BF_SERVER_QUICK_CALL_NAMES_v1 - direct lines match too
     expect(fallback[1]).toEqual(["4035550177"]);
   });
 

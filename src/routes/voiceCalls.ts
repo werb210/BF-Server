@@ -220,7 +220,7 @@ router.post("/resolve-caller", auth, safeHandler(async (req: any, res) => {
   try {
     const staffFirst = await pool.query(
       `SELECT id::text AS user_id, first_name, last_name, email FROM users
-        WHERE active = true AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        WHERE active = true AND $1 IN (right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(direct_number, ''), '[^0-9]', '', 'g'), 10)) /* BF_SERVER_QUICK_CALL_NAMES_v1 - a colleague's direct line names them too */
         ORDER BY first_name ASC NULLS LAST, last_name ASC NULLS LAST LIMIT 1`, [phone10]);
     const colleague = staffFirst.rows[0];
     if (colleague) {
@@ -264,7 +264,7 @@ router.post("/resolve-caller", auth, safeHandler(async (req: any, res) => {
       `SELECT id::text AS user_id, first_name, last_name, email
          FROM users
         WHERE active = true
-          AND right(regexp_replace(coalesce(phone_number, phone, ''), '[^0-9]', '', 'g'), 10) = $1
+          AND $1 IN (right(regexp_replace(coalesce(phone_number, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 10), right(regexp_replace(coalesce(direct_number, ''), '[^0-9]', '', 'g'), 10)) /* BF_SERVER_QUICK_CALL_NAMES_v1 - a colleague's direct line names them too */
         ORDER BY first_name ASC NULLS LAST, last_name ASC NULLS LAST LIMIT 1`,
       [phone10],
     );
@@ -606,10 +606,18 @@ router.post("/calls", auth, async (req: any, res) => {
         // a raw staff user UUID ended up displayed on quick calls.
         displayName: await resolveDisplayName(pool, staffIdentity, target.contactName),
       });
+      // BF_SERVER_QUICK_CALL_NAMES_v1 - the colleague's phone shows the caller's own direct line (which names them),
+      // not the company default number, which belongs to someone else and showed as "Unknown caller".
+      const { directNumberFor } = await import("../voice/directLines.js");
+      const callerLine = await directNumberFor(pool, userId).catch((err: unknown) => {
+        console.warn("quick_call_direct_number_lookup_failed", { message: err instanceof Error ? err.message : String(err) });
+        return null;
+      });
       const calleeSid = await dialClientIntoConference({
         conferenceFriendly: conf.friendly_name,
         identity: staffIdentity,
         participantId: calleePid,
+        ...(callerLine ? { fromNumber: callerLine } : {}),
       });
       return res.json({
         ok: true,
@@ -635,7 +643,8 @@ router.get("/conferences/:id", auth, safeHandler(async (req, res) => {
     `SELECT * FROM conference_participants WHERE conference_id = $1 ORDER BY created_at`,
     [req.params.id],
   );
-  return res.json({ ok: true, conference: conf, participants: parts.rows });
+  const { withDisplayNames } = await import("../voice/conferenceService.js"); // BF_SERVER_QUICK_CALL_NAMES_v1
+  return res.json({ ok: true, conference: conf, participants: await withDisplayNames(parts.rows) });
 }));
 
 // BF_SERVER_v784_VOICE_STATUS - the dialer posts /api/voice/status, but the
