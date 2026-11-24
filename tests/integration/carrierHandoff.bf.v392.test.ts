@@ -31,6 +31,7 @@ import { sendLenderEmail } from "@/modules/lenderSubmissions/adapters/EmailAdapt
 // economic fields; everything else (applicant/business/kyc) is shared.
 function wizardPayload(over: { kyc?: Record<string, unknown>; selected?: Record<string, unknown> } = {}) {
   return {
+    pgi_opt_in: "yes", pgi_fee_disclosure_ack: true, pgi_consent_share: true, // BF_SERVER_PGI_CONSENT_GATE_v1
     applicant: {
       firstName: "Bob", lastName: "Belcher", email: "bob@belcher.test",
       phone: "+15875550100", dob: "1980-01-01",

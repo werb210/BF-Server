@@ -223,10 +223,27 @@ export function buildBiPayload(input: BiHandoffInput): Record<string, unknown> {
     country: countryOf(kyc.businessLocation) ?? countryOf(business.country) ?? countryOf(n.company?.address_country),
     business_website: s(business.website) ?? s(n.company?.website),
     co_guarantors: coGuarantorsOf(applicant, a, n), // v390
+    // BF_SERVER_PGI_CONSENT_GATE_v1 - the wording the applicant agreed to, kept with the BI application.
+    fee_disclosure_ack: a.pgi_fee_disclosure_ack === true,
+    consent_share_pgi: a.pgi_consent_share === true,
+    fee_disclosure_text: s(a.pgi_fee_disclosure_text),
+    consent_text: s(a.pgi_consent_text),
+    consent_version: s(a.pgi_consent_version),
   };
 }
 
+// BF_SERVER_PGI_CONSENT_GATE_v1 - PGI Canada referral agreement s.9 (fee disclosure before referral) and s.10
+// (express written consent before sharing with PGI). BF-client records both on Step 6; nothing goes to BI
+// (and on to PGI) without them.
+export function hasPgiConsent(legacyApp: any): boolean {
+  return legacyApp?.pgi_consent_share === true && legacyApp?.pgi_fee_disclosure_ack === true;
+}
+
 export async function postBiHandoff(input: BiHandoffInput): Promise<BiHandoffResult> {
+  if (!hasPgiConsent(input.legacyApp)) {
+    logInfo("bi_handoff_skipped_no_consent", { bfApplicationId: input.bfApplicationId });
+    return { ok: false, error: "no_pgi_consent" };
+  }
   const secret = getSecret();
   if (!secret) {
     return { ok: false, error: "no_jwt_secret" };
