@@ -4,7 +4,8 @@
 //                       cards as GET /api/ks/crm/pipeline) that are not Paying or Lost
 //   tasksDueToday       KS tasks due today or earlier, not completed, mine or unclaimed (as the BF figure)
 //   tasksOverdue        KS tasks due before today (the Tasks page's "overdue" rule)
-//   unreadMessages      unread inbound KS messages, skipping orphaned threads (as the BF figure)
+//   unreadMessages      unread email in the Keystone shared mailboxes' Inboxes (BF_SERVER_KS_WIDGET_INBOX_UNREAD_v1);
+//                       unread inbound KS messages when Microsoft 365 cannot be read
 //   payingLicensees     cards at Paying. This replaces Commission: the KS data carries plan and seats but no prices,
 //                       so monthly recurring revenue cannot be worked out here.
 //   demosNeedFollowUp   cards at Demo finished with no open KS task on the company, its contacts or the contact
@@ -221,5 +222,37 @@ export async function ksWidgetSummary(q: Q, userId: string | null): Promise<KsWi
 /** Access first, then the figures. */
 export async function ksWidgetFor(q: Q, user: unknown, userId: string | null): Promise<KsWidgetSummary> {
   if (!canUseKsCrm(user as { role?: unknown; silos?: unknown; silo?: unknown } | null)) return ksWidgetUnavailable();
-  return ksWidgetSummary(q, userId);
+  const out = await ksWidgetSummary(q, userId);
+  // BF_SERVER_KS_WIDGET_INBOX_UNREAD_v1 - Keystone's Inbox is its shared mailboxes, so "Unread" is the unread email there,
+  // the number the Inbox shows. The old figure counted text messages no Keystone screen lists, so the widget said 1
+  // while the Inbox was empty. Falls back to the message count when Microsoft 365 cannot be read.
+  const mail = await ksInboxUnread(q, userId);
+  if (mail !== null) out.unreadMessages = mail;
+  return out;
+}
+
+/** Unread email in the Inbox of every Keystone shared mailbox, read as this staff member; null when it cannot be read. */
+export async function ksInboxUnread(q: Q, userId: string | null, load: typeof loadGraph = loadGraph): Promise<number | null> {
+  if (!userId) return null;
+  try {
+    const boxes = await q.query(`SELECT DISTINCT lower(address) AS address FROM shared_mailbox_settings WHERE silo = 'KS' AND address IS NOT NULL`);
+    if (!boxes.rows.length) return null;
+    const graph = await load(userId);
+    if (!graph) return null;
+    const counts = await Promise.all(boxes.rows.map(async (b: { address: string }) => {
+      const r = await graph.fetch(`/users/${encodeURIComponent(b.address)}/mailFolders/inbox?$select=unreadItemCount`, { signal: AbortSignal.timeout(6000) } as RequestInit);
+      if (!r.ok) throw new Error(`graph_${r.status}`);
+      const j = (await r.json()) as { unreadItemCount?: number };
+      return Number(j?.unreadItemCount ?? 0) || 0;
+    }));
+    return counts.reduce((a, b) => a + b, 0);
+  } catch (err) {
+    console.warn("[ks-widget] inbox unread count failed", err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+async function loadGraph(userId: string): Promise<{ fetch: (path: string, init?: RequestInit) => Promise<Response> } | null> {
+  const [{ getGraphForUser }, { pool }] = await Promise.all([import("../o365/graphClient.js"), import("../../db.js")]);
+  return (await getGraphForUser(pool as any, userId)) as any;
 }

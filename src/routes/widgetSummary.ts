@@ -48,7 +48,7 @@ router.get("/summary", requireAuth, scopedRequest, safeHandler(async (req: any, 
     return res.json(await ksWidgetFor(pool, req.user, userId));
   }
 
-  const [pipeline, tasksDue, unread, earned] = await Promise.all([
+  const [pipeline, tasksDue, unread, earned, nextTask] = await Promise.all([
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM applications a
         WHERE UPPER(a.silo) = UPPER($1) AND ${REAL_DEAL}`,
@@ -58,8 +58,12 @@ router.get("/summary", requireAuth, scopedRequest, safeHandler(async (req: any, 
     // Tasks the signed-in user owes today. Unassigned tasks count too: on a
     // small team an unclaimed call due today is still someone's problem, and a
     // widget reading zero while the Tasks page shows work is a trust problem.
-    pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM tasks t
+    // BF_SERVER_WIDGET_LIVE_FIGURES_v1 - due (today or earlier) and overdue in one pass, by the same rule, so the
+    // widget's "Tasks due" and "Overdue" can never disagree the way they did when the app counted overdue itself.
+    pool.query<{ count: string; past_due: string }>(
+      `SELECT COUNT(*)::text AS count,
+              COUNT(*) FILTER (WHERE t.due_at::date < now()::date)::text AS past_due
+         FROM tasks t
         WHERE t.silo = $1
           AND t.deleted_at IS NULL
           AND t.status <> 'COMPLETED'
@@ -108,6 +112,24 @@ router.get("/summary", requireAuth, scopedRequest, safeHandler(async (req: any, 
           AND ${REAL_DEAL}`,
       [silo, ApplicationStage.ACCEPTED],
     ),
+
+    // BF_SERVER_WIDGET_LIVE_FIGURES_v1 - the next task this person owes (overdue first, then soonest), so the widget can
+    // refresh it on its own instead of keeping whatever the app last wrote.
+    pool.query<{ id: string; title: string; type: string; due_at: string | null; contact_name: string | null }>(
+      `SELECT t.id::text AS id, t.title, t.type, t.due_at,
+              coalesce(nullif(trim(c.name), ''), co.name) AS contact_name
+         FROM tasks t
+         LEFT JOIN contacts c ON c.id = t.contact_id
+         LEFT JOIN companies co ON co.id = t.company_id
+        WHERE t.silo = $1
+          AND t.deleted_at IS NULL
+          AND t.status <> 'COMPLETED'
+          AND t.due_at IS NOT NULL
+          AND (t.assignee_user_id = $2 OR t.assignee_user_id IS NULL)
+        ORDER BY t.due_at ASC
+        LIMIT 1`,
+      [silo, userId],
+    ),
   ]);
 
   const num = (value: string | undefined) => {
@@ -119,6 +141,11 @@ router.get("/summary", requireAuth, scopedRequest, safeHandler(async (req: any, 
     silo,
     pipelineCount: num(pipeline.rows[0]?.count),
     tasksDueToday: num(tasksDue.rows[0]?.count),
+    tasksOverdue: num(tasksDue.rows[0]?.past_due), // BF_SERVER_WIDGET_LIVE_FIGURES_v1
+    nextTask: nextTask.rows[0] ? {
+      id: nextTask.rows[0].id, title: String(nextTask.rows[0].title ?? "Task").slice(0, 200), type: String(nextTask.rows[0].type ?? "TODO").slice(0, 20),
+      dueAt: nextTask.rows[0].due_at ? new Date(nextTask.rows[0].due_at).toISOString() : null, contactName: nextTask.rows[0].contact_name ?? null,
+    } : null,
     unreadMessages: num(unread.rows[0]?.count),
     commissionEarned: Math.round(num(earned.rows[0]?.commission)),
     currency: "CAD",

@@ -96,8 +96,8 @@ describe("the widget cannot disagree with the dashboard", () => {
 describe("one call, not four", () => {
   it("runs its queries together", async () => {
     await summary();
-    expect(widgetCalls()).toHaveLength(4);
-    expect(maxInFlight).toBe(4);
+    expect(widgetCalls()).toHaveLength(5);
+    expect(maxInFlight).toBe(5);
   });
 
   it("returns every figure the widget needs", async () => {
