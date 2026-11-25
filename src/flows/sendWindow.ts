@@ -67,3 +67,4 @@ export function nextSendableAt(at: Date, sendWindow: SendWindow): Date {
 export function scheduleFromNow(delaySeconds: number, sendWindow: SendWindow, now = new Date()): Date {
   const delayMs = Math.max(0, Number.isFinite(delaySeconds) ? delaySeconds : 0) * 1_000;
   return nextSendableAt(new Date(now.getTime() + delayMs), sendWindow);
+}
