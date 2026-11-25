@@ -425,10 +425,20 @@ export async function listSources(db: Q): Promise<Array<{ source: string; people
   return r.rows.map((x: any) => ({ source: String(x.source), people: Number(x.people) }));
 }
 
-/** People in the shared list, with where they are in each brand. */
-export async function listPeople(db: Q, f: { kind?: string; country?: string; region?: string; brand?: string; status?: string; not_brand?: string; source?: string; q?: string; limit?: number; offset?: number }) {
+/** BF_SERVER_SHARED_OPTED_OUT_VIEW_v1 - someone is "opted out" when they said no to every brand that markets to them:
+ *  the all-brands opt-out, or an unsubscribe from each marketed brand they are in (Keystone and PGI for a broker, PGI for a
+ *  lender or bank). The Boreal Financial CRM only stores lenders and banks (it does not market to them), so BF is left out. */
+export const OPTED_OUT_SQL = `(p.all_brands_opt_out IS TRUE OR (
+    EXISTS (SELECT 1 FROM directory_brand_status s WHERE s.person_id = p.id AND s.brand <> 'BF' AND s.status = 'opted_out')
+    AND NOT EXISTS (SELECT 1 FROM directory_brand_status s WHERE s.person_id = p.id AND s.brand <> 'BF' AND s.status <> 'opted_out')))`;
+
+/** People in the shared list, with where they are in each brand. Opted-out people are kept (their opt-out stays on file)
+ *  but leave the main list: opted_out "only" shows just them, "include" shows everyone. */
+export async function listPeople(db: Q, f: { kind?: string; country?: string; region?: string; brand?: string; status?: string; not_brand?: string; source?: string; q?: string; opted_out?: string; limit?: number; offset?: number }) {
   const params: unknown[] = [];
   const where: string[] = [];
+  if (f.opted_out === "only") where.push(OPTED_OUT_SQL);
+  else if (f.opted_out !== "include") where.push(`NOT ${OPTED_OUT_SQL}`);
   const add = (sql: string, v: unknown) => { params.push(v); where.push(sql.replace("$?", `$${params.length}`)); };
   if (f.kind && (KINDS as readonly string[]).includes(f.kind)) add(`p.kind = $?`, f.kind);
   if (f.country) add(`p.country = $?`, countryCode(f.country));
@@ -444,7 +454,7 @@ export async function listPeople(db: Q, f: { kind?: string; country?: string; re
   const limit = Math.min(Math.max(Number(f.limit) || 100, 1), 1000), offset = Math.max(Number(f.offset) || 0, 0);
   const total = Number((await db.query(`SELECT count(*)::int AS n FROM directory_people p LEFT JOIN directory_orgs o ON o.id = p.org_id ${w}`, params)).rows[0]?.n ?? 0);
   const r = await db.query(
-    `SELECT p.id, p.name, p.email, p.phone, p.title, p.kind, p.country, p.region, p.all_brands_opt_out, p.sources, o.name AS firm, o.domain,
+    `SELECT p.id, p.name, p.email, p.phone, p.title, p.kind, p.country, p.region, p.all_brands_opt_out, p.sources, o.name AS firm, o.domain, ${OPTED_OUT_SQL} AS opted_out,
             coalesce((SELECT jsonb_object_agg(s.brand, jsonb_build_object('status', s.status, 'last_activity', s.last_activity, 'at', s.last_activity_at))
                         FROM directory_brand_status s WHERE s.person_id = p.id), '{}'::jsonb) AS brands
        FROM directory_people p LEFT JOIN directory_orgs o ON o.id = p.org_id ${w}

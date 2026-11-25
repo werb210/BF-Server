@@ -45,7 +45,7 @@ router.get("/people", ...staff, safeHandler(async (req: any, res: any) => {
   res.json(await listPeople(pool, {
     kind: q.kind ? String(q.kind) : undefined, country: q.country ? String(q.country) : undefined, brand: q.brand ? String(q.brand) : undefined,
     region: q.region ? String(q.region) : undefined, source: q.source ? String(q.source) : undefined, not_brand: q.not_brand ? String(q.not_brand) : undefined,
-    status: q.status ? String(q.status) : undefined, q: q.q ? String(q.q) : undefined, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined,
+    status: q.status ? String(q.status) : undefined, opted_out: q.opted_out ? String(q.opted_out) : undefined, q: q.q ? String(q.q) : undefined, limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined,
   }));
 }));
 
