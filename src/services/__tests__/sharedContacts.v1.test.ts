@@ -54,8 +54,8 @@ describe("loading a list", () => {
       calls,
       query: vi.fn(async (sql: string) => {
         calls.push(sql);
-        if (/^\s*SELECT id FROM (directory_orgs|directory_people|contacts)/.test(sql)) return { rows: [] };
-        if (/INSERT INTO (directory_orgs|directory_people|contacts)/.test(sql)) return { rows: [{ id: `id-${++n}` }] };
+        if (/^\s*SELECT id FROM (directory_orgs|directory_people|contacts|companies)/.test(sql)) return { rows: [] };
+        if (/INSERT INTO (directory_orgs|directory_people|contacts|companies)/.test(sql)) return { rows: [{ id: `id-${++n}` }] };
         return { rows: [] };
       }),
     };
@@ -78,6 +78,11 @@ describe("loading a list", () => {
     expect(ksBody.consent.consent_type).toBe("implied_publication");
     expect(db.calls.filter((s) => s.includes("INSERT INTO directory_brand_status"))).toHaveLength(2);
     expect(db.calls.some((s) => s.includes("INSERT INTO directory_imports"))).toBe(true);
+    // BF_SERVER_KS_CRM_FROM_LISTS_v1 - the firm and the person also land in the KS CRM; nothing in the BF CRM.
+    expect(db.calls.filter((s) => /INSERT INTO companies[\s\S]*'KS'\)/.test(s))).toHaveLength(1);
+    expect(db.calls.filter((s) => /INSERT INTO contacts[\s\S]*'KS', 'other'/.test(s))).toHaveLength(1);
+    expect(db.calls.some((s) => /INSERT INTO contacts[\s\S]*'BF', 'other'/.test(s))).toBe(false);
+    expect((out as any).ks_crm).toEqual({ people: 1, errors: 0 });
   });
   it("keeps going when one silo fails, and says which", async () => {
     const db = fakeDb();
