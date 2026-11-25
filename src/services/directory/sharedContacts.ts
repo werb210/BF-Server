@@ -3,7 +3,7 @@
 // people by email (else name at the same firm). Each person is then sent to the silos the routing table picks:
 //   KS  Keystone prospects and call list (KS-Ops outreach import, with the consent basis for their country), and the KS CRM
 //   BI  Boreal Risk Management (PGI) broker and lender lists (BI-Server list import)
-//   BF  the Boreal Financial CRM (silo BF contacts, tagged; records only) - lenders and banks only
+//   BF  the Boreal Financial CRM (silo BF companies and contacts, tagged; records only) - lenders and banks only
 // Quebec is left out of PGI (the program is not available to Quebec residents). Nothing is emailed or enrolled here.
 import type { Pool, PoolClient } from "pg";
 import { signServiceToken } from "../../auth/serviceTokens.js";
@@ -212,31 +212,33 @@ async function upsertBfContact(db: Q, r: Row, listTag: string): Promise<string |
   return String(ins.rows[0].id);
 }
 
+/** BF_SERVER_BF_CRM_LENDER_FIRMS_v1 - a CRM company for this firm in a silo (found by name, else created), tagged. */
+async function upsertCrmCompany(db: Q, silo: "BF" | "KS", r: Row, tags: string[]): Promise<string | null> {
+  if (!r.company) return null;
+  const co = (await db.query(`SELECT id FROM companies WHERE silo = $2 AND lower(name) = lower($1) LIMIT 1`, [r.company, silo])).rows[0];
+  if (co) {
+    await db.query(
+      `UPDATE companies SET website = coalesce(website, $2), phone = coalesce(phone, $3), address_city = coalesce(address_city, $4),
+              address_state = coalesce(address_state, $5), address_country = coalesce(address_country, $6),
+              tags = (SELECT array_agg(DISTINCT t) FROM unnest(coalesce(tags, '{}') || $7::text[]) t), updated_at = now()
+        WHERE id = $1`,
+      [co.id, r.website, r.phone, r.city, r.region, r.country, tags],
+    );
+    return String(co.id);
+  }
+  return String((await db.query(
+    `INSERT INTO companies (id, name, website, phone, address_street, address_city, address_state, address_country, tags, silo)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8::text[], $9) RETURNING id`,
+    [r.company, r.website, r.phone, r.address, r.city, r.region, r.country, tags, silo],
+  )).rows[0].id);
+}
+
 /** BF_SERVER_KS_CRM_FROM_LISTS_v1 - Keystone's people now live in the KS CRM (silo KS companies and contacts), where
  *  Keystone email flows find them. Each Keystone row also lands there: the firm (by name) and, with an email, the
  *  person (by email), tagged with the list. Records only - nobody is emailed; flows still skip anyone suppressed. */
 async function upsertKsCrm(db: Q, r: Row, listTag: string): Promise<string | null> {
   const tags = ["broker", listTag];
-  let companyId: string | null = null;
-  if (r.company) {
-    const co = (await db.query(`SELECT id FROM companies WHERE silo = 'KS' AND lower(name) = lower($1) LIMIT 1`, [r.company])).rows[0];
-    if (co) {
-      companyId = String(co.id);
-      await db.query(
-        `UPDATE companies SET website = coalesce(website, $2), phone = coalesce(phone, $3), address_city = coalesce(address_city, $4),
-                address_state = coalesce(address_state, $5), address_country = coalesce(address_country, $6),
-                tags = (SELECT array_agg(DISTINCT t) FROM unnest(coalesce(tags, '{}') || $7::text[]) t), updated_at = now()
-          WHERE id = $1`,
-        [companyId, r.website, r.phone, r.city, r.region, r.country, tags],
-      );
-    } else {
-      companyId = String((await db.query(
-        `INSERT INTO companies (id, name, website, phone, address_street, address_city, address_state, address_country, tags, silo)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8::text[], 'KS') RETURNING id`,
-        [r.company, r.website, r.phone, r.address, r.city, r.region, r.country, tags],
-      )).rows[0].id);
-    }
-  }
+  const companyId = await upsertCrmCompany(db, "KS", r, tags);
   const p = r.person;
   if (!p?.email) return null;
   const found = (await db.query(`SELECT id FROM contacts WHERE silo = 'KS' AND lower(email) = $1 AND merged_into_id IS NULL LIMIT 1`, [p.email])).rows[0];
@@ -346,6 +348,9 @@ export async function importSharedList(db: Q, deps: SiloDeps, input: ImportInput
   // Boreal Financial CRM: people with an email only (records, no emails).
   let bf = 0;
   for (const { row, personId } of toSilo.BF) {
+    // BF_SERVER_BF_CRM_LENDER_FIRMS_v1 - every lender and bank firm is a BF CRM company, with or without a person.
+    try { await upsertCrmCompany(db, "BF", row, [row.kind, "lender contact", listTag]); }
+    catch (e) { console.error(`[shared-contacts] BF CRM company failed for ${row.company}: ${(e as Error).message}`); }
     const id = await upsertBfContact(db, row, listTag);
     if (id && personId) { await markBrand(db, personId, "BF", null, id); bf++; }
   }

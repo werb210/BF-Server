@@ -49,11 +49,12 @@ describe("loading a list", () => {
   // The database answers by SQL content, not call order.
   function fakeDb() {
     const calls: string[] = [];
+    const params: unknown[][] = [];
     let n = 0;
     return {
-      calls,
-      query: vi.fn(async (sql: string) => {
-        calls.push(sql);
+      calls, params,
+      query: vi.fn(async (sql: string, p: unknown[] = []) => {
+        calls.push(sql); params.push(p);
         if (/^\s*SELECT id FROM (directory_orgs|directory_people|contacts|companies)/.test(sql)) return { rows: [] };
         if (/INSERT INTO (directory_orgs|directory_people|contacts|companies)/.test(sql)) return { rows: [{ id: `id-${++n}` }] };
         return { rows: [] };
@@ -79,10 +80,21 @@ describe("loading a list", () => {
     expect(db.calls.filter((s) => s.includes("INSERT INTO directory_brand_status"))).toHaveLength(2);
     expect(db.calls.some((s) => s.includes("INSERT INTO directory_imports"))).toBe(true);
     // BF_SERVER_KS_CRM_FROM_LISTS_v1 - the firm and the person also land in the KS CRM; nothing in the BF CRM.
-    expect(db.calls.filter((s) => /INSERT INTO companies[\s\S]*'KS'\)/.test(s))).toHaveLength(1);
+    const coInserts = db.calls.map((s, i) => [s, db.params[i]] as const).filter(([s]) => s.includes("INSERT INTO companies"));
+    expect(coInserts.map(([, p]) => p[8])).toEqual(["KS"]);
     expect(db.calls.filter((s) => /INSERT INTO contacts[\s\S]*'KS', 'other'/.test(s))).toHaveLength(1);
     expect(db.calls.some((s) => /INSERT INTO contacts[\s\S]*'BF', 'other'/.test(s))).toBe(false);
     expect((out as any).ks_crm).toEqual({ people: 1, errors: 0 });
+  });
+  it("puts every lender firm in the BF CRM, with or without a person (BF_SERVER_BF_CRM_LENDER_FIRMS_v1)", async () => {
+    const db = fakeDb();
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+    await importSharedList(db as any, { fetch, biUrl: "https://bi", ksOpsUrl: "https://ks", staffToken: "bf" }, {
+      list_name: "Banks", kind: "bank", only: null, created_by: null,
+      companies: [{ name: "Tiny CU", address_country: "US", address_state: "OH" }], contacts: [],
+    });
+    const coInserts = db.calls.map((s, i) => [s, db.params[i]] as const).filter(([s]) => s.includes("INSERT INTO companies"));
+    expect(coInserts.map(([, p]) => [p[0], p[8]])).toEqual([["Tiny CU", "BF"]]);
   });
   it("keeps going when one silo fails, and says which", async () => {
     const db = fakeDb();
