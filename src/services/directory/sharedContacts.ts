@@ -1,7 +1,7 @@
 // BF_SERVER_SHARED_CONTACTS_v1 (2026-11-24) - the shared list of brokers, lenders and banks behind every silo.
 // A list (companies and the people at them) is loaded once: firms are matched by website domain (else name and country),
 // people by email (else name at the same firm). Each person is then sent to the silos the routing table picks:
-//   KS  Keystone prospects and call list (KS-Ops outreach import, with the consent basis for their country)
+//   KS  Keystone prospects and call list (KS-Ops outreach import, with the consent basis for their country), and the KS CRM
 //   BI  Boreal Risk Management (PGI) broker and lender lists (BI-Server list import)
 //   BF  the Boreal Financial CRM (silo BF contacts, tagged; records only) - lenders and banks only
 // Quebec is left out of PGI (the program is not available to Quebec residents). Nothing is emailed or enrolled here.
@@ -212,6 +212,53 @@ async function upsertBfContact(db: Q, r: Row, listTag: string): Promise<string |
   return String(ins.rows[0].id);
 }
 
+/** BF_SERVER_KS_CRM_FROM_LISTS_v1 - Keystone's people now live in the KS CRM (silo KS companies and contacts), where
+ *  Keystone email flows find them. Each Keystone row also lands there: the firm (by name) and, with an email, the
+ *  person (by email), tagged with the list. Records only - nobody is emailed; flows still skip anyone suppressed. */
+async function upsertKsCrm(db: Q, r: Row, listTag: string): Promise<string | null> {
+  const tags = ["broker", listTag];
+  let companyId: string | null = null;
+  if (r.company) {
+    const co = (await db.query(`SELECT id FROM companies WHERE silo = 'KS' AND lower(name) = lower($1) LIMIT 1`, [r.company])).rows[0];
+    if (co) {
+      companyId = String(co.id);
+      await db.query(
+        `UPDATE companies SET website = coalesce(website, $2), phone = coalesce(phone, $3), address_city = coalesce(address_city, $4),
+                address_state = coalesce(address_state, $5), address_country = coalesce(address_country, $6),
+                tags = (SELECT array_agg(DISTINCT t) FROM unnest(coalesce(tags, '{}') || $7::text[]) t), updated_at = now()
+          WHERE id = $1`,
+        [companyId, r.website, r.phone, r.city, r.region, r.country, tags],
+      );
+    } else {
+      companyId = String((await db.query(
+        `INSERT INTO companies (id, name, website, phone, address_street, address_city, address_state, address_country, tags, silo)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8::text[], 'KS') RETURNING id`,
+        [r.company, r.website, r.phone, r.address, r.city, r.region, r.country, tags],
+      )).rows[0].id);
+    }
+  }
+  const p = r.person;
+  if (!p?.email) return null;
+  const found = (await db.query(`SELECT id FROM contacts WHERE silo = 'KS' AND lower(email) = $1 AND merged_into_id IS NULL LIMIT 1`, [p.email])).rows[0];
+  if (found) {
+    await db.query(
+      `UPDATE contacts SET tags = (SELECT array_agg(DISTINCT t) FROM unnest(coalesce(tags, '{}') || $2::text[]) t),
+              company_name = coalesce(company_name, $3), company_id = coalesce(company_id, $4::uuid), job_title = coalesce(job_title, $5),
+              phone = coalesce(phone, $6), address_state = coalesce(address_state, $7), address_country = coalesce(address_country, $8), updated_at = now()
+        WHERE id = $1`,
+      [found.id, tags, r.company, companyId, p.title, p.phone, r.region, r.country],
+    );
+    return String(found.id);
+  }
+  const [first, ...rest] = String(p.name ?? "").split(/\s+/);
+  const ins = await db.query(
+    `INSERT INTO contacts (id, name, first_name, last_name, email, phone, company_name, company_id, job_title, address_state, address_country, tags, silo, role, status)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11::text[], 'KS', 'other', 'prospect') RETURNING id`,
+    [p.name, first || null, rest.join(" ") || null, p.email, p.phone, r.company, companyId, p.title, r.region, r.country, tags],
+  );
+  return String(ins.rows[0].id);
+}
+
 export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; json(): Promise<any> }>;
 export type SiloDeps = { fetch: Fetcher; biUrl: string; ksOpsUrl: string; staffToken: string | null };
 
@@ -303,6 +350,12 @@ export async function importSharedList(db: Q, deps: SiloDeps, input: ImportInput
     if (id && personId) { await markBrand(db, personId, "BF", null, id); bf++; }
   }
   silos.BF = { sent: bf };
+  // BF_SERVER_KS_CRM_FROM_LISTS_v1 - Keystone rows into the KS CRM as well as KS-Ops (one failure never stops the rest).
+  let ksCrm = 0, ksCrmErrors = 0;
+  for (const { row } of toSilo.KS) {
+    try { if (await upsertKsCrm(db, row, listTag)) ksCrm++; }
+    catch (e) { ksCrmErrors++; console.error(`[shared-contacts] KS CRM upsert failed for ${row.company}: ${(e as Error).message}`); }
+  }
   for (const brand of ["BI", "KS"] as const) {
     const items = toSilo[brand];
     try {
@@ -316,7 +369,7 @@ export async function importSharedList(db: Q, deps: SiloDeps, input: ImportInput
   for (const b of ["BF", "BI", "KS"] as const) tally.by_brand[b] = toSilo[b].filter((x) => x.row.person?.email).length;
   const result = {
     rows: rows.length, firms: tally.firms.size, people_added: tally.people_added, people_updated: tally.people_updated,
-    routed: tally.by_brand, silos, skipped,
+    routed: tally.by_brand, silos, skipped, ks_crm: { people: ksCrm, errors: ksCrmErrors },
   };
   await db.query(
     `INSERT INTO directory_imports (list_name, kind, row_count, routing, result, created_by) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)`,
