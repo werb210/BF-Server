@@ -1,6 +1,6 @@
 // BF_SERVER_REPORTS_SECTION_v714 - report catalog and role access rules.
 export type ReportGroup = "money" | "marketing" | "operations";
-export type ReportDef = { key: string; title: string; silo: "BF" | "BI" | "SLF"; group: ReportGroup; size: "half" | "full"; source: string; description: string };
+export type ReportDef = { key: string; title: string; silo: "BF" | "BI" | "SLF" | "KS"; group: ReportGroup; size: "half" | "full"; source: string; description: string };
 
 export const REPORTS: ReportDef[] = [
   // BF_SERVER_v930_MAYA_REPORTS - a table Maya built from a question (its spec rides on the card). Never offered in the list.
@@ -68,6 +68,19 @@ export const REPORTS: ReportDef[] = [
   { key: "ads_story", title: "Ads: the story", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Ad spend to applications, funded deals and return." },
   { key: "ads_dropoff", title: "Where applications stop", silo: "BF", group: "marketing", size: "full", source: "portal", description: "The step unfinished applications stopped at, and why." },
   { key: "ads_visitors", title: "Website visitors", silo: "BF", group: "marketing", size: "full", source: "portal", description: "Who came, from where, and what they did." },
+  // BF_SERVER_SILO_DASHBOARDS_v1 - the BI and Keystone Dashboards are movable boards too; these are their standard
+  // sections (drawn by the portal, only offered on the Dashboard).
+  { key: "bi_dash_totals", title: "Pipeline at a glance", silo: "BI", group: "operations", size: "full", source: "dashboard", description: "Total in pipeline, carrier health and test files." },
+  { key: "bi_dash_attention", title: "Needs attention", silo: "BI", group: "operations", size: "full", source: "dashboard", description: "Awaiting documents, no carrier acknowledgement, recent declines." },
+  { key: "bi_dash_stages", title: "Pipeline stages", silo: "BI", group: "operations", size: "full", source: "dashboard", description: "Files in each stage, plus those not yet in the pipeline." },
+  { key: "bi_dash_recent", title: "Recent updates", silo: "BI", group: "operations", size: "full", source: "dashboard", description: "The latest applications to change." },
+  { key: "bi_dash_flows", title: "Email flows", silo: "BI", group: "marketing", size: "full", source: "dashboard", description: "People in each email flow, emailed, opened and clicked." },
+  { key: "ks_dash_kpis", title: "Key numbers", silo: "KS", group: "operations", size: "full", source: "dashboard", description: "MRR, licensees, seats, past due, open tickets and requests." },
+  { key: "ks_dash_status", title: "Licensees by status", silo: "KS", group: "operations", size: "half", source: "dashboard", description: "How many licensees are in each status." },
+  { key: "ks_dash_purges", title: "Data purges", silo: "KS", group: "operations", size: "full", source: "dashboard", description: "Cancelled licensees and when their data is purged." },
+  { key: "ks_dash_watchlist", title: "Shared fraud watchlist", silo: "KS", group: "operations", size: "half", source: "dashboard", description: "Licensees sharing, files and entries." },
+  { key: "ks_dash_pgi", title: "PGI referral sources", silo: "KS", group: "operations", size: "half", source: "dashboard", description: "Every live licensee linked to Boreal Risk Management." },
+  { key: "ks_dash_flows", title: "Email flows", silo: "KS", group: "marketing", size: "full", source: "dashboard", description: "People in each Keystone email flow, emailed, opened and clicked." },
   { key: "bi_dashboard", title: "Insurance pipeline", silo: "BI", group: "operations", size: "full", source: "portal", description: "Boreal Risk Management open pipeline and what needs attention." },
   // BF_SERVER_v819_MOBILE_REPORT - the client app usage report (Marketing > Mobile apps) as a Dashboard card;
   // the duplicate ads_story / ads_dropoff entries that listed both reports twice are removed.

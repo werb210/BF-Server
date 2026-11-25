@@ -9,7 +9,7 @@ import { DATA } from "../services/reports/data.js";
 import { askReport, cleanSpec, runTable, type TableSpec } from "../services/reports/mayaReports.js"; // BF_SERVER_v930_MAYA_REPORTS
 
 const router = Router();
-const SILOS = new Set(["BF", "BI", "SLF"]);
+const SILOS = new Set(["BF", "BI", "SLF", "KS"]); // BF_SERVER_SILO_DASHBOARDS_v1 - Keystone keeps its own Dashboard layout
 const siloOf = (v: unknown) => (SILOS.has(String(v ?? "").toUpperCase()) ? String(v).toUpperCase() : "BF");
 const uid = (req: any) => String(req.user?.userId ?? req.user?.id ?? "");
 type Card = { id: string; report: string; size: "third" | "half" | "full"; days?: number; spec?: TableSpec }; // BF_SERVER_DASHBOARD_BOARD_v730 third = Small
