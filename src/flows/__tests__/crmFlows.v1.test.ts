@@ -65,4 +65,54 @@ describe("CRM flows", () => {
     expect(m.html).toContain("Keystone (2630108 Alberta Ltd.)");
     expect(updates[0]?.[3]).toBe("n2");
   });
+
+  // BF_SERVER_FLOW_SECOND_ADDRESS_v1
+  it("after the last unopened email, starts the flow again on the second address a week later", async () => {
+    const updates: Array<{ sql: string; params: any[] }> = [];
+    const db = {
+      query: vi.fn(async (sql: string, params: any[] = []) => {
+        if (sql.includes("FROM crm_flow_members m") && sql.includes("JOIN crm_flows f")) {
+          return { rows: [{ id: "m1", flow_id: FLOW, contact_id: CONTACT, track: "none", next_key: "n4", failures: 0, round: 1, member_email: "ann@example.com", silo: "KS", flow_name: "Brokers",
+            emails: { n4: { subject: "Last note", body: "<p>Bye</p>" } }, from_name: "", from_email: null, reply_to: null, link_url: "", booking_url: "",
+            first_name: "Ann", full_name: "Ann Lee", company_name: "Lee Capital", contact_email: "ann@example.com", secondary_email: "Ann.Lee@Other.com" }] };
+        }
+        if (sql.includes("email_suppressions")) return { rows: [], rowCount: 0 };
+        if (sql.includes("lower(email) = $2 AND id <> $3")) return { rows: [], rowCount: 0 };
+        if (sql.includes("UPDATE crm_flow_members")) updates.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      }),
+    };
+    const send = vi.fn(async () => ({ ok: true }));
+    const now = new Date("2026-11-24T17:00:00Z");
+    await sendDue(db as any, { send }, now);
+    const restart = updates.find((u) => u.sql.includes("round = 2"));
+    expect(restart?.params[1]).toBe("ann.lee@other.com");
+    expect(new Date(restart?.params[2]).getTime() - now.getTime()).toBeGreaterThanOrEqual(7 * 86_400_000);
+  });
+
+  it("sends the second round to the second address and never restarts it again", async () => {
+    const updates: string[] = [];
+    const db = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes("FROM crm_flow_members m") && sql.includes("JOIN crm_flows f")) {
+          return { rows: [{ id: "m1", flow_id: FLOW, contact_id: CONTACT, track: "none", next_key: "n4", failures: 0, round: 2, member_email: "ann.lee@other.com", silo: "KS", flow_name: "Brokers",
+            emails: { n4: { subject: "Last note", body: "<p>Bye</p>" } }, from_name: "", from_email: null, reply_to: null, link_url: "", booking_url: "",
+            first_name: "Ann", full_name: "Ann Lee", company_name: "Lee Capital", contact_email: "ann@example.com", secondary_email: "ann.lee@other.com" }] };
+        }
+        if (sql.includes("UPDATE crm_flow_members")) updates.push(sql);
+        return { rows: [], rowCount: 0 };
+      }),
+    };
+    const send = vi.fn(async () => ({ ok: true }));
+    await sendDue(db as any, { send }, new Date("2026-11-24T17:00:00Z"));
+    expect((send.mock.calls[0] as any[])[0].to).toBe("ann.lee@other.com");
+    expect(updates.some((u) => u.includes("round = 2"))).toBe(false);
+  });
+
+  it("does nothing without a different second address", async () => {
+    const db = { query: vi.fn(async () => ({ rows: [], rowCount: 0 })) };
+    const { startSecondRound } = await import("../flowWorker.js");
+    expect(await startSecondRound(db as any, { id: "m1", flow_id: FLOW, contact_id: CONTACT, secondary_email: "ANN@example.com" }, "ann@example.com", new Date())).toBe(false);
+    expect(await startSecondRound(db as any, { id: "m1", flow_id: FLOW, contact_id: CONTACT, secondary_email: null }, "ann@example.com", new Date())).toBe(false);
+  });
 });

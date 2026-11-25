@@ -6,7 +6,7 @@ import type { Pool, PoolClient } from "pg";
 import { pool as defaultPool } from "../db.js";
 import { isSendableAt } from "./sendWindow.js";
 import {
-  FLOW_WINDOW, dailyNewCap, flowJobId, htmlToText, isFlowKey, nextAfterSend, onClick, onOpen, withFooter,
+  FLOW_WINDOW, dailyNewCap, endsFirstRoundUnopened, secondAddressStartAt, flowJobId, htmlToText, isFlowKey, nextAfterSend, onClick, onOpen, withFooter,
   type Click, type FlowKey, type Track,
 } from "./flowEngine.js";
 import { loadFlowAttachments, sendFlowEmail, mailboxReplies, type FlowAttachment } from "./flowSend.js";
@@ -194,9 +194,9 @@ export async function sendDue(db: Db, deps: FlowDeps, now: Date): Promise<{ sent
   const out = { sent: 0, failed: 0, stopped: 0 };
   if (!isSendableAt(now, FLOW_WINDOW)) return out;
   const due = await db.query(
-    `SELECT m.id, m.flow_id, m.contact_id, m.track, m.next_key, m.failures,
+    `SELECT m.id, m.flow_id, m.contact_id, m.track, m.next_key, m.failures, m.round, m.email AS member_email,
             f.silo, f.name AS flow_name, f.emails, f.from_name, f.from_email, f.reply_to, f.link_url, f.booking_url,
-            c.first_name, c.name AS full_name, c.company_name, c.email AS contact_email
+            c.first_name, c.name AS full_name, c.company_name, c.email AS contact_email, c.secondary_email
        FROM crm_flow_members m
        JOIN crm_flows f ON f.id = m.flow_id AND f.status = 'active'
        LEFT JOIN contacts c ON c.id = m.contact_id
@@ -210,7 +210,9 @@ export async function sendDue(db: Db, deps: FlowDeps, now: Date): Promise<{ sent
   };
   for (const row of due.rows) {
     const key = row.next_key as string;
-    const to = String(row.contact_email ?? "").trim();
+    // BF_SERVER_FLOW_SECOND_ADDRESS_v1 - the second round goes to the address it was started on.
+    const round = Number(row.round ?? 1);
+    const to = String((round >= 2 ? row.member_email : row.contact_email) ?? "").trim();
     if (!to || !to.includes("@")) { await stop(row.id, "no_email"); continue; }
     if (await isSuppressed(db, row.contact_id, to, row.silo)) { await stop(row.id, "unsubscribed_or_bounced"); continue; }
     const content = isFlowKey(key) ? (row.emails ?? {})[key] : null;
@@ -251,8 +253,29 @@ export async function sendDue(db: Db, deps: FlowDeps, now: Date): Promise<{ sent
     );
     await timeline(db, row.contact_id, "flow_email_sent", { body: `${row.flow_name}: ${mergeFields(String(content.subject), merge)}`.slice(0, 1000), flow_id: row.flow_id, key });
     out.sent += 1;
+    if (!next && endsFirstRoundUnopened(key as FlowKey, row.track as Track, round)) await startSecondRound(db, row, to, now);
   }
   return out;
+}
+
+/** BF_SERVER_FLOW_SECOND_ADDRESS_v1 - four weeks with no open on the first address: if the contact has a different second
+ *  address (not already in this flow), the flow starts again at "e1" on it, a week after the last email. Unsubscribes and
+ *  bounces are still checked at each send. */
+export async function startSecondRound(db: Db, row: { id: string; flow_id: string; contact_id: string; flow_name?: string; secondary_email?: string | null }, firstAddress: string, now: Date): Promise<boolean> {
+  const second = String(row.secondary_email ?? "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(second) || second === firstAddress.trim().toLowerCase()) return false;
+  const taken = await db.query(`SELECT 1 FROM crm_flow_members WHERE flow_id = $1 AND lower(email) = $2 AND id <> $3 LIMIT 1`, [row.flow_id, second, row.id]);
+  if (taken.rowCount) return false;
+  const at = secondAddressStartAt(now);
+  await db.query(
+    `UPDATE crm_flow_members
+        SET round = 2, email = $2, prior_keys = prior_keys || sent_keys, sent_keys = ARRAY[]::text[], track = 'none',
+            next_key = 'e1', next_at = $3, status = 'active', updated_at = $4
+      WHERE id = $1 AND round < 2`,
+    [row.id, second, at, now],
+  );
+  await timeline(db, row.contact_id, "flow_second_address", { body: `No opens on ${firstAddress} after four weeks. The "${row.flow_name ?? "email"}" flow starts again at ${second}.`, flow_id: row.flow_id });
+  return true;
 }
 
 let lastAudienceAdd = 0;

@@ -55,6 +55,17 @@ export function nextAfterSend(key: FlowKey, track: Track, sentAt: Date): Next {
   return nextKey ? { key: nextKey, at: inHours(new Date(sentAt.getTime() + NO_OPEN_GAP_DAYS * DAY)) } : null;
 }
 
+/** BF_SERVER_FLOW_SECOND_ADDRESS_v1 - after the last never-opened email (n4) the person rests this long; then, if they have a
+ *  second email address, the flow starts again at "e1" on that address. Four weeks from e1 to the restart. */
+export const SECOND_ADDRESS_WAIT_DAYS = 7;
+export function secondAddressStartAt(lastSentAt: Date): Date {
+  return inHours(new Date(lastSentAt.getTime() + SECOND_ADDRESS_WAIT_DAYS * DAY));
+}
+/** True when this send closes the first round for someone who never opened: the moment to try their second address. */
+export function endsFirstRoundUnopened(key: FlowKey, track: Track, round: number): boolean {
+  return key === "n4" && track === "none" && round < 2;
+}
+
 export type MemberState = { track: Track; sentKeys: string[]; lastSentAt: Date | null };
 
 /** An open moves a never-opened person to the "more details" email, two business days later. */
