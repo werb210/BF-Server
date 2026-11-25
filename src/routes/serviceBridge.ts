@@ -223,6 +223,35 @@ router.post("/tasks", async (req, res) => {
 // it asks here for the Introducer Agreement to be issued, for a fresh signing link when the rep opens their page,
 // and whether it has been signed. Nothing about the rep is stored on this server.
 const repStr = (v: unknown, max: number): string => str(v).replace(/\s+/g, " ").slice(0, max);
+// BF_SERVER_BRAND_ONLY_UNSUBSCRIBES_v1 - BI-Server moved these Boreal Risk Management unsubscribes off SendGrid's
+// account-wide list onto BRM's own group (Todd's rule: unsubscribing from one brand does not stop the others). Mark our copy
+// as that brand only, and lift the Keystone / Boreal Financial opt-outs it caused, unless something else still applies
+// (a bounce, a spam report, an unsubscribe from that business).
+router.post("/suppressions/brand-only", safeHandler(async (req, res) => {
+  const brand = String(req.body?.brand ?? "").toUpperCase();
+  if (!["BI", "KS", "BF", "SLF"].includes(brand)) return res.status(400).json({ ok: false, error: "bad_brand" });
+  const emails = Array.from(new Set((Array.isArray(req.body?.emails) ? req.body.emails : [])
+    .map((e: unknown) => String(e ?? "").trim().toLowerCase()).filter((e: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))).slice(0, 2000);
+  if (!emails.length) return res.json({ ok: true, marked: 0, released: 0 });
+  const marked = await pool.query(
+    `UPDATE email_suppressions SET brands = ARRAY[$2]::text[]
+      WHERE email = ANY($1::text[]) AND brands IS NULL AND reason IN ('unsubscribe', 'group_unsubscribe', 'sendgrid_unsubscribe')`,
+    [emails, brand],
+  );
+  const released = await pool.query(
+    `UPDATE contacts c SET marketing_opt_out = false, updated_at = now()
+      WHERE c.marketing_opt_out = true
+        AND (lower(btrim(coalesce(c.email, ''))) = ANY($1::text[]) OR lower(btrim(coalesce(c.secondary_email, ''))) = ANY($1::text[]))
+        AND NOT EXISTS (SELECT 1 FROM email_suppressions s
+                         WHERE s.email IN (lower(btrim(coalesce(c.email, ''))), lower(btrim(coalesce(c.secondary_email, '')))) AND s.email <> ''
+                           AND (s.brands IS NULL OR coalesce(c.silo, 'BF') = ANY (s.brands)))
+      RETURNING c.id`,
+    [emails],
+  );
+  console.log("[service] brand-only unsubscribes", { brand, emails: emails.length, marked: marked.rowCount, released: released.rowCount });
+  return res.json({ ok: true, marked: marked.rowCount ?? 0, released: released.rowCount ?? 0 });
+}));
+
 router.post("/pgi-rep-agreement", safeHandler(async (req, res) => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   const fullName = repStr(b.fullName, 120);
