@@ -268,18 +268,32 @@ router.get("/mail/replies", safeHandler(async (req: any, res: any) => {
   const since = Number.isNaN(sinceRaw.getTime()) ? new Date(Date.now() - 24 * 3_600_000) : sinceRaw;
   const u = await pool.query<{ id: string }>(
     `SELECT id::text AS id FROM users WHERE lower(email) = $1 AND o365_refresh_token IS NOT NULL LIMIT 1`, [mailbox]);
-  if (!u.rows[0]) return res.json({ ok: true, connected: false, replies: [] });
+  // BF_SERVER_AUTO_REPLY_REFERRALS_v1 - a shared mailbox (info@, sales@...) is read through a connected Admin, the way
+  // the CRM email flows already do; before, a shared reply-to mailbox always came back "not connected".
+  const reader = u.rows[0] ?? (await pool.query<{ id: string }>(
+    `SELECT id::text AS id FROM users WHERE o365_refresh_token IS NOT NULL AND upper(coalesce(role, '')) = 'ADMIN' ORDER BY updated_at DESC NULLS LAST LIMIT 1`,
+  )).rows[0];
+  if (!reader) return res.json({ ok: true, connected: false, replies: [] });
   const { getGraphForUser } = await import("../modules/o365/graphClient.js");
-  const graph = await getGraphForUser(pool as any, u.rows[0].id);
+  const graph = await getGraphForUser(pool as any, reader.id);
   if (!graph) return res.json({ ok: true, connected: false, replies: [] });
-  const select = encodeURIComponent("from,receivedDateTime");
+  const base = u.rows[0] ? "/me" : `/users/${encodeURIComponent(mailbox)}`;
+  const select = encodeURIComponent("from,receivedDateTime,subject,body");
   const filter = encodeURIComponent(`receivedDateTime gt ${since.toISOString()}`);
   const orderby = encodeURIComponent("receivedDateTime asc");
-  const resp = await graph.fetch(`/me/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=200`);
+  const resp = await graph.fetch(`${base}/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=200`,
+    { headers: { Prefer: 'outlook.body-content-type="text"' } });
   if (!resp.ok) return res.status(502).json({ ok: false, error: `graph_${resp.status}` });
-  const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string }> };
+  const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string; subject?: string; body?: { content?: string } }> };
+  const { parseAutoReply } = await import("../services/email/autoReplyReferrals.js");
+  // Still never the message itself: the sender, the time, and for an auto-reply only whether they have left and which
+  // colleagues at the same company it names.
   const replies = (data.value ?? [])
-    .map((m) => ({ from: String(m.from?.emailAddress?.address ?? "").trim().toLowerCase(), at: m.receivedDateTime ?? null }))
+    .map((m) => {
+      const from = String(m.from?.emailAddress?.address ?? "").trim().toLowerCase();
+      const info = parseAutoReply(String(m.subject ?? ""), String(m.body?.content ?? ""), from);
+      return { from, at: m.receivedDateTime ?? null, ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
+    })
     .filter((m) => m.from && m.from !== mailbox && m.at);
   return res.json({ ok: true, connected: true, replies });
 }));
