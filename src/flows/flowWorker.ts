@@ -44,7 +44,7 @@ async function timeline(db: Db, contactId: string, type: string, payload: Record
 export async function stopRepliedMembers(db: Db, deps: FlowDeps, now: Date): Promise<number> {
   if (!deps.replies) return 0;
   let stopped = 0;
-  // BF_SERVER_REPLIES_FROM_MAILBOX_v1 - out-of-office replies go back to the FROM address, not the reply-to, so each flow's
+  // BF_SERVER_REPLIES_FROM_MAILBOX_v1 - out-of-office replies go back to the sending address, not the reply-to, so each flow's
   // sending address is read too (the flow's own from address, else the default sender).
   const fallbackFrom = String(process.env.SENDGRID_FROM ?? "").trim().toLowerCase();
   const boxes = await db.query(
