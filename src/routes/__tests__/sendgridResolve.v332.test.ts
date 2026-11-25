@@ -128,11 +128,11 @@ describe("an unsubscribe is remembered by address", () => {
     expect(log.mock.calls.at(-1)![1]).toMatchObject({ contactsUnresolved: 1, suppressed: 1 });
   });
 
-  it("opts out every contact with the address, leaving Keystone prospects to their own list", async () => {
+  it("opts out every contact with the address, in every business", async () => { // BF_SERVER_UNIVERSAL_SUPPRESSION_v1
     await post([{ email: "ann@acme.test", event: "spamreport", sg_event_id: "s1" }]);
     const sql = String(callsMatching(queryMock, OPT_OUT_ALL)[0]![0]);
     expect(sql).not.toMatch(/LIMIT 1/);
-    expect(sql).toMatch(/coalesce\(silo, 'BF'\) <> 'KS'/);
+    expect(sql).not.toMatch(/<> 'KS'/);
   });
 
   it("does not suppress on an open, a click or a soft bounce", async () => {

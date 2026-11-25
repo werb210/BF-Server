@@ -140,6 +140,8 @@ describe("BF-Server's SendGrid webhook", () => {
     expect(r.status).toBe(200);
     const lookups = callsMatching(h.query, /FROM contacts\s+WHERE lower\(trim\(coalesce\(email/);
     expect(lookups.map((c) => (c[1] as unknown[])[0])).toEqual(["bf@boreal.example"]);
-    expect(callsMatching(h.query, /marketing_opt_out = true/)).toHaveLength(0);
+    // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - a Keystone unsubscribe now goes on the one do-not-email list for every business.
+    expect(callsMatching(h.query, /INSERT INTO email_suppressions/)[0]![1]).toEqual(["shared@both.example", "unsubscribe", "sendgrid_ks"]);
+    expect(callsMatching(h.query, /marketing_opt_out = true/)).toHaveLength(1);
   });
 });
