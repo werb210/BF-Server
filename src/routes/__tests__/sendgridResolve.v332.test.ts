@@ -122,8 +122,8 @@ describe("an unsubscribe is remembered by address", () => {
   it("records the address even when no contact matches, so a later import cannot email it", async () => {
     const res = await post([{ email: "Stranger@nowhere.test", event: "unsubscribe", sg_event_id: "u1" }]);
     expect(res.status).toBe(200);
-    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["stranger@nowhere.test", "unsubscribe"]);
-    expect(callsMatching(queryMock, OPT_OUT_ALL)[0]![1]).toEqual(["stranger@nowhere.test"]);
+    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["stranger@nowhere.test", "unsubscribe", ["BF"]]); // BF_SERVER_BRAND_UNSUBSCRIBES_v1 - Boreal Financial only
+    expect(callsMatching(queryMock, OPT_OUT_ALL)[0]![1]).toEqual(["stranger@nowhere.test", "BF"]);
     expect(callsMatching(queryMock, TIMELINE)).toHaveLength(0);
     expect(log.mock.calls.at(-1)![1]).toMatchObject({ contactsUnresolved: 1, suppressed: 1 });
   });
@@ -142,7 +142,7 @@ describe("an unsubscribe is remembered by address", () => {
 
   it("does suppress on a hard bounce", async () => {
     await post([{ email: "gone@acme.test", event: "bounce", type: "bounce" }]);
-    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["gone@acme.test", "bounce"]);
+    expect(callsMatching(queryMock, SUPPRESS)[0]![1]).toEqual(["gone@acme.test", "bounce", null]); // every brand
   });
 });
 
