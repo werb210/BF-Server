@@ -78,7 +78,8 @@ export async function listFlowCollateral(silo: string): Promise<Array<{ id: stri
 }
 
 /** Who has emailed a mailbox since a time: a staff member's own mailbox, else a shared mailbox read by a connected Admin. */
-export async function mailboxReplies(mailbox: string, since: Date): Promise<{ connected: boolean; replies: Array<{ from: string; at: string }> }> {
+export type MailboxReply = { from: string; at: string; auto_reply?: boolean; left?: boolean; referrals?: Array<{ email: string; name: string | null; phone: string | null }> };
+export async function mailboxReplies(mailbox: string, since: Date): Promise<{ connected: boolean; replies: MailboxReply[] }> {
   const box = String(mailbox ?? "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(box)) return { connected: false, replies: [] };
   const own = await pool.query<{ id: string }>(`SELECT id::text AS id FROM users WHERE lower(email) = $1 AND o365_refresh_token IS NOT NULL LIMIT 1`, [box]);
@@ -90,14 +91,22 @@ export async function mailboxReplies(mailbox: string, since: Date): Promise<{ co
   const graph = await getGraphForUser(pool as any, reader.id);
   if (!graph) return { connected: false, replies: [] };
   const base = own.rows[0] ? "/me" : `/users/${encodeURIComponent(box)}`;
-  const select = encodeURIComponent("from,receivedDateTime");
+  const select = encodeURIComponent("from,receivedDateTime,subject,body");
   const filter = encodeURIComponent(`receivedDateTime gt ${since.toISOString()}`);
   const orderby = encodeURIComponent("receivedDateTime asc");
-  const resp = await graph.fetch(`${base}/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=200`);
+  // BF_SERVER_REPLIES_ALL_FOLDERS_v1 - every folder (a reply already filed or deleted still counts), and auto-replies are
+  // read for "has left" and the colleagues they name.
+  const resp = await graph.fetch(`${base}/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=500`,
+    { headers: { Prefer: 'outlook.body-content-type="text"' } });
   if (!resp.ok) throw new Error(`graph_${resp.status}`);
-  const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string }> };
+  const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string; subject?: string; body?: { content?: string } }> };
+  const { parseAutoReply } = await import("../services/email/autoReplyReferrals.js");
   const replies = (data.value ?? [])
-    .map((x) => ({ from: String(x.from?.emailAddress?.address ?? "").trim().toLowerCase(), at: String(x.receivedDateTime ?? "") }))
+    .map((x) => {
+      const from = String(x.from?.emailAddress?.address ?? "").trim().toLowerCase();
+      const info = parseAutoReply(String(x.subject ?? ""), String(x.body?.content ?? ""), from);
+      return { from, at: String(x.receivedDateTime ?? ""), ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
+    })
     .filter((x) => x.from && x.from !== box && x.at);
   return { connected: true, replies };
 }

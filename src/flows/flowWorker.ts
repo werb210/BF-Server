@@ -9,7 +9,7 @@ import {
   FLOW_WINDOW, dailyNewCap, endsFirstRoundUnopened, secondAddressStartAt, flowJobId, htmlToText, isFlowKey, nextAfterSend, onClick, onOpen, withFooter,
   type Click, type FlowKey, type Track,
 } from "./flowEngine.js";
-import { loadFlowAttachments, sendFlowEmail, mailboxReplies, type FlowAttachment } from "./flowSend.js";
+import { loadFlowAttachments, sendFlowEmail, mailboxReplies, type FlowAttachment, type MailboxReply } from "./flowSend.js";
 import { mergeFields } from "../services/sendgridService.js";
 import { logError } from "../observability/logger.js";
 
@@ -17,7 +17,7 @@ type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 export type FlowDeps = {
   send: (m: { to: string; subject: string; html: string; text: string; fromName: string; fromEmail?: string | null; replyTo?: string | null; customArgs: Record<string, string>; attachments?: FlowAttachment[] }) => Promise<{ ok: boolean; error?: string }>;
   attachments?: (ids: unknown, silo: string) => Promise<FlowAttachment[]>;
-  replies?: (mailbox: string, since: Date) => Promise<{ connected: boolean; replies: Array<{ from: string; at: string }> }>;
+  replies?: (mailbox: string, since: Date) => Promise<{ connected: boolean; replies: MailboxReply[] }>;
 };
 const liveDeps: FlowDeps = {
   send: (m) => sendFlowEmail(m),
@@ -44,11 +44,20 @@ async function timeline(db: Db, contactId: string, type: string, payload: Record
 export async function stopRepliedMembers(db: Db, deps: FlowDeps, now: Date): Promise<number> {
   if (!deps.replies) return 0;
   let stopped = 0;
+  // BF_SERVER_REPLIES_FROM_MAILBOX_v1 - out-of-office replies go back to the sending address, not the reply-to, so each flow's
+  // sending address is read too (the flow's own from address, else the default sender).
+  const fallbackFrom = String(process.env.SENDGRID_FROM ?? "").trim().toLowerCase();
   const boxes = await db.query(
-    `SELECT lower(btrim(f.reply_to)) AS mailbox, min(m.first_sent_at) AS since
-       FROM crm_flows f JOIN crm_flow_members m ON m.flow_id = f.id
-      WHERE f.status = 'active' AND coalesce(btrim(f.reply_to), '') <> '' AND m.status IN ('active', 'done') AND m.first_sent_at IS NOT NULL
-      GROUP BY 1`,
+    `SELECT mailbox, min(since) AS since FROM (
+       SELECT lower(btrim(f.reply_to)) AS mailbox, m.first_sent_at AS since
+         FROM crm_flows f JOIN crm_flow_members m ON m.flow_id = f.id
+        WHERE f.status = 'active' AND coalesce(btrim(f.reply_to), '') <> '' AND m.status IN ('active', 'done') AND m.first_sent_at IS NOT NULL
+       UNION ALL
+       SELECT lower(btrim(coalesce(nullif(btrim(f.from_email), ''), $1))), m.first_sent_at
+         FROM crm_flows f JOIN crm_flow_members m ON m.flow_id = f.id
+        WHERE f.status = 'active' AND m.status IN ('active', 'done') AND m.first_sent_at IS NOT NULL
+     ) x WHERE coalesce(mailbox, '') <> '' GROUP BY 1`,
+    [fallbackFrom],
   );
   for (const b of boxes.rows) {
     const since = new Date(Math.max(new Date(b.since).getTime(), now.getTime() - 14 * 86_400_000));
@@ -56,13 +65,18 @@ export async function stopRepliedMembers(db: Db, deps: FlowDeps, now: Date): Pro
     try { res = await deps.replies(b.mailbox, since); }
     catch (err) { console.warn("[flows] replies read failed", { mailbox: b.mailbox, message: (err as Error)?.message }); continue; }
     for (const rep of res.replies) {
+      if (rep.auto_reply) await addCrmReferrals(db, rep);
+      // An out-of-office is not an answer: the person is only away, so their emails carry on. A real reply, or an automatic
+      // one saying they have left, stops them.
+      if (rep.auto_reply && !rep.left) continue;
       const r = await db.query(
         `UPDATE crm_flow_members m SET status = 'stopped', stop_reason = 'replied', next_key = NULL, next_at = NULL, updated_at = now()
            FROM crm_flows f
-          WHERE f.id = m.flow_id AND lower(btrim(f.reply_to)) = $1 AND m.email = $2 AND m.status IN ('active', 'done')
+          WHERE f.id = m.flow_id AND $1 IN (lower(btrim(coalesce(f.reply_to, ''))), lower(btrim(coalesce(nullif(btrim(f.from_email), ''), $4))))
+            AND m.email = $2 AND m.status IN ('active', 'done')
             AND m.first_sent_at IS NOT NULL AND m.first_sent_at < $3::timestamptz AND coalesce(m.stop_reason, '') <> 'replied'
           RETURNING m.contact_id, f.name`,
-        [b.mailbox, rep.from, rep.at],
+        [b.mailbox, rep.from, rep.at, fallbackFrom],
       );
       for (const row of r.rows) {
         stopped += 1;
@@ -71,6 +85,50 @@ export async function stopRepliedMembers(db: Db, deps: FlowDeps, now: Date): Pro
     }
   }
   return stopped;
+}
+
+/** BF_SERVER_REPLIES_FROM_MAILBOX_v1 - the colleagues an auto-reply names become contacts in the same CRM, at the same
+ *  company, with the same tags, so they join the same flow on its next hourly pass. A colleague already on file under another
+ *  address gets this one as their second address. Records only - nobody is emailed from here. */
+export async function addCrmReferrals(db: Db, rep: MailboxReply): Promise<number> {
+  const src = (await db.query(
+    `SELECT c.id, c.silo, c.company_id, c.company_name, c.tags, c.address_country, c.name
+       FROM contacts c JOIN crm_flow_members m ON m.contact_id = c.id
+      WHERE lower(m.email) = $1 AND c.merged_into_id IS NULL ORDER BY m.created_at LIMIT 1`, [rep.from])).rows[0];
+  if (!src) return 0;
+  let added = 0;
+  for (const ref of (rep.referrals ?? []).slice(0, 5)) {
+    const email = String(ref.email ?? "").trim().toLowerCase();
+    if (!email) continue;
+    const exists = await db.query(
+      `SELECT 1 FROM contacts WHERE silo = $1 AND merged_into_id IS NULL AND (lower(btrim(email)) = $2 OR lower(btrim(coalesce(secondary_email, ''))) = $2) LIMIT 1`,
+      [src.silo, email]);
+    if (exists.rowCount) continue;
+    if (ref.name) {
+      const same = await db.query(
+        `UPDATE contacts SET secondary_email = $3, updated_at = now()
+          WHERE id = (SELECT id FROM contacts WHERE silo = $1 AND merged_into_id IS NULL AND lower(btrim(coalesce(company_name, ''))) = lower(btrim($4))
+                       AND lower(btrim(name)) = lower(btrim($2)) ORDER BY created_at LIMIT 1)
+            AND coalesce(btrim(secondary_email), '') = '' RETURNING id`,
+        [src.silo, ref.name, email, src.company_name ?? ""]);
+      if (same.rowCount) continue;
+    }
+    const name = ref.name || email.split("@")[0]!.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const [first, ...rest] = name.split(/\s+/);
+    const tags = Array.from(new Set([...(src.tags ?? []), "referred by auto-reply"]));
+    const ins = await db.query(
+      `INSERT INTO contacts (id, name, first_name, last_name, email, company_id, company_name, address_country, tags, silo, role, status)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::uuid, $6, $7, $8::text[], $9, 'other', 'prospect') RETURNING id`,
+      [name, first || null, rest.join(" ") || null, email, src.company_id, src.company_name, src.address_country, tags, src.silo]);
+    added += ins.rowCount ?? 0;
+  }
+  const stillActive = rep.left && !added ? (await db.query(`SELECT 1 FROM crm_flow_members WHERE lower(email) = $1 AND status IN ('active', 'queued') LIMIT 1`, [rep.from])).rowCount : 0;
+  if (added || stillActive) { // a "has left" note once, while their flow is still running
+    await timeline(db, src.id, "flow_auto_reply", { body: rep.left
+      ? `Automatic reply says they have left${added ? `; added ${added} colleague(s) it named` : ""}.`
+      : `Automatic reply named ${added} colleague(s); they were added as contacts.`, referrals: rep.referrals ?? [] });
+  }
+  return added;
 }
 
 type MemberRow = { id: string; flow_id: string; contact_id: string; track: Track; sent_keys: string[]; last_sent_at: Date | null };

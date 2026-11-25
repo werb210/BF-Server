@@ -115,4 +115,29 @@ describe("CRM flows", () => {
     expect(await startSecondRound(db as any, { id: "m1", flow_id: FLOW, contact_id: CONTACT, secondary_email: "ANN@example.com" }, "ann@example.com", new Date())).toBe(false);
     expect(await startSecondRound(db as any, { id: "m1", flow_id: FLOW, contact_id: CONTACT, secondary_email: null }, "ann@example.com", new Date())).toBe(false);
   });
+
+  // BF_SERVER_REPLIES_FROM_MAILBOX_v1
+  it("reads the sending mailbox, keeps emailing someone who is only away, and adds the colleague they name", async () => {
+    const { stopRepliedMembers } = await import("../flowWorker.js");
+    const calls: Array<[string, any[]]> = [];
+    const db = { query: vi.fn(async (sql: string, params: any[] = []) => {
+      calls.push([sql, params]);
+      if (/SELECT mailbox, min\(since\)/.test(sql)) return { rows: [{ mailbox: "info@boreal.financial", since: "2026-11-20T00:00:00Z" }], rowCount: 1 };
+      if (/FROM contacts c JOIN crm_flow_members m/.test(sql)) return { rows: [{ id: "c1", silo: "KS", company_id: null, company_name: "Dakota", tags: ["broker"], address_country: "US", name: "Emily S" }], rowCount: 1 };
+      if (/SET status = 'stopped'/.test(sql)) return { rows: [{ contact_id: "c2", name: "Brokers" }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    }) };
+    const replies = vi.fn(async () => ({ connected: true, replies: [
+      { from: "emily@dakota.com", at: "2026-11-25T18:49:00Z", auto_reply: true, left: false, referrals: [{ email: "roxi@dakota.com", name: "Roxi Pfliiger", phone: null }] },
+      { from: "ann@bank.com", at: "2026-11-25T18:50:00Z" },
+    ] }));
+    const n = await stopRepliedMembers(db as any, { send: vi.fn(), replies } as any, new Date("2026-11-25T19:00:00Z"));
+    expect(replies).toHaveBeenCalledWith("info@boreal.financial", expect.any(Date));
+    expect(calls.filter(([s]) => /SET status = 'stopped'/.test(s)).map(([, p]) => p[1])).toEqual(["ann@bank.com"]);
+    expect(n).toBe(1);
+    const ins = calls.find(([s]) => /INSERT INTO contacts/.test(s))!;
+    expect(ins[1].slice(0, 4)).toEqual(["Roxi Pfliiger", "Roxi", "Pfliiger", "roxi@dakota.com"]);
+    expect(ins[1][7]).toEqual(["broker", "referred by auto-reply"]);
+    expect(ins[1][8]).toBe("KS");
+  });
 });
