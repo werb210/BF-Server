@@ -61,6 +61,14 @@ export async function forwardToBi(raw: Buffer, sig: string, ts: string, fetchImp
   }
 }
 
+/** Which brand an email event belongs to: a CRM flow's own business, else Boreal Financial. */
+async function eventBrand(ev: any): Promise<string> {
+  const ref = parseFlowJobId(ev?.job_id);
+  if (!ref) return "BF";
+  const r = await pool.query<{ silo: string }>(`SELECT silo FROM crm_flows WHERE id = $1::uuid`, [ref.flowId]);
+  return String(r.rows[0]?.silo ?? "BF").toUpperCase();
+}
+
 function isSuppressEvent(event: string, ev: any): boolean {
   if (SUPPRESS.has(event)) return true;
   if (event === "bounce" && String(ev?.type ?? "bounce") === "bounce") return true; // hard bounce only
@@ -131,10 +139,13 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       // on, a Boreal contact who happens to share the address.
       const otherSender = Boolean(ev?.ks_mkt_send_id || ev?.ks_mkt === "1" || ev?.ks_mkt_test === "1" || isBiEvent(ev)); // BF_SERVER_BI_SENDGRID_FORWARD_v1
       if (otherSender) {
-        // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - an unsubscribe, spam report or hard bounce from Keystone or Boreal Risk
-        // Management mail is still remembered here, so no business emails that address again. Nothing else is touched.
+        // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - a spam report or hard bounce from Keystone or Boreal Risk Management mail is
+        // still remembered here, so no business emails that address again. Nothing else is touched.
         const otherEmail = String(ev?.email || "").trim().toLowerCase();
-        if (otherEmail && ev?.ks_mkt_test !== "1" && isSuppressEvent(String(ev?.event || ""), ev)) {
+        // BF_SERVER_BRAND_UNSUBSCRIBES_v1 - unsubscribing from one brand does not stop the others (Todd's rule), so only a
+        // hard bounce or a spam complaint from another brand's mail goes on the shared list; their unsubscribes do not.
+        const otherEvent = String(ev?.event || "");
+        if (otherEmail && ev?.ks_mkt_test !== "1" && otherEvent !== "unsubscribe" && otherEvent !== "group_unsubscribe" && isSuppressEvent(otherEvent, ev)) {
           await pool.query(
             `INSERT INTO email_suppressions (email, reason, source) VALUES ($1, $2, $3)
              ON CONFLICT (email) DO UPDATE SET last_seen_at = now(), events = email_suppressions.events + 1`,
@@ -168,16 +179,23 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       // BF_SERVER_v945_EMAIL_SUPPRESSIONS - an unsubscribe, spam report or hard bounce is remembered by address, whether
       // or not a contact matched, and every contact with that address is opted out (not only the one matched below).
       if (email && isSuppressEvent(event, ev)) {
+        // BF_SERVER_BRAND_UNSUBSCRIBES_v1 - an unsubscribe stops only the brand whose email it came from (a Keystone flow
+        // email stops Keystone, anything else Boreal Financial); a bounce or spam complaint stops every brand.
+        const brand = event === "unsubscribe" || event === "group_unsubscribe" ? await eventBrand(ev) : null;
         await pool.query(
-          `INSERT INTO email_suppressions (email, reason, source) VALUES ($1, $2, 'sendgrid')
-           ON CONFLICT (email) DO UPDATE SET last_seen_at = now(), events = email_suppressions.events + 1`,
-          [email, event],
+          `INSERT INTO email_suppressions (email, reason, source, brands) VALUES ($1, $2, 'sendgrid', $3::text[])
+           ON CONFLICT (email) DO UPDATE SET last_seen_at = now(), events = email_suppressions.events + 1,
+             reason = CASE WHEN EXCLUDED.brands IS NULL THEN EXCLUDED.reason ELSE email_suppressions.reason END,
+             brands = CASE WHEN email_suppressions.brands IS NULL OR EXCLUDED.brands IS NULL THEN NULL
+                           ELSE ARRAY(SELECT DISTINCT unnest(email_suppressions.brands || EXCLUDED.brands)) END`,
+          [email, event, brand ? [brand] : null],
         );
         await pool.query(
           `UPDATE contacts SET marketing_opt_out = true, updated_at = now()
-            WHERE marketing_opt_out = false -- BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - every silo, Keystone included
+            WHERE marketing_opt_out = false
+              AND ($2::text IS NULL OR coalesce(silo, 'BF') = $2)
               AND (lower(trim(coalesce(email, ''))) = $1 OR lower(trim(coalesce(secondary_email, ''))) = $1)`,
-          [email],
+          [email, brand],
         );
         suppressed += 1;
       }

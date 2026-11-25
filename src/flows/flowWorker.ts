@@ -179,11 +179,12 @@ export async function startNewPeople(db: Db, now: Date): Promise<number> {
 
 /** BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - one list for every business: an address that unsubscribed, bounced or complained
  *  anywhere (email_suppressions), or a contact opted out, is never emailed by a flow. */
-export async function isSuppressed(db: Db, contactId: string, email: string): Promise<boolean> {
+export async function isSuppressed(db: Db, contactId: string, email: string, silo = "BF"): Promise<boolean> {
+  // BF_SERVER_BRAND_UNSUBSCRIBES_v1 - an unsubscribe from another brand does not stop this flow; bounces and spam do.
   const r = await db.query(
-    `SELECT 1 WHERE EXISTS (SELECT 1 FROM email_suppressions WHERE lower(email) = lower($2))
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM email_suppressions WHERE lower(email) = lower($2) AND (brands IS NULL OR $3 = ANY (brands)))
         OR EXISTS (SELECT 1 FROM contacts WHERE id = $1::uuid AND marketing_opt_out = true)`,
-    [contactId, email],
+    [contactId, email, String(silo ?? "BF").toUpperCase()],
   );
   return (r.rowCount ?? 0) > 0;
 }
@@ -211,7 +212,7 @@ export async function sendDue(db: Db, deps: FlowDeps, now: Date): Promise<{ sent
     const key = row.next_key as string;
     const to = String(row.contact_email ?? "").trim();
     if (!to || !to.includes("@")) { await stop(row.id, "no_email"); continue; }
-    if (await isSuppressed(db, row.contact_id, to)) { await stop(row.id, "unsubscribed_or_bounced"); continue; }
+    if (await isSuppressed(db, row.contact_id, to, row.silo)) { await stop(row.id, "unsubscribed_or_bounced"); continue; }
     const content = isFlowKey(key) ? (row.emails ?? {})[key] : null;
     if (!content?.subject || !content?.body) { await stop(row.id, "no_email_wording"); continue; }
     const full = String(row.full_name ?? "").trim();

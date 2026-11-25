@@ -61,10 +61,17 @@ describe("BI email events are passed to BI-Server", () => {
 
   // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - one do-not-email list: a Boreal Risk Management unsubscribe is remembered here
   // too (suppression list + opt-out), but nothing else about the event is written on the Boreal side.
-  it("forwards bi_mkt events and remembers a BI unsubscribe on the shared do-not-email list", async () => {
+  // BF_SERVER_BRAND_UNSUBSCRIBES_v1 - a BI unsubscribe does not stop Boreal Financial mail; a BI hard bounce does.
+  it("forwards bi_mkt events and never opts a Boreal contact out on a BI unsubscribe", async () => {
     await post([{ email: "x@y.test", event: "unsubscribe", bi_mkt: "1" }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(callsMatching(queryMock, /INSERT INTO email_suppressions/)[0]![1]).toEqual(["x@y.test", "unsubscribe", "sendgrid_brm"]);
+    expect(callsMatching(queryMock, /INSERT INTO email_suppressions/)).toHaveLength(0);
+    expect(callsMatching(queryMock, /marketing_opt_out = true/)).toHaveLength(0);
+  });
+
+  it("remembers a BI hard bounce on the shared do-not-email list", async () => {
+    await post([{ email: "x@y.test", event: "bounce", type: "bounce", bi_mkt: "1" }]);
+    expect(callsMatching(queryMock, /INSERT INTO email_suppressions/)[0]![1]).toEqual(["x@y.test", "bounce", "sendgrid_brm"]);
     expect(callsMatching(queryMock, /marketing_opt_out = true/)).toHaveLength(1);
     expect(callsMatching(queryMock, /SELECT id FROM contacts/)).toHaveLength(0);
   });

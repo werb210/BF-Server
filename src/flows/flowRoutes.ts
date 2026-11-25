@@ -51,7 +51,7 @@ export function audienceSql(market: string): string {
      AND c.email IS NOT NULL AND position('@' in c.email) > 1 AND c.marketing_opt_out = false
      AND EXISTS (SELECT 1 FROM unnest(coalesce(c.tags, '{}')) t WHERE lower(btrim(t)) = ANY($2::text[]))
      ${marketSql}
-     AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE lower(s.email) = lower(btrim(c.email)))`;
+     AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE lower(s.email) = lower(btrim(c.email)) AND (s.brands IS NULL OR $1 = ANY (s.brands)))`; // BF_SERVER_BRAND_UNSUBSCRIBES_v1
 }
 
 const COUNTS_SQL = `
