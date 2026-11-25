@@ -11,6 +11,7 @@ import {
 } from "./flowEngine.js";
 import { loadFlowAttachments, sendFlowEmail, mailboxReplies, type FlowAttachment } from "./flowSend.js";
 import { mergeFields } from "../services/sendgridService.js";
+import { logError } from "../observability/logger.js";
 
 type Db = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 export type FlowDeps = {
@@ -280,7 +281,7 @@ async function tick(pool: Pool): Promise<void> {
       const result = await runFlowTick(client, liveDeps, new Date(), poll);
       if (Object.values(result).some((n) => n > 0)) console.info("[flows] tick", result);
     } finally {
-      await client.query(`SELECT pg_advisory_unlock($1)`, [LOCK_KEY]).catch(() => undefined);
+      await client.query(`SELECT pg_advisory_unlock($1)`, [LOCK_KEY]).catch((err) => { logError("crm_flow_unlock_failed", { message: err?.message }); });
     }
   } catch (err) {
     console.error("[flows] tick failed", { message: (err as Error)?.message });
