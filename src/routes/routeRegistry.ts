@@ -28,6 +28,7 @@ import portalErrorsRoutes from "./portalErrors.js";
 import communicationsRoutes from "./communications.js";
 import companiesRoutes from "./companies.js";
 import crmRoutes from "./crm.js";
+import crmFlowRoutes from "../flows/flowRoutes.js"; // BF_SERVER_CRM_FLOWS_v1
 import creditRoutes from "./credit.js";
 import creditSummaryRoutes from "./creditSummary.js";
 import dashboardRoutes from "./dashboard.js";
@@ -717,6 +718,7 @@ export function registerApiRouteMounts(app: Router): void {
 
   mount(app, "/ocr/admin", Router().use(requireAuth, ocrAdminRoutes));
   mount(app, "/automations", Router().use(requireAuth, automationRoutes)); // BF_SERVER_AUTOMATION_ENGINE_v1
+  mount(app, "/crm/flows", Router().use(requireAuth, crmFlowRoutes)); // BF_SERVER_CRM_FLOWS_v1 - before /crm
   mount(app, "/push", Router().use(requireAuthAllowClient, clientPushRoutes)); // BF_SERVER_v784_STAFF_ONLY_AUTH - applicant device registers its own token // BF_SERVER_CLIENT_PUSH_TOKEN_v1
 
   API_ROUTE_MOUNTS.forEach((entry) => {

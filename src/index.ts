@@ -506,6 +506,16 @@ export async function start(): Promise<void> {
       console.error("[startup] shared-contacts-sync worker failed to start:", err);
     }
 
+    // BF_SERVER_CRM_FLOWS_v1 - Boreal Financial and Keystone email flows.
+    try {
+      const { startCrmFlowWorker } = await import("./flows/flowWorker.js");
+      await workerStagger();
+      startCrmFlowWorker(pool as any);
+      console.log("[startup] crm-flows worker started");
+    } catch (err) {
+      console.error("[startup] crm-flows worker failed to start:", err);
+    }
+
     // BF_SERVER_PGI_MIRROR_LABELS_v357 - one catch-up pass a minute after boot.
     const pgiBackfill = setTimeout(() => {
       void import("./services/biDocMirror.js")

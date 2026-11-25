@@ -7,6 +7,7 @@ import express from "express";
 import crypto from "crypto";
 import { pool } from "../db.js";
 import { safeHandler } from "../middleware/safeHandler.js"; // BF_SERVER_v789_SAFE_HANDLERS
+import { parseFlowJobId } from "../flows/flowEngine.js"; // BF_SERVER_CRM_FLOWS_v1
 
 const router = Router();
 router.use(express.raw({ type: "*/*", limit: "2mb" }));
@@ -184,6 +185,15 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       // BF_SERVER_v786_WORKFLOW_GRAPH - email.opened / clicked / bounced / unsubscribed automation triggers.
       const automationType = SENDGRID_TRIGGERS[event];
       if (automationType) void import("../modules/automation/automationEngine.js").then((m) => m.emitAutomationEvent(automationType, { contactId: String(cid), data: { email, url: clickedUrl } })).catch((err: any) => console.warn("[automation] emit failed", err?.message ?? String(err)));
+      // BF_SERVER_CRM_FLOWS_v1 - opens and clicks on email-flow emails move the person along their flow.
+      const flowRef = parseFlowJobId(ev?.job_id);
+      if (flowRef && (event === "open" || event === "click")) {
+        await pool.query(
+          `INSERT INTO crm_flow_events (flow_id, contact_id, email_key, event_type, url, created_at)
+           VALUES ($1::uuid, $2::uuid, $3, $4, $5, to_timestamp($6))`,
+          [flowRef.flowId, cid, flowRef.key, event, clickedUrl, Number(ev?.timestamp) || Date.now() / 1000],
+        ).catch((err: any) => { console.warn("sendgrid_flow_event_failed", { message: err?.message }); });
+      }
       // BF_SERVER_BLOCK_v790 - attribute sequence email opens/clicks.
       const seqSendId = ev?.seq_send_id ? String(ev.seq_send_id) : null;
       if (seqSendId && event === "open") await pool.query(`UPDATE sequence_sends SET opened_at = COALESCE(opened_at, now()) WHERE id = $1`, [seqSendId]).catch((err: any) => { console.warn("sendgrid_seq_open_failed", { seqSendId, message: err?.message }); });
