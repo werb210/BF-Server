@@ -281,7 +281,9 @@ router.get("/mail/replies", safeHandler(async (req: any, res: any) => {
   const select = encodeURIComponent("from,receivedDateTime,subject,body");
   const filter = encodeURIComponent(`receivedDateTime gt ${since.toISOString()}`);
   const orderby = encodeURIComponent("receivedDateTime asc");
-  const resp = await graph.fetch(`${base}/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=200`,
+  // BF_SERVER_REPLIES_ALL_FOLDERS_v1 - every folder, so a reply someone already filed or deleted still counts (sent mail is
+  // dropped below: it is from the mailbox itself).
+  const resp = await graph.fetch(`${base}/messages?$select=${select}&$filter=${filter}&$orderby=${orderby}&$top=500`,
     { headers: { Prefer: 'outlook.body-content-type="text"' } });
   if (!resp.ok) return res.status(502).json({ ok: false, error: `graph_${resp.status}` });
   const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string; subject?: string; body?: { content?: string } }> };
