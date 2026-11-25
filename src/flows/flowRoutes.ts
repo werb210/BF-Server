@@ -64,7 +64,8 @@ const COUNTS_SQL = `
          count(m.id) FILTER (WHERE m.track = 'opened')::int AS opened,
          count(m.id) FILTER (WHERE m.track = 'clicked')::int AS clicked,
          count(m.id) FILTER (WHERE m.status = 'stopped')::int AS stopped,
-         COALESCE(sum(cardinality(m.sent_keys)), 0)::int AS emails_sent
+         COALESCE(sum(cardinality(m.sent_keys) + cardinality(m.prior_keys)), 0)::int AS emails_sent, -- BF_SERVER_FLOW_SECOND_ADDRESS_v1
+         count(m.id) FILTER (WHERE m.round >= 2)::int AS second_address
     FROM crm_flows f LEFT JOIN crm_flow_members m ON m.flow_id = f.id
    WHERE f.status <> 'archived' AND f.silo = $1`;
 
