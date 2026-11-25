@@ -128,8 +128,26 @@ router.post("/", safeHandler(async (req: any, res: any) => {
       // BF_SERVER_v865_KS_MARKETING - Keystone marketing email (KS-Ops) shares this SendGrid account. Its events carry
       // ks_mkt / ks_mkt_send_id and are handled by KS-Ops; matching them here by email could opt out, or log activity
       // on, a Boreal contact who happens to share the address.
-      if (ev?.ks_mkt_send_id || ev?.ks_mkt === "1" || ev?.ks_mkt_test === "1") continue;
-      if (isBiEvent(ev)) continue; // BF_SERVER_BI_SENDGRID_FORWARD_v1 - handled by BI-Server
+      const otherSender = Boolean(ev?.ks_mkt_send_id || ev?.ks_mkt === "1" || ev?.ks_mkt_test === "1" || isBiEvent(ev)); // BF_SERVER_BI_SENDGRID_FORWARD_v1
+      if (otherSender) {
+        // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - an unsubscribe, spam report or hard bounce from Keystone or Boreal Risk
+        // Management mail is still remembered here, so no business emails that address again. Nothing else is touched.
+        const otherEmail = String(ev?.email || "").trim().toLowerCase();
+        if (otherEmail && ev?.ks_mkt_test !== "1" && isSuppressEvent(String(ev?.event || ""), ev)) {
+          await pool.query(
+            `INSERT INTO email_suppressions (email, reason, source) VALUES ($1, $2, $3)
+             ON CONFLICT (email) DO UPDATE SET last_seen_at = now(), events = email_suppressions.events + 1`,
+            [otherEmail, String(ev?.event || ""), isBiEvent(ev) ? "sendgrid_brm" : "sendgrid_ks"],
+          );
+          await pool.query(
+            `UPDATE contacts SET marketing_opt_out = true, updated_at = now()
+              WHERE marketing_opt_out = false AND (lower(trim(coalesce(email, ''))) = $1 OR lower(trim(coalesce(secondary_email, ''))) = $1)`,
+            [otherEmail],
+          );
+          suppressed += 1;
+        }
+        continue;
+      }
       const email = String(ev?.email || "").toLowerCase();
       const event = String(ev?.event || "");
       if (event) seenTypes.add(event);
@@ -156,7 +174,7 @@ router.post("/", safeHandler(async (req: any, res: any) => {
         );
         await pool.query(
           `UPDATE contacts SET marketing_opt_out = true, updated_at = now()
-            WHERE marketing_opt_out = false AND coalesce(silo, 'BF') <> 'KS' -- Keystone prospects are a separate sender (KS-Ops)
+            WHERE marketing_opt_out = false -- BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - every silo, Keystone included
               AND (lower(trim(coalesce(email, ''))) = $1 OR lower(trim(coalesce(secondary_email, ''))) = $1)`,
           [email],
         );

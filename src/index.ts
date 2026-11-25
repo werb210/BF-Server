@@ -401,6 +401,10 @@ export async function start(): Promise<void> {
     try { const b = startBookingsWorker(pool); workerStops.push(b.stop); console.log("[startup] bookings worker started"); }
     catch (e: any) { console.error("[startup] bookings worker failed to start", { message: e?.message }); }
 
+    // BF_SERVER_UNIVERSAL_SUPPRESSION_v1 - SendGrid's unsubscribe/bounce lists copied into email_suppressions hourly.
+    try { const { startSendgridSuppressionSync } = await import("./workers/sendgridSuppressionSync.js"); const w = startSendgridSuppressionSync(); workerStops.push(w.stop); console.log("[startup] sendgrid suppression sync started"); }
+    catch (err) { console.error("[startup] sendgrid suppression sync failed to start:", err); }
+
     // BF_SERVER_TEAM_PHASE_C_v671 - Team "Remind me" reminders.
     const { startTeamReminderWorker } = await import("./workers/teamReminderWorker.js");
     await workerStagger();
