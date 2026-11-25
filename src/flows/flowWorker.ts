@@ -255,13 +255,36 @@ export async function sendDue(db: Db, deps: FlowDeps, now: Date): Promise<{ sent
   return out;
 }
 
+let lastAudienceAdd = 0;
+/** Every running flow picks up the people who match it and are not in it yet. */
+export async function addRunningAudiences(db: Db): Promise<number> {
+  const { audienceSql } = await import("./flowRoutes.js");
+  const flows = await db.query(`SELECT id::text AS id, silo, audience_tags, market FROM crm_flows WHERE status = 'active'`);
+  let added = 0;
+  for (const f of flows.rows as Array<{ id: string; silo: string; audience_tags: string[] | null; market: string }>) {
+    const r = await db.query(
+      `INSERT INTO crm_flow_members (flow_id, contact_id, email)
+       SELECT DISTINCT ON (lower(btrim(c.email))) $3::uuid, c.id, lower(btrim(c.email)) ${audienceSql(f.market)}
+          AND NOT EXISTS (SELECT 1 FROM crm_flow_members m WHERE m.flow_id = $3 AND lower(m.email) = lower(btrim(c.email)))
+        ORDER BY lower(btrim(c.email)), c.created_at
+       ON CONFLICT (flow_id, contact_id) DO NOTHING`,
+      [f.silo, (f.audience_tags ?? []).map((t) => String(t).toLowerCase().trim()), f.id],
+    );
+    added += r.rowCount ?? 0;
+  }
+  return added;
+}
+
 export async function runFlowTick(db: Db, deps: FlowDeps, now = new Date(), pollReplies = true): Promise<Record<string, number>> {
   const replied = pollReplies ? await stopRepliedMembers(db, deps, now) : 0;
   const events = await ingestEvents(db);
   const tasks = await createCallTasks(db);
+  // BF_SERVER_CRM_FLOWS_AUTO_ADD_v1 - new people who match a running flow join it by themselves, once an hour.
+  let joined = 0;
+  if (pollReplies && now.getTime() - lastAudienceAdd >= 60 * 60_000) { lastAudienceAdd = now.getTime(); joined = await addRunningAudiences(db); }
   const started = await startNewPeople(db, now);
   const sends = await sendDue(db, deps, now);
-  return { replied, ...events, tasks, started, ...sends };
+  return { replied, ...events, tasks, joined, started, ...sends };
 }
 
 let timer: NodeJS.Timeout | null = null;
