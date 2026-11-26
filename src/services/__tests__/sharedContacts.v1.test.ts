@@ -131,3 +131,15 @@ describe("import preview", () => {
     expect(calls.every((s) => !/INSERT|UPDATE/.test(s))).toBe(true);
   });
 });
+
+describe("Quebec lenders (BF_SERVER_NO_QUEBEC_LENDERS_v1)", () => {
+  it("skips Quebec lenders and banks but keeps Quebec brokers", () => {
+    const { rows, skipped } = toRows([], [
+      { name: "A B", company_name: "Caisse X", email: "a@caissex.ca", address_country: "Canada", address_state: "QC" },
+      { name: "C D", company_name: "Ontario CU", email: "c@ocu.ca", address_country: "Canada", address_state: "ON" },
+    ], "lender");
+    expect(rows.map((r) => r.company)).toEqual(["Ontario CU"]);
+    expect(skipped[0].error).toMatch(/Quebec lender/);
+    expect(toRows([], [{ name: "E F", company_name: "QC Brokers", email: "e@qcb.ca", address_country: "Canada", address_state: "Quebec" }], "broker").rows).toHaveLength(1);
+  });
+});

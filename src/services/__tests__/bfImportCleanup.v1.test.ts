@@ -10,8 +10,11 @@ function fakeDb(tags: string[]) {
     query: vi.fn(async (sql: string, p: unknown[] = []) => {
       calls.push({ sql, p });
       if (/WITH listed AS/.test(sql)) return { rows: tags.map((t) => ({ t })) };
+      if (/DELETE FROM directory_people/.test(sql)) return { rows: [], rowCount: 9 };
+      if (/DELETE FROM directory_orgs/.test(sql)) return { rows: [], rowCount: 3 };
+      if (/^\s*SELECT count\(\*\)::int AS n FROM directory_people p WHERE/.test(sql)) return { rows: [{ n: 9 }] };
+      if (/^\s*SELECT count\(\*\)::int AS n FROM \(SELECT c\.id FROM contacts c WHERE c\.silo = 'BF' AND c\.tags && \$1::text\[\] AND c\.id NOT IN/.test(sql)) return { rows: [{ n: 2 }] };
       if (/^\s*SELECT count\(\*\)::int AS n FROM \(SELECT c\.id FROM contacts c WHERE c\.silo = 'BF' AND c\.tags && \$1/.test(sql)) return { rows: [{ n: 7 }] };
-      if (/^\s*SELECT count\(\*\)::int AS n FROM \(SELECT c\.id FROM contacts c WHERE c\.silo = 'BF' AND c\.tags && \$2/.test(sql)) return { rows: [{ n: 2 }] };
       if (/FROM companies co WHERE co\.silo = 'BF' AND co\.tags && \$1::text\[\] AND co\.tags <@/.test(sql)) return { rows: [{ n: 3 }] };
       if (/co\.tags && \$1::text\[\]$/.test(sql.trim())) return { rows: [{ n: 5 }] };
       if (/FROM directory_brand_status/.test(sql) && /count/.test(sql)) return { rows: [{ n: 4 }] };
@@ -37,7 +40,7 @@ describe("cleanBfImports", () => {
   it("backs up each record before removing it, and strips list tags but keeps lender and broker", async () => {
     const db = fakeDb(TAGS);
     const out = await cleanBfImports(db as any, { preview: false });
-    expect(out).toMatchObject({ contacts_removed: 1, companies_removed: 1, contacts_untagged: 2, companies_untagged: 4, directory_marks_removed: 6 });
+    expect(out).toMatchObject({ quebec_people_removed: 9, quebec_firms_removed: 3, contacts_removed: 1, companies_removed: 1, contacts_untagged: 2, companies_untagged: 4, directory_marks_removed: 6 });
     const deletes = db.calls.filter((c) => /DELETE FROM (contacts|companies)/.test(c.sql));
     expect(deletes).toHaveLength(2);
     for (const d of deletes) expect(d.sql).toMatch(/INSERT INTO bf_import_cleanup_backup/);
@@ -49,6 +52,6 @@ describe("cleanBfImports", () => {
     const db = fakeDb([]);
     const out = await cleanBfImports(db as any, { preview: false });
     expect(out.contacts_removed).toBe(0);
-    expect(db.calls).toHaveLength(1);
+    expect(db.calls.some((c) => /DELETE FROM (contacts|companies)/.test(c.sql))).toBe(false);
   });
 });

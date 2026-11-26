@@ -129,7 +129,14 @@ export function toRows(companies: InCompany[], contacts: InContact[], listKind: 
       research: obj(c.custom_fields), person: null,
     });
   }
-  return { rows, skipped };
+  // BF_SERVER_NO_QUEBEC_LENDERS_v1 - Todd 2026-11-26: no brand markets to a Quebec lender or bank (Keystone markets to
+  // brokers only, PGI doesn't sell in Quebec, BF markets to no imports), so they aren't kept at all.
+  const kept = rows.filter((r, i) => {
+    if (r.kind === "broker" || r.country !== "CA" || !isQuebec(r.region)) return true;
+    skipped.push({ row: i + 1, error: `Quebec ${r.kind}: no brand markets to it.` });
+    return false;
+  });
+  return { rows: kept, skipped };
 }
 
 export async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {

@@ -44,17 +44,42 @@ function untouched(alias: string, col: "contact_id" | "company_id", tables: stri
 export type CleanupResult = {
   preview: boolean; import_tags: string[];
   contacts_removed: number; contacts_untagged: number; companies_removed: number; companies_untagged: number; directory_marks_removed: number;
+  quebec_people_removed: number; quebec_firms_removed: number;
 };
+
+// BF_SERVER_NO_QUEBEC_LENDERS_v1 - no brand markets to a Quebec lender or bank, so they come out of the shared list too.
+const QC_SQL = (a: string) => `${a}.kind <> 'broker' AND ${a}.country = 'CA' AND upper(trim(coalesce(${a}.region, ''))) IN ('QC', 'QUEBEC', 'QUÉBEC', 'PQ')`;
+async function cleanQuebec(db: Q, preview: boolean): Promise<{ people: number; firms: number }> {
+  const firmsSql = `SELECT o.id FROM directory_orgs o WHERE ${QC_SQL("o")}
+                      AND NOT EXISTS (SELECT 1 FROM directory_people p WHERE p.org_id = o.id AND NOT (${QC_SQL("p")}))`;
+  if (preview) {
+    const a = await db.query(`SELECT count(*)::int AS n FROM directory_people p WHERE ${QC_SQL("p")}`);
+    const b = await db.query(`SELECT count(*)::int AS n FROM (${firmsSql}) f`);
+    return { people: a.rows[0]?.n ?? 0, firms: b.rows[0]?.n ?? 0 };
+  }
+  const a = await db.query(
+    `WITH g AS (SELECT p.id FROM directory_people p WHERE ${QC_SQL("p")}),
+          b AS (INSERT INTO bf_import_cleanup_backup (kind, record_id, record) SELECT 'directory_person', p.id, to_jsonb(p) FROM directory_people p WHERE p.id IN (SELECT id FROM g))
+     DELETE FROM directory_people WHERE id IN (SELECT id FROM g) RETURNING id`);
+  const b = await db.query(
+    `WITH g AS (${firmsSql}),
+          b AS (INSERT INTO bf_import_cleanup_backup (kind, record_id, record) SELECT 'directory_org', o.id, to_jsonb(o) FROM directory_orgs o WHERE o.id IN (SELECT id FROM g))
+     DELETE FROM directory_orgs WHERE id IN (SELECT id FROM g) RETURNING id`);
+  return { people: a.rowCount ?? a.rows.length, firms: b.rowCount ?? b.rows.length };
+}
 
 export async function cleanBfImports(db: Q, opts: { preview: boolean }): Promise<CleanupResult> {
   const all = await importTags(db);
   const lists = listTagsOnly(all);
-  const out: CleanupResult = { preview: opts.preview, import_tags: all, contacts_removed: 0, contacts_untagged: 0, companies_removed: 0, companies_untagged: 0, directory_marks_removed: 0 };
+  const out: CleanupResult = { preview: opts.preview, import_tags: all, contacts_removed: 0, contacts_untagged: 0, companies_removed: 0, companies_untagged: 0, directory_marks_removed: 0, quebec_people_removed: 0, quebec_firms_removed: 0 };
+  const qc = await cleanQuebec(db, opts.preview);
+  out.quebec_people_removed = qc.people;
+  out.quebec_firms_removed = qc.firms;
   if (!all.length) return out;
   // Only an import put it there: it carries a list tag, every tag is an import tag, and nothing in BF points at it.
   const onlyImport = (alias: string) => `${alias}.silo = 'BF' AND ${alias}.tags && $1::text[] AND ${alias}.tags <@ $2::text[]`;
   const contactsGone = `SELECT c.id FROM contacts c WHERE ${onlyImport("c")} AND c.merged_into_id IS NULL AND ${untouched("c", "contact_id", CONTACT_ACTIVITY)}`;
-  const contactsKept = `SELECT c.id FROM contacts c WHERE c.silo = 'BF' AND c.tags && $2::text[] AND c.id NOT IN (${contactsGone})`;
+  const contactsKept = `SELECT c.id FROM contacts c WHERE c.silo = 'BF' AND c.tags && $1::text[] AND c.id NOT IN (${contactsGone})`;
   const p = [lists.length ? lists : ["__none__"], all];
 
   if (opts.preview) {
@@ -70,7 +95,7 @@ export async function cleanBfImports(db: Q, opts: { preview: boolean }): Promise
          AND ${untouched("co", "company_id", COMPANY_ACTIVITY.filter((t) => t !== "contacts"))}
          AND NOT EXISTS (SELECT 1 FROM contacts x WHERE x.company_id = co.id AND x.id NOT IN (${contactsGone}))`, p);
     out.companies_removed = c.rows[0]?.n ?? 0;
-    const d = await db.query(`SELECT count(*)::int AS n FROM companies co WHERE co.silo = 'BF' AND co.tags && $1::text[]`, [all]);
+    const d = await db.query(`SELECT count(*)::int AS n FROM companies co WHERE co.silo = 'BF' AND co.tags && $1::text[]`, [p[0]]);
     out.companies_untagged = Math.max(0, (d.rows[0]?.n ?? 0) - out.companies_removed);
     const m = await db.query(
       `SELECT count(*)::int AS n FROM directory_brand_status s WHERE s.brand = 'BF'
