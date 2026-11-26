@@ -5,6 +5,7 @@
 //   BI  Boreal Risk Management (PGI) broker and lender lists (BI-Server list import)
 //   BF  the Boreal Financial CRM (silo BF companies and contacts, tagged; records only) - lenders and banks only
 // Quebec is left out of PGI (the program is not available to Quebec residents). Nothing is emailed or enrolled here.
+import { splitNameTitle } from "./personName.js"; // BF_SERVER_PERSON_NAMES_v1
 import type { Pool, PoolClient } from "pg";
 import { signServiceToken } from "../../auth/serviceTokens.js";
 
@@ -111,11 +112,13 @@ export function toRows(companies: InCompany[], contacts: InContact[], listKind: 
     if (rawEmail && !email) { skipped.push({ row: i + 1, error: `"${rawEmail}" is not an email address.` }); return; }
     const country = countryCode(p.address_country ?? c.address_country);
     named.add(nameKey(company));
+    // BF_SERVER_PERSON_NAMES_v1 - a job title or placeholder in the name column is not a person.
+    const who = splitNameTitle(text(p.name, 200), text(p.job_title, 200));
     rows.push({
       company, website: text(c.website), domain: domainOf(c.website, email), kind: kindOf(p.kind ?? c.kind, listKind), country,
       region: text(p.address_state ?? c.address_state, 60), city: text(c.address_city, 120), phone: text(c.phone, 40),
       address: text(c.address_street, 300), research: obj(c.custom_fields),
-      person: { name: text(p.name, 200), email, phone: text(p.phone, 40), title: text(p.job_title, 200), research: obj(p.custom_fields) },
+      person: who.name || email ? { name: who.name, email, phone: text(p.phone, 40), title: who.title, research: obj(p.custom_fields) } : null,
     });
   });
   for (const c of companies) {
