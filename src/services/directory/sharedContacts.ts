@@ -63,8 +63,8 @@ export function kindOf(v: unknown, fallback: Kind): Kind {
   return fallback;
 }
 
-/** The default routing table (Shared Contact List design; Todd 2026-11-24: no brokers in the Boreal Financial CRM, every
- *  lender and bank in it). Brokers go to Keystone and PGI; lenders and banks to PGI and the Boreal Financial CRM. */
+/** The default routing table. BF_SERVER_NO_IMPORTS_IN_BF_v1 - Todd 2026-11-26: nothing from an imported list goes into
+ *  the Boreal Financial CRM; BF markets to none of them. Brokers go to Keystone and PGI; lenders and banks to PGI only. */
 export function defaultBrands(kind: Kind, country: string | null, region: string | null): Brand[] {
   const out: Brand[] = [];
   const ca = country === "CA", us = country === "US";
@@ -72,9 +72,8 @@ export function defaultBrands(kind: Kind, country: string | null, region: string
   if (kind === "broker") {
     if (ca || us) out.push("KS");
     if (pgi) out.push("BI");
-  } else {
-    if (pgi) out.push("BI");
-    out.push("BF");
+  } else if (pgi) {
+    out.push("BI");
   }
   return out;
 }

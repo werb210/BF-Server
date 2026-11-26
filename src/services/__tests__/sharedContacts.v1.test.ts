@@ -6,17 +6,17 @@ describe("default routing", () => {
   it("sends brokers and lenders to the silos in the design", () => {
     expect(defaultBrands("broker", "CA", "AB")).toEqual(["KS", "BI"]);
     expect(defaultBrands("broker", "US", "TX")).toEqual(["KS", "BI"]);
-    expect(defaultBrands("lender", "CA", "ON")).toEqual(["BI", "BF"]);
-    expect(defaultBrands("bank", "US", "NY")).toEqual(["BI", "BF"]);
+    expect(defaultBrands("lender", "CA", "ON")).toEqual(["BI"]);
+    expect(defaultBrands("bank", "US", "NY")).toEqual(["BI"]);
   });
   it("keeps Quebec out of PGI", () => {
     expect(defaultBrands("broker", "CA", "QC")).toEqual(["KS"]);
-    expect(defaultBrands("lender", "CA", "Quebec")).toEqual(["BF"]);
+    expect(defaultBrands("lender", "CA", "Quebec")).toEqual([]);
   });
   it("a list override only narrows the default", () => {
     expect(brandsFor("broker", "US", "TX", ["BI"])).toEqual(["BI"]);
     expect(brandsFor("bank", "US", "NY", ["KS"])).toEqual([]);
-    expect(brandsFor("bank", "US", "NY", ["BF"])).toEqual(["BF"]);
+    expect(brandsFor("bank", "US", "NY", ["BF"])).toEqual([]);
   });
   it("records the consent basis for the country", () => {
     expect(consentFor("CA", "L")?.consent_type).toBe("implied_publication");
@@ -86,15 +86,17 @@ describe("loading a list", () => {
     expect(db.calls.some((s) => /INSERT INTO contacts[\s\S]*'BF', 'other'/.test(s))).toBe(false);
     expect((out as any).ks_crm).toEqual({ people: 1, errors: 0 });
   });
-  it("puts every lender firm in the BF CRM, with or without a person (BF_SERVER_BF_CRM_LENDER_FIRMS_v1)", async () => {
+  it("never puts an imported firm or person in the BF CRM (BF_SERVER_NO_IMPORTS_IN_BF_v1)", async () => {
     const db = fakeDb();
     const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }));
-    await importSharedList(db as any, { fetch, biUrl: "https://bi", ksOpsUrl: "https://ks", staffToken: "bf" }, {
-      list_name: "Banks", kind: "bank", only: null, created_by: null,
-      companies: [{ name: "Tiny CU", address_country: "US", address_state: "OH" }], contacts: [],
+    const out: any = await importSharedList(db as any, { fetch, biUrl: "https://bi", ksOpsUrl: "https://ks", staffToken: "bf" }, {
+      list_name: "Banks", kind: "bank", only: ["BF", "BI"], created_by: null,
+      companies: [{ name: "Tiny CU", address_country: "US", address_state: "OH" }],
+      contacts: [{ name: "A B", company_name: "Tiny CU", email: "a@tinycu.com" }],
     });
-    const coInserts = db.calls.map((s, i) => [s, db.params[i]] as const).filter(([s]) => s.includes("INSERT INTO companies"));
-    expect(coInserts.map(([, p]) => [p[0], p[8]])).toEqual([["Tiny CU", "BF"]]);
+    expect(db.calls.some((s) => s.includes("INSERT INTO companies"))).toBe(false);
+    expect(db.calls.some((s) => /INSERT INTO contacts[\s\S]*'BF', 'other'/.test(s))).toBe(false);
+    expect(out.routed.BF).toBe(0);
   });
   it("keeps going when one silo fails, and says which", async () => {
     const db = fakeDb();
