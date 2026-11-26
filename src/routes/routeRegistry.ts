@@ -152,6 +152,7 @@ import callQueuesRoutes from "./callQueues.js";
 import callQueueWebhooksRoutes from "./callQueueWebhooks.js";
 // BF_SERVER_v872_DEAL_TOOLS - quotes, forecast, ID verification and payment links.
 import forecastRoutes from "./forecast.js";
+import scoreboardRoutes from "./scoreboard.js"; // BF_SERVER_TV_SCOREBOARD_v1
 import kycRoutes from "./kyc.js";
 import clientKycRoutes from "./clientKyc.js";
 import paymentsRoutes from "./payments.js";
@@ -456,6 +457,7 @@ export const API_ROUTE_MOUNTS: ApiRouteMount[] = [
   { path: "/call-scripts", router: callScriptsRoutes }, // Settings > Call scripts (Admin builds), runs on contacts, applications and calls (staff)
   { path: "/call-queues", router: callQueuesRoutes }, // Settings > Call queues: set-up and live panel (Admin), my availability (staff)
   // BF_SERVER_v872_DEAL_TOOLS
+  { path: "/scoreboard", router: scoreboardRoutes }, // BF_SERVER_TV_SCOREBOARD_v1 - office TVs (screen token) and the Leaderboard report
   { path: "/forecast", router: forecastRoutes }, // weighted commission forecast; a file's expected close date and category
   { path: "/kyc", router: kycRoutes }, // staff ID verification, Admin settings, public signed vendor webhook
   { path: "/client/kyc", router: clientKycRoutes }, // the applicant's own verifications (OTP phone)
