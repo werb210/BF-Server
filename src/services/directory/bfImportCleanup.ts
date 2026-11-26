@@ -33,9 +33,9 @@ function listTagsOnly(tags: string[]): string[] {
   return tags.filter((t) => !KEPT_KIND_TAGS.includes(t.toLowerCase()));
 }
 
-const CONTACT_ACTIVITY = ["applications", "call_logs", "crm_call_log", "crm_email_log", "crm_meetings", "crm_notes", "crm_tasks", "tasks",
+const CONTACT_ACTIVITY = ["applications", "call_logs", "crm_call_log", "crm_email_log", "crm_meetings", "crm_notes", "tasks",
   "sms_campaign_sends", "voicemails", "issues", "contact_documents"];
-const COMPANY_ACTIVITY = ["applications", "contacts", "crm_call_log", "crm_email_log", "crm_meetings", "crm_notes", "crm_tasks", "tasks"];
+const COMPANY_ACTIVITY = ["applications", "contacts", "crm_call_log", "crm_email_log", "crm_meetings", "crm_notes", "tasks"];
 
 function untouched(alias: string, col: "contact_id" | "company_id", tables: string[]): string {
   return tables.map((t) => `NOT EXISTS (SELECT 1 FROM ${t} x WHERE x.${col} = ${alias}.id)`).join(" AND ");
