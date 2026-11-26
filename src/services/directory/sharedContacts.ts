@@ -63,8 +63,8 @@ export function kindOf(v: unknown, fallback: Kind): Kind {
   return fallback;
 }
 
-/** The default routing table (Shared Contact List design; Todd 2026-11-24: no brokers in the Boreal Financial CRM, every
- *  lender and bank in it). Brokers go to Keystone and PGI; lenders and banks to PGI and the Boreal Financial CRM. */
+/** The default routing table. BF_SERVER_NO_IMPORTS_IN_BF_v1 - Todd 2026-11-26: nothing from an imported list goes into
+ *  the Boreal Financial CRM; BF markets to none of them. Brokers go to Keystone and PGI; lenders and banks to PGI only. */
 export function defaultBrands(kind: Kind, country: string | null, region: string | null): Brand[] {
   const out: Brand[] = [];
   const ca = country === "CA", us = country === "US";
@@ -72,9 +72,8 @@ export function defaultBrands(kind: Kind, country: string | null, region: string
   if (kind === "broker") {
     if (ca || us) out.push("KS");
     if (pgi) out.push("BI");
-  } else {
-    if (pgi) out.push("BI");
-    out.push("BF");
+  } else if (pgi) {
+    out.push("BI");
   }
   return out;
 }
@@ -130,7 +129,14 @@ export function toRows(companies: InCompany[], contacts: InContact[], listKind: 
       research: obj(c.custom_fields), person: null,
     });
   }
-  return { rows, skipped };
+  // BF_SERVER_NO_QUEBEC_LENDERS_v1 - Todd 2026-11-26: no brand markets to a Quebec lender or bank (Keystone markets to
+  // brokers only, PGI doesn't sell in Quebec, BF markets to no imports), so they aren't kept at all.
+  const kept = rows.filter((r, i) => {
+    if (r.kind === "broker" || r.country !== "CA" || !isQuebec(r.region)) return true;
+    skipped.push({ row: i + 1, error: `Quebec ${r.kind}: no brand markets to it.` });
+    return false;
+  });
+  return { rows: kept, skipped };
 }
 
 export async function upsertOrg(db: Q, r: Row, listName: string): Promise<string> {

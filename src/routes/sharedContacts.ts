@@ -12,6 +12,7 @@ import { ROLES } from "../auth/roles.js";
 import { safeHandler } from "../middleware/safeHandler.js";
 import { getPerson, importSharedList, listPeople, listSources, previewSharedList, KINDS, type Brand, type Kind } from "../services/directory/sharedContacts.js";
 import { syncFromSilos } from "../services/directory/siloSync.js";
+import { cleanBfImports } from "../services/directory/bfImportCleanup.js";
 
 const router = Router();
 const staff = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN, ROLES.STAFF] })];
@@ -68,6 +69,23 @@ router.post("/sync", ...staff, safeHandler(async (req: any, res: any) => {
     staffToken: auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null,
   }, req.user?.id ? String(req.user.id) : "staff");
   res.json(result);
+}));
+
+// BF_SERVER_NO_IMPORTS_IN_BF_v1 - take imported lists back out of the BF CRM. { preview: true } only counts.
+const admin = [requireAuth, requireAuthorization({ roles: [ROLES.ADMIN] })];
+router.post("/bf-cleanup", ...admin, safeHandler(async (req: any, res: any) => {
+  const preview = req.body?.preview !== false;
+  if (preview) return res.json(await cleanBfImports(pool, { preview }));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const out = await cleanBfImports(client, { preview });
+    await client.query("COMMIT");
+    res.json(out);
+  } catch (e) {
+    await client.query("ROLLBACK").catch((err: unknown) => console.error("[bf-cleanup] rollback failed", err));
+    throw e;
+  } finally { client.release(); }
 }));
 
 router.get("/imports", ...staff, safeHandler(async (_req: any, res: any) => {
