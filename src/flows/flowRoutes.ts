@@ -234,4 +234,28 @@ for (const [action, status] of [["start", "active"], ["pause", "paused"], ["arch
   }));
 }
 
+// BF_SERVER_FLOW_RESTORE_v1 - deleted (archived) flows keep their emails and people, so they can be brought back as paused.
+router.get("/deleted/list", wrap(async (req, res) => {
+  const r = await pool.query(
+    `SELECT f.id, f.name, f.audience_tags, f.market, f.updated_at AS deleted_at, count(m.id)::int AS people
+       FROM crm_flows f LEFT JOIN crm_flow_members m ON m.flow_id = f.id
+      WHERE f.silo = $1 AND f.status = 'archived'
+      GROUP BY f.id ORDER BY f.updated_at DESC LIMIT 50`,
+    [siloOf(req)],
+  );
+  res.json({ ok: true, flows: r.rows });
+}));
+
+router.post("/:id/restore", wrap(async (req, res) => {
+  if (!adminOnly(req, res)) return;
+  if (!UUID.test(String(req.params.id))) return res.status(404).json({ ok: false, error: "not_found" });
+  const r = await pool.query(
+    `UPDATE crm_flows SET status = CASE WHEN started_at IS NULL THEN 'draft' ELSE 'paused' END, updated_at = now()
+      WHERE id = $1 AND silo = $2 AND status = 'archived' RETURNING status`,
+    [req.params.id, siloOf(req)],
+  );
+  if (!r.rowCount) return res.status(404).json({ ok: false, error: "not_found" });
+  res.json({ ok: true, status: r.rows[0].status });
+}));
+
 export default router;
