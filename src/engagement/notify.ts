@@ -57,3 +57,10 @@ export async function noteBooking(db: Pick<Pool, "query">, email: string, start:
   }
   await postBi("/engagement/event", { email: e, kind: "booked", start, source });
 }
+
+// BF_SERVER_SENT_ITEMS_RESPONDED_v1 - a staff member emailed someone from Outlook or the portal (found in their Sent
+// Items): PGI moves a replied contact to "Staff responded". BI-Server ignores people its flows never reached.
+export async function noteStaffResponse(rep: { email: string; at: Date; mailbox?: string | null; subject?: string | null }): Promise<number> {
+  const r = await postBi("/engagement/event", { email: rep.email.trim().toLowerCase(), kind: "responded", at: rep.at.toISOString(), mailbox: rep.mailbox ?? null, subject: rep.subject ?? null });
+  return Number(r?.matched ?? 0);
+}

@@ -1,6 +1,6 @@
 // BF_SERVER_ENGAGEMENT_v1
 import { describe, expect, it } from "vitest";
-import { isOutsideSender } from "../replyCatcher.js";
+import { isOutsideSender, sentTo } from "../replyCatcher.js";
 import { digestDue } from "../engagementWorker.js";
 import { classifyReply } from "../classifyReply.js";
 
@@ -20,5 +20,11 @@ describe("reply catcher and digest timing", () => {
   });
   it("labels replies the same way as BI", () => {
     expect(classifyReply("RE: x", "What does it cost?")).toBe("question");
+  });
+  // BF_SERVER_SENT_ITEMS_RESPONDED_v1
+  it("a sent message counts as answering its outside recipients only", () => {
+    const m = { toRecipients: [{ emailAddress: { address: "Pat@Bank.test" } }, { emailAddress: { address: "andrew.p@boreal.financial" } }],
+      ccRecipients: [{ emailAddress: { address: "pat@bank.test" } }, { emailAddress: { address: "ops@lender.test" } }] };
+    expect(sentTo(m)).toEqual(["pat@bank.test", "ops@lender.test"]);
   });
 });
