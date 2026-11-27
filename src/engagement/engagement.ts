@@ -175,7 +175,7 @@ export async function recordReply(db: Db, input: { contactId: string; at: Date; 
   return kind;
 }
 
-export type EventKind = "booked" | "met" | "no_show" | "followed_up" | "lost" | "reopen" | "signed_up" | "reply_kind";
+export type EventKind = "booked" | "met" | "no_show" | "followed_up" | "lost" | "reopen" | "signed_up" | "reply_kind" | "requeue";
 export async function recordEvent(db: Db, input: { contactId: string; kind: EventKind; at?: Date; detail?: Record<string, any>; actor?: string | null }): Promise<boolean> {
   const at = input.at ?? new Date();
   const d = input.detail ?? {};
@@ -189,6 +189,8 @@ export async function recordEvent(db: Db, input: { contactId: string; kind: Even
     reopen: `lost_at = NULL, lost_reason = NULL`,
     signed_up: `signed_up_at = COALESCE(signed_up_at, $2), follow_up_due_at = NULL`,
     reply_kind: `reply_kind = $3::text`,
+    // ENGAGEMENT_REQUEUE_v1 - undo a click on Followed up / Not interested: back in the follow-up list, due now.
+    requeue: `followed_up_at = NULL, lost_at = NULL, lost_reason = NULL, follow_up_due_at = COALESCE(follow_up_due_at, $2), follow_up_reason = COALESCE(follow_up_reason, stage)`,
   };
   const third = input.kind === "booked" ? (d.start ?? null) : input.kind === "lost" ? (d.reason ?? null) : input.kind === "reply_kind" ? (d.kind ?? null) : null;
   let sql = `UPDATE crm_engagement SET ${sets[input.kind]}, updated_at = now() WHERE contact_id = $1`;

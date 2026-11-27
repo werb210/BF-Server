@@ -90,4 +90,21 @@ describe("Keystone engagement tracking", () => {
     const r = await pool.query(`SELECT DISTINCT owner_user_id FROM crm_engagement e JOIN contacts c ON c.id = e.contact_id WHERE c.email LIKE 'rr%' AND c.name LIKE $1`, [`${tag}%`]);
     expect(r.rows.length).toBe(2);
   });
+
+  // ENGAGEMENT_REQUEUE_v1
+  it("undo puts a contact back in the follow-up list", async () => {
+    const id = await contact(`undo.${tag}@broker.test`);
+    const sent = new Date(Date.now() - 86_400_000);
+    await pool.query(`INSERT INTO crm_flow_members (flow_id, contact_id, email, status, first_sent_at, clicked_at) VALUES ($1, $2, $3, 'active', $4, $4)`,
+      [flowId, id, `undo.${tag}@broker.test`, sent]);
+    await syncEngagement(pool);
+    const inQueue = async () => (await queue(pool, { silo: "KS" })).some((x) => x.contact_id === id);
+    expect(await inQueue()).toBe(true);
+    expect(await recordEvent(pool, { contactId: id, kind: "followed_up" })).toBe(true);
+    await syncEngagement(pool);
+    expect(await inQueue()).toBe(false);
+    expect(await recordEvent(pool, { contactId: id, kind: "requeue" })).toBe(true);
+    await syncEngagement(pool);
+    expect(await inQueue()).toBe(true);
+  });
 });

@@ -43,7 +43,7 @@ router.get("/contacts/:id", wrap(async (req, res) => {
   if (!d) return res.status(404).json({ ok: false, error: "not_found" });
   res.json({ ok: true, contact: d });
 }));
-const ACTIONS: EventKind[] = ["followed_up", "met", "no_show", "booked", "lost", "reopen", "signed_up", "reply_kind"];
+const ACTIONS: EventKind[] = ["followed_up", "met", "no_show", "booked", "lost", "reopen", "signed_up", "reply_kind", "requeue"];
 router.post("/contacts/:id/action", wrap(async (req, res) => {
   const id = String(req.params.id);
   if (!UUID.test(id)) return res.status(400).json({ ok: false, error: "invalid_id" });
