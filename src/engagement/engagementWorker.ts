@@ -4,7 +4,7 @@
 import type { Pool } from "pg";
 import { claimedTick } from "../workers/claim.js";
 import { sendViaGraph } from "../services/email/graphSendService.js";
-import { createFollowUpTasks, digestFor, funnel, owners as localOwners, syncEngagement } from "./engagement.js";
+import { createFollowUpTasks, digestFor, funnel, getSettings, owners as localOwners, syncEngagement } from "./engagement.js";
 import { getBi } from "./notify.js";
 import { ALBERTA_TZ } from "../lib/albertaTime.js";
 
@@ -40,9 +40,10 @@ export async function sendDigests(db: Pick<Pool, "query">, now = new Date()): Pr
   for (const id of ids) {
     const u = (await db.query(`SELECT coalesce(o365_user_email, email) AS email, first_name FROM users WHERE id::text = $1 AND coalesce(active, true)`, [id])).rows[0];
     if (!u?.email) continue;
-    const pgi = (await getBi(`/engagement/digest?owner=${encodeURIComponent(id)}`))?.digest ?? null;
+    const biRes = await getBi(`/engagement/digest?owner=${encodeURIComponent(id)}`);
+    const pgi = biRes && biRes.enabled !== false ? biRes.digest ?? null : null;
     const local = await digestFor(db, id);
-    const ks = local.bySilo.find((r: any) => r.silo === "KS") ?? null;
+    const ks = (await getSettings(db, "KS")).digest ? local.bySilo.find((r: any) => r.silo === "KS") ?? null : null;
     if (ks) ks.top = local.top.filter((t: any) => t.silo === "KS");
     if (!Number(pgi?.open) && !Number(ks?.open)) continue;
     let weekly = "";
@@ -55,7 +56,7 @@ export async function sendDigests(db: Pick<Pool, "query">, now = new Date()): Pr
     const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111">
       <p>Good morning${u.first_name ? ` ${esc(u.first_name)}` : ""}. Here is who is waiting to hear from you.</p>
       ${section("PGI (Boreal Risk Management)", pgi, "https://staff.boreal.financial/silo/bi/marketing?tab=outreach")}
-      ${section("Keystone", ks, "https://staff.boreal.financial/silo/ks/marketing?tab=outreach")}
+      ${section("Keystone", ks, "https://staff.boreal.financial/silo/ks/marketing/outreach")}
       ${weekly}</div>`;
     const total = Number(pgi?.open ?? 0) + Number(ks?.open ?? 0);
     const r = await sendViaGraph({ to: u.email, subject: `${total} ${total === 1 ? "person is" : "people are"} waiting for a follow-up`, bodyHtml: html, bodyText: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() });
