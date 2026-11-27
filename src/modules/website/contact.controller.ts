@@ -3,6 +3,7 @@ import { createCrmLead } from "../crm/crm.service.js";
 import { createContinuation } from "../continuation/continuation.service.js";
 import { logError } from "../../observability/logger.js";
 import { stripUndefined } from "../../utils/clean.js";
+import { botReason, isEmailAddress } from "./contactSpam.js";
 import { pool } from "../../db.js";
 import { findOrCreateContactByEmailAndCompany } from "../../services/contacts.js";
 import { findOrCreateCompanyByNameAndSilo } from "../../services/companies.js";
@@ -22,6 +23,15 @@ export async function submitContactForm(req: Request, res: Response) {
 
     if (!companyName || !fullName || !phone || !email) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+    // BF_SERVER_CONTACT_FORM_SPAM_v1
+    if (!isEmailAddress(email)) {
+      return res.status(400).json({ error: "invalid_email", message: "Please enter a valid email address." });
+    }
+    const bot = botReason(req.body ?? {});
+    if (bot) {
+      console.warn("[website_contact] screened as a bot", { reason: bot });
+      return res["json"]({ success: true });
     }
 
     const lead = await createCrmLead(stripUndefined({
