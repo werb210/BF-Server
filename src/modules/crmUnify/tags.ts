@@ -120,6 +120,16 @@ export async function customTags(db: Q, silo: string): Promise<Array<{ slug: str
 export type TagUsage = { tag: string; label: string; kind: TagKind; contacts: number; companies: number };
 
 /** Everything the tag UI needs: the core and silo lists, the system list and every tag in use with counts. */
+/** BF_SERVER_SILO_CORE_TAGS_v1 - shared tags a silo doesn't use (Todd 2026-11-27): Keystone sells to brokerages, so it
+ *  has no use for the advisor and status tags. The portal shows the core list each silo's server sends. */
+export const SILO_HIDDEN_CORE: Readonly<Record<string, ReadonlyArray<string>>> = {
+  KS: ["lawyer", "accountant", "referrer", "active", "insurance", "ar_credit_insurance"],
+};
+export function coreTagsFor(silo: string) {
+  const hidden = SILO_HIDDEN_CORE[String(silo ?? "").toUpperCase()] ?? [];
+  return CORE_TAGS.filter((t) => !hidden.includes(t.slug));
+}
+
 export async function tagCatalogue(db: Q, silo: string) {
   const custom = await customTags(db, silo);
   const customSet = new Set(custom.map((c) => c.slug));
@@ -151,7 +161,7 @@ export async function tagCatalogue(db: Q, silo: string) {
     merged.set(tag, next);
   }
   return {
-    core: CORE_TAGS.map((t) => ({ ...t, kind: "core" as TagKind })),
+    core: coreTagsFor(silo).map((t) => ({ ...t, kind: "core" as TagKind })),
     custom: custom.map((t) => ({ ...t, kind: "custom" as TagKind })),
     system: [...SYSTEM_TAGS],
     inUse: Array.from(merged.values()),
