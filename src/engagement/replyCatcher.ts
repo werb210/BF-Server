@@ -19,10 +19,10 @@ export function isOutsideSender(email: string): boolean {
   return e.includes("@") && !INTERNAL.test(e) && !NOREPLY.test(e);
 }
 
-async function readBox(graph: { fetch: (p: string, init?: any) => Promise<Response> }, base: string, since: Date): Promise<Msg[]> {
+async function readBox(graph: { fetch: (p: string, init?: any) => Promise<Response> }, base: string, since: Date, first = false): Promise<Msg[]> {
   const select = encodeURIComponent("id,internetMessageId,from,receivedDateTime,subject,body");
   const filter = encodeURIComponent(`receivedDateTime ge ${since.toISOString()}`);
-  const r = await graph.fetch(`${base}/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$top=100`,
+  const r = await graph.fetch(`${base}/mailFolders/inbox/messages?$select=${select}&$filter=${filter}&$top=${first ? 500 : 100}`,
     { headers: { Prefer: 'outlook.body-content-type="text"' } });
   if (!r.ok) return [];
   const j = (await r.json()) as { value?: Msg[] };
@@ -30,7 +30,10 @@ async function readBox(graph: { fetch: (p: string, init?: any) => Promise<Respon
 }
 
 export async function catchReplies(pool: Pool, now = new Date()): Promise<{ messages: number; filed: number }> {
-  const since = new Date(now.getTime() - LOOKBACK_MIN * 60_000);
+  // The first run reads the last 14 days, so replies that came in before the catcher existed (and still have nobody
+  // answering them) land on the follow-up queue too.
+  const first = !(await pool.query(`SELECT 1 FROM crm_reply_catch_seen LIMIT 1`)).rowCount;
+  const since = new Date(now.getTime() - (first ? 14 * 24 * 60 : LOOKBACK_MIN) * 60_000);
   const out = { messages: 0, filed: 0 };
   const users = (await pool.query<{ id: string; box: string | null; admin: boolean }>(
     `SELECT id::text AS id, lower(coalesce(o365_user_email, email)) AS box, upper(coalesce(role, '')) = 'ADMIN' AS admin
@@ -45,7 +48,7 @@ export async function catchReplies(pool: Pool, now = new Date()): Promise<{ mess
     try {
       const graph = await getGraphForUser(pool as any, b.reader);
       if (!graph) continue;
-      msgs = await readBox(graph as any, b.base, since);
+      msgs = await readBox(graph as any, b.base, since, first);
     } catch (err) {
       console.warn("[reply-catcher] mailbox read failed", { box: b.box, message: (err as Error)?.message });
       continue;
