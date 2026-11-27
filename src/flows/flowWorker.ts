@@ -2,6 +2,7 @@
 // the same way BI-Server runs Boreal Risk Management's. Every minute: stop people who replied, read new opens and clicks,
 // ask the owner to call a real click, start today's new people, send what is due. Both slots run this worker, so a tick
 // only works while it holds a database advisory lock.
+import { recordReply } from "../engagement/engagement.js"; // BF_SERVER_ENGAGEMENT_v1
 import type { Pool, PoolClient } from "pg";
 import { pool as defaultPool } from "../db.js";
 import { isSendableAt } from "./sendWindow.js";
@@ -80,6 +81,9 @@ export async function stopRepliedMembers(db: Db, deps: FlowDeps, now: Date): Pro
       );
       for (const row of r.rows) {
         stopped += 1;
+        // BF_SERVER_ENGAGEMENT_v1 - the reply goes on the follow-up queue with its kind.
+        await recordReply(db as any, { contactId: row.contact_id, at: new Date(rep.at), subject: rep.subject ?? null, body: rep.snippet ?? null, mailbox: b.mailbox })
+          .catch((err: unknown) => console.warn("[flows] engagement reply failed", { message: (err as Error)?.message }));
         await timeline(db, row.contact_id, "flow_replied", { body: `Replied by email. The "${row.name}" emails have stopped for them.`, at: rep.at });
       }
     }

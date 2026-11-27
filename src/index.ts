@@ -422,6 +422,16 @@ export async function start(): Promise<void> {
     try { const w = startBiOutreachEmailReplyWorker(pool); workerStops.push(w.stop); console.log("[startup] BI outreach email-reply worker started"); }
     catch (err) { console.error("[startup] BI outreach email-reply worker failed to start:", err); }
 
+    // BF_SERVER_ENGAGEMENT_v1 - outreach stages, follow-ups, the morning digest, and the reply catcher.
+    try {
+      const { startEngagementWorker } = await import("./engagement/engagementWorker.js");
+      const { startReplyCatcher } = await import("./engagement/replyCatcher.js");
+      await workerStagger();
+      const a = startEngagementWorker(pool); workerStops.push(a.stop);
+      const b = startReplyCatcher(pool); workerStops.push(b.stop);
+      console.log("[startup] engagement worker and reply catcher started");
+    } catch (err) { console.error("[startup] engagement workers failed to start:", err); }
+
     // BF_SERVER_GRAPH_WEBHOOKS_v1 - keep Graph mail subscriptions alive.
     const { startGraphSubscriptionWorker } = await import("./workers/graphSubscriptionWorker.js");
     await workerStagger();

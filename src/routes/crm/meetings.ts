@@ -185,6 +185,16 @@ router.post("/", safeHandler(async (req: any, res: any) => {
   }
 
   if (contactId) void bumpBiOutreachToDemoBooked(String(contactId)); // BF_SERVER_BLOCK_v744
+  // BF_SERVER_ENGAGEMENT_v1 - a meeting booked with someone from the outreach moves them to Booked (here and in PGI).
+  if (contactId) {
+    void (async () => {
+      const c = await pool.query(`SELECT email FROM contacts WHERE id = $1`, [contactId]).catch((err) => { console.warn("[engagement] meeting contact read failed", { message: (err as Error)?.message }); return { rows: [] as any[] }; });
+      if (c.rows[0]?.email) {
+        const { noteBooking } = await import("../../engagement/notify.js");
+        await noteBooking(pool, String(c.rows[0].email), b.start_at ? String(b.start_at) : null, "meeting");
+      }
+    })().catch((err) => console.warn("[engagement] meeting booking note failed", { message: (err as Error)?.message }));
+  }
   res.status(201).json({ ok: true, data: rows[0] });
 }));
 
