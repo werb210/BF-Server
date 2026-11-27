@@ -84,6 +84,9 @@ async function ingest(pool: Pool, upn: string, ev: GraphEvent): Promise<void> {
     ],
   );
   if (claim.rowCount === 0) return;
+  // BF_SERVER_ENGAGEMENT_v1 - a booking by someone from the PGI or Keystone outreach moves them to Booked.
+  if (email) void import("../engagement/notify.js").then((m) => m.noteBooking(pool, email, ev.start?.dateTime ?? null, "microsoft_bookings"))
+    .catch((err) => console.warn("[engagement] booking note failed", { message: (err as Error)?.message }));
 
   const bookingId = claim.rows[0]!.id;
 

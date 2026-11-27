@@ -317,13 +317,17 @@ router.get("/mail/replies", safeHandler(async (req: any, res: any) => {
   if (!resp.ok) return res.status(502).json({ ok: false, error: `graph_${resp.status}` });
   const data = (await resp.json()) as { value?: Array<{ from?: { emailAddress?: { address?: string } }; receivedDateTime?: string; subject?: string; body?: { content?: string } }> };
   const { parseAutoReply } = await import("../services/email/autoReplyReferrals.js");
-  // Still never the message itself: the sender, the time, and for an auto-reply only whether they have left and which
-  // colleagues at the same company it names.
+  const { replyBody } = await import("../engagement/classifyReply.js");
+  // The sender, the time, the subject and the reply's own first lines (BF_SERVER_ENGAGEMENT_v1); for an auto-reply also
+  // whether they have left and which colleagues at the same company it names.
   const replies = (data.value ?? [])
     .map((m) => {
       const from = String(m.from?.emailAddress?.address ?? "").trim().toLowerCase();
       const info = parseAutoReply(String(m.subject ?? ""), String(m.body?.content ?? ""), from);
-      return { from, at: m.receivedDateTime ?? null, ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
+      // BF_SERVER_ENGAGEMENT_v1 - plus the subject and the reply's own opening lines, so BI can label the reply and show it
+      // on the follow-up queue (quoted history and signatures are cut off).
+      return { from, at: m.receivedDateTime ?? null, subject: String(m.subject ?? "").slice(0, 300), snippet: replyBody(m.body?.content, 600),
+        ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
     })
     .filter((m) => m.from && m.from !== mailbox && m.at);
   return res.json({ ok: true, connected: true, replies });

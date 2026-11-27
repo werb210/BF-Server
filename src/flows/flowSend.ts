@@ -78,7 +78,8 @@ export async function listFlowCollateral(silo: string): Promise<Array<{ id: stri
 }
 
 /** Who has emailed a mailbox since a time: a staff member's own mailbox, else a shared mailbox read by a connected Admin. */
-export type MailboxReply = { from: string; at: string; auto_reply?: boolean; left?: boolean; referrals?: Array<{ email: string; name: string | null; phone: string | null }> };
+export type MailboxReply = { from: string; at: string; subject?: string; snippet?: string; auto_reply?: boolean; left?: boolean; referrals?: Array<{ email: string; name: string | null; phone: string | null }> };
+import { replyBody } from "../engagement/classifyReply.js"; // BF_SERVER_ENGAGEMENT_v1
 export async function mailboxReplies(mailbox: string, since: Date): Promise<{ connected: boolean; replies: MailboxReply[] }> {
   const box = String(mailbox ?? "").trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(box)) return { connected: false, replies: [] };
@@ -105,7 +106,9 @@ export async function mailboxReplies(mailbox: string, since: Date): Promise<{ co
     .map((x) => {
       const from = String(x.from?.emailAddress?.address ?? "").trim().toLowerCase();
       const info = parseAutoReply(String(x.subject ?? ""), String(x.body?.content ?? ""), from);
-      return { from, at: String(x.receivedDateTime ?? ""), ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
+      // BF_SERVER_ENGAGEMENT_v1 - the subject and the reply's own opening lines (no quoted history) label the reply.
+      return { from, at: String(x.receivedDateTime ?? ""), subject: String(x.subject ?? "").slice(0, 300), snippet: replyBody(x.body?.content, 600),
+        ...(info.autoReply ? { auto_reply: true, left: info.left, referrals: info.referrals } : {}) };
     })
     .filter((x) => x.from && x.from !== box && x.at);
   return { connected: true, replies };
